@@ -1,33 +1,15 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { listVideos, getEmbedUrl } from '../../lib/bunny';
-import { redis } from '../../lib/redis';
+import { listVideos } from '../../../lib/bunny';
 
-function isAdmin(email) {
+function isAdmin(session) {
   const admins = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase());
-  return admins.includes(email);
+  return session?.user?.email && admins.includes(session.user.email.toLowerCase());
 }
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
-  if (!session) return res.status(401).json({ error: 'Not logged in' });
+  if (!session || !isAdmin(session)) return res.status(403).json({ error: 'Forbidden' });
 
-  const email = session.user.email.toLowerCase();
-  const approved = await redis.sismember('approved_viewers', email);
-
-  if (!approved && !isAdmin(email)) {
-    return res.status(403).json({ error: 'not_approved' });
-  }
-
-  const storedCount = await redis.get('homepage_video_count');
-  const limit = storedCount ? Number(storedCount) : 2;
-
-  const videos = await listVideos({ itemsPerPage: limit });
-
-  res.json(
-    videos.map((v) => ({
-      id: v.guid,
-      title: v.title,
-      embedUrl: getEmbedUrl(v.guid, 3600),
-    }))
-  );
+  const videos = await listVideos({ itemsPerPage: 100 });
+  res.json(videos.map((v) => ({ id: v.guid, title: v.title, dateUploaded: v.dateUploaded })));
 }
