@@ -8,7 +8,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) return;
-    fetch('/api/videos?limit=2').then((r) => {
+    fetch('/api/videos').then((r) => {
       if (r.status === 403) {
         setNotApproved(true);
         return;
