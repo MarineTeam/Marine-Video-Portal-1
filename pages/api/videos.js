@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   const storedCount = await redis.get('homepage_video_count');
   const limit = storedCount ? Number(storedCount) : 2;
 
-  const videos = await listVideos({ itemsPerPage: limit });
+  const fetched = await listVideos({ itemsPerPage: limit });
   const videos = fetched.slice(0, limit);
 
   res.json(
