@@ -4,12 +4,17 @@ import { useEffect, useState } from 'react';
 export default function Home() {
   const { user, isLoading } = useUser();
   const [videos, setVideos] = useState([]);
+  const [notApproved, setNotApproved] = useState(false);
 
   useEffect(() => {
     if (!user) return;
-    fetch('/api/videos?limit=2')
-      .then((r) => r.json())
-      .then(setVideos);
+    fetch('/api/videos?limit=2').then((r) => {
+      if (r.status === 403) {
+        setNotApproved(true);
+        return;
+      }
+      r.json().then(setVideos);
+    });
   }, [user]);
 
   if (isLoading) return <p>Loading...</p>;
@@ -23,6 +28,16 @@ export default function Home() {
     );
   }
 
+  if (notApproved) {
+    return (
+      <div style={{ padding: 24, fontFamily: 'sans-serif' }}>
+        <h1>Hi, {user.name}</h1>
+        <p>Your account hasn't been approved to view videos yet. Contact the administrator.</p>
+        <a href="/api/auth/logout">Log out</a>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: 24, fontFamily: 'sans-serif' }}>
       <h1>Hi, {user.name}</h1>
@@ -31,14 +46,7 @@ export default function Home() {
       <div style={{ display: 'flex', gap: 16 }}>
         {videos.map((v) => (
           <div key={v.id}>
-            <iframe
-              src={v.embedUrl}
-              width="320"
-              height="180"
-              allow="autoplay; fullscreen"
-              frameBorder="0"
-              title={v.title}
-            />
+            <iframe src={v.embedUrl} width="320" height="180" allow="autoplay; fullscreen" frameBorder="0" title={v.title} />
             <p>{v.title}</p>
           </div>
         ))}
