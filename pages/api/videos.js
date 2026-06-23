@@ -22,6 +22,7 @@ export default async function handler(req, res) {
   const limit = storedCount ? Number(storedCount) : 2;
 
   const videos = await listVideos({ itemsPerPage: limit });
+  const videos = fetched.slice(0, limit);
 
   res.json(
     videos.map((v) => ({
