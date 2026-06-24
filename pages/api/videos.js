@@ -18,7 +18,9 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'not_approved' });
   }
 
-  const limit = parseInt(req.query.limit) || 2;
+  const storedCount = await redis.get('homepage_video_count');
+  const limit = storedCount ? Number(storedCount) : 2;
+
   const videos = await listVideos({ itemsPerPage: limit });
 
   res.json(
