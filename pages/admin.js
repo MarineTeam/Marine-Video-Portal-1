@@ -6,6 +6,8 @@ export default function Admin() {
   const [videos, setVideos] = useState([]);
   const [emails, setEmails] = useState({});
   const [shareLinks, setShareLinks] = useState({});
+  const [viewers, setViewers] = useState([]);
+  const [newViewerEmail, setNewViewerEmail] = useState('');
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -17,11 +19,34 @@ export default function Admin() {
       })
       .then(setVideos)
       .catch((e) => setError(e.message));
+
+    fetch('/api/admin/viewers').then((r) => r.json()).then(setViewers);
   }, [user]);
+
+  async function addViewer() {
+    if (!newViewerEmail.trim()) return;
+    await fetch('/api/admin/viewers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: newViewerEmail }),
+    });
+    setNewViewerEmail('');
+    const r = await fetch('/api/admin/viewers');
+    setViewers(await r.json());
+  }
+
+  async function removeViewer(email) {
+    await fetch('/api/admin/viewers', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    setViewers((prev) => prev.filter((e) => e !== email));
+  }
 
   async function handleShare(video) {
     const email = (emails[video.id] || '').trim();
-    if (!email) return alert('Enter the recipient\'s email first');
+    if (!email) return alert("Enter the recipient's email first");
 
     const res = await fetch('/api/admin/share', {
       method: 'POST',
@@ -38,8 +63,27 @@ export default function Admin() {
 
   return (
     <div style={{ padding: 24, fontFamily: 'sans-serif' }}>
-      <h1>Admin — Video Library</h1>
+      <h1>Admin</h1>
       <a href="/api/auth/logout">Log out</a>
+
+      <h2>Approved Viewers (can see homepage videos)</h2>
+      <input
+        type="email"
+        placeholder="viewer@example.com"
+        value={newViewerEmail}
+        onChange={(e) => setNewViewerEmail(e.target.value)}
+        style={{ width: 240, marginRight: 8 }}
+      />
+      <button onClick={addViewer}>Add</button>
+      <ul>
+        {viewers.map((email) => (
+          <li key={email}>
+            {email} <button onClick={() => removeViewer(email)}>Remove</button>
+          </li>
+        ))}
+      </ul>
+
+      <h2>Video Library</h2>
       <ul>
         {videos.map((v) => (
           <li key={v.id} style={{ marginBottom: 20 }}>
