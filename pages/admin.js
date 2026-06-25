@@ -74,23 +74,6 @@ export default function Admin() {
     alert('Saved');
   }
 
-  async function saveOrder(idList) {
-    await fetch('/api/admin/order', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order: idList }),
-    });
-  }
-
-  function moveVideo(index, direction) {
-    const newVideos = [...videos];
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= newVideos.length) return;
-    [newVideos[index], newVideos[targetIndex]] = [newVideos[targetIndex], newVideos[index]];
-    setVideos(newVideos);
-    saveOrder(newVideos.map((v) => v.id));
-  }
-
   if (isLoading) return <p>Loading...</p>;
   if (!user) return <a href="/api/auth/login">Log in</a>;
   if (error) return <p>{error}</p>;
@@ -134,16 +117,9 @@ export default function Admin() {
       </ul>
 
       <h2>Video Library</h2>
-      <p style={{ color: '#666' }}>Use the arrows to set the order videos appear in on the homepage.</p>
       <ul>
-        {videos.map((v, i) => (
+        {videos.map((v) => (
           <li key={v.id} style={{ marginBottom: 20 }}>
-            <button onClick={() => moveVideo(i, -1)} disabled={i === 0}>
-              ↑
-            </button>
-            <button onClick={() => moveVideo(i, 1)} disabled={i === videos.length - 1} style={{ marginRight: 8 }}>
-              ↓
-            </button>
             <strong>{v.title}</strong>
             <br />
             <input
