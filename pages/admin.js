@@ -65,14 +65,22 @@ export default function Admin() {
     setShareLinks((prev) => ({ ...prev, [video.id]: data.watchUrl }));
   }
 
-  async function saveVideoCount() {
-    await fetch('/api/admin/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ count: videoCount }),
-    });
-    alert('Saved');
+async function saveVideoCount() {
+  const res = await fetch('/api/admin/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ count: videoCount }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    alert(data.error || `Failed to save (status ${res.status})`);
+    return;
   }
+
+  alert('Saved');
+}
 
   if (isLoading) return <p>Loading...</p>;
   if (!user) return <a href="/api/auth/login">Log in</a>;
