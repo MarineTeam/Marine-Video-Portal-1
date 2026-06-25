@@ -1,6 +1,7 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { listVideos } from '../../lib/bunny';
 import { redis } from '../../lib/redis';
+import { getOrder, applyOrder } from '../../lib/order';
 
 function isAdmin(email) {
   const admins = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase());
@@ -21,7 +22,10 @@ export default async function handler(req, res) {
   const storedCount = await redis.get('homepage_video_count');
   const totalLimit = storedCount ? Number(storedCount) : 2;
 
-  const allVideos = await listVideos({ itemsPerPage: totalLimit });
+  const fetched = await listVideos({ itemsPerPage: 100 });
+  const order = await getOrder();
+  const ordered = applyOrder(fetched, order);
+  const allVideos = ordered.slice(0, totalLimit);
 
   const page = parseInt(req.query.page) || 1;
   const perPage = 10;
