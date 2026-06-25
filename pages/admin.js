@@ -8,10 +8,12 @@ export default function Admin() {
   const [shareLinks, setShareLinks] = useState({});
   const [viewers, setViewers] = useState([]);
   const [newViewerEmail, setNewViewerEmail] = useState('');
+  const [videoCount, setVideoCount] = useState(2);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!user) return;
+
     fetch('/api/admin/videos')
       .then((r) => {
         if (!r.ok) throw new Error('Forbidden — this account is not an admin');
@@ -20,7 +22,13 @@ export default function Admin() {
       .then(setVideos)
       .catch((e) => setError(e.message));
 
-    fetch('/api/admin/viewers').then((r) => r.json()).then(setViewers);
+    fetch('/api/admin/viewers')
+      .then((r) => r.json())
+      .then(setViewers);
+
+    fetch('/api/admin/settings')
+      .then((r) => r.json())
+      .then((d) => setVideoCount(d.count));
   }, [user]);
 
   async function addViewer() {
@@ -57,6 +65,15 @@ export default function Admin() {
     setShareLinks((prev) => ({ ...prev, [video.id]: data.watchUrl }));
   }
 
+  async function saveVideoCount() {
+    await fetch('/api/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: videoCount }),
+    });
+    alert('Saved');
+  }
+
   if (isLoading) return <p>Loading...</p>;
   if (!user) return <a href="/api/auth/login">Log in</a>;
   if (error) return <p>{error}</p>;
@@ -65,6 +82,22 @@ export default function Admin() {
     <div style={{ padding: 24, fontFamily: 'sans-serif' }}>
       <h1>Admin</h1>
       <a href="/api/auth/logout">Log out</a>
+
+      <h2>Homepage Settings</h2>
+      <label>
+        Number of videos shown on homepage:{' '}
+        <input
+          type="number"
+          min="1"
+          max="50"
+          value={videoCount}
+          onChange={(e) => setVideoCount(e.target.value)}
+          style={{ width: 60 }}
+        />
+      </label>
+      <button onClick={saveVideoCount} style={{ marginLeft: 8 }}>
+        Save
+      </button>
 
       <h2>Approved Viewers (can see homepage videos)</h2>
       <input
