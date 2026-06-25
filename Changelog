@@ -11,3 +11,6 @@ Fixed listing over 50 videos
 Added adjustable video list
 v1.0.4
 Adjustable expiring video link time
+v1.0.5
+created private links in bunny 
+make them expire
