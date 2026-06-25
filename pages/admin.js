@@ -9,6 +9,7 @@ export default function Admin() {
   const [viewers, setViewers] = useState([]);
   const [newViewerEmail, setNewViewerEmail] = useState('');
   const [videoCount, setVideoCount] = useState(2);
+  const [expiresHours, setExpiresHours] = useState({});
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -56,14 +57,18 @@ export default function Admin() {
     const email = (emails[video.id] || '').trim();
     if (!email) return alert("Enter the recipient's email first");
 
+    const hours = parseInt(expiresHours[video.id]) || 72;
+
     const res = await fetch('/api/admin/share', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId: video.id, title: video.title, email, expiresInHours: 72 }),
+      body: JSON.stringify({ videoId: video.id, title: video.title, email, expiresInHours: hours }),
     });
     const data = await res.json();
     setShareLinks((prev) => ({ ...prev, [video.id]: data.watchUrl }));
   }
+
+  
 
   async function saveVideoCount() {
     const res = await fetch('/api/admin/settings', {
@@ -161,6 +166,16 @@ export default function Admin() {
               onChange={(e) => setEmails((prev) => ({ ...prev, [v.id]: e.target.value }))}
               style={{ width: 240, marginRight: 8 }}
             />
+            <input
+              type="number"
+              placeholder="72"
+              min="1"
+              max="720"
+              value={expiresHours[v.id] || ''}
+              onChange={(e) => setExpiresHours((prev) => ({ ...prev, [v.id]: e.target.value }))}
+              style={{ width: 70, marginRight: 8 }}
+              title="Hours until link expires"
+            />              
             <button onClick={() => handleShare(v)}>Create private link (72h)</button>
             {shareLinks[v.id] && (
               <div style={{ marginTop: 4 }}>
