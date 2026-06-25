@@ -176,7 +176,7 @@ export default function Admin() {
               style={{ width: 70, marginRight: 8 }}
               title="Hours until link expires"
             />              
-            <button onClick={() => handleShare(v)}>Create private link (72h)</button>
+            <button onClick={() => handleShare(v)}>Create private link</button>
             {shareLinks[v.id] && (
               <div style={{ marginTop: 4 }}>
                 <input style={{ width: 420 }} readOnly value={shareLinks[v.id]} />
