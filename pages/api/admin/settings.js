@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { count } = req.body || {};
     const parsed = parseInt(count);
-    if (!parsed || parsed < 1 || parsed > 50) {
+    if (!parsed || parsed < 1 || parsed > 1000) {
       return res.status(400).json({ error: 'count must be between 1 and 1000' });
     }
     await redis.set('homepage_video_count', parsed);
