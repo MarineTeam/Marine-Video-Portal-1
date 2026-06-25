@@ -9,3 +9,5 @@ List videos instead of showing thumbnails with pagination.
 v1.0.3
 Fixed listing over 50 videos
 Added adjustable video list
+v1.0.4
+Adjustable expiring video link time
