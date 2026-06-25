@@ -1,5 +1,5 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { listVideos, getEmbedUrl } from '../../lib/bunny';
+import { listVideos } from '../../lib/bunny';
 import { redis } from '../../lib/redis';
 
 function isAdmin(email) {
@@ -19,16 +19,18 @@ export default async function handler(req, res) {
   }
 
   const storedCount = await redis.get('homepage_video_count');
-  const limit = storedCount ? Number(storedCount) : 2;
+  const totalLimit = storedCount ? Number(storedCount) : 2;
 
-  const fetched = await listVideos({ itemsPerPage: limit });
-  const videos = fetched.slice(0, limit);
+  const allVideos = await listVideos({ itemsPerPage: totalLimit });
 
-  res.json(
-    videos.map((v) => ({
-      id: v.guid,
-      title: v.title,
-      embedUrl: getEmbedUrl(v.guid, 3600),
-    }))
-  );
+  const page = parseInt(req.query.page) || 1;
+  const perPage = 10;
+  const start = (page - 1) * perPage;
+  const pageVideos = allVideos.slice(start, start + perPage);
+
+  res.json({
+    videos: pageVideos.map((v) => ({ id: v.guid, title: v.title })),
+    page,
+    totalPages: Math.max(1, Math.ceil(allVideos.length / perPage)),
+  });
 }

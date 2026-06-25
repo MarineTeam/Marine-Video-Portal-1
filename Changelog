@@ -1,3 +1,8 @@
 v1.0.0
 Approved viewers only on homepage
 stop autoplay
+v1.0.1
+Added adjustable homepage video count
+v1.0.1a fixed video count bug
+v1.0.2
+List videos instead of showing thumbnails with pagination.

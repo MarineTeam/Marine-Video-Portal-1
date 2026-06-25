@@ -3,19 +3,21 @@ import { useEffect, useState } from 'react';
 
 export default function Home() {
   const { user, isLoading } = useUser();
-  const [videos, setVideos] = useState([]);
+  const [data, setData] = useState({ videos: [], page: 1, totalPages: 1 });
   const [notApproved, setNotApproved] = useState(false);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     if (!user) return;
-    fetch('/api/videos').then((r) => {
+    setNotApproved(false);
+    fetch(`/api/videos?page=${page}`).then((r) => {
       if (r.status === 403) {
         setNotApproved(true);
         return;
       }
-      r.json().then(setVideos);
+      r.json().then(setData);
     });
-  }, [user]);
+  }, [user, page]);
 
   if (isLoading) return <p>Loading...</p>;
 
@@ -42,15 +44,28 @@ export default function Home() {
     <div style={{ padding: 24, fontFamily: 'sans-serif' }}>
       <h1>Hi, {user.name}</h1>
       <a href="/admin">Admin panel</a> | <a href="/api/auth/logout">Log out</a>
-      <h2>Latest videos</h2>
-      <div style={{ display: 'flex', gap: 16 }}>
-        {videos.map((v) => (
-          <div key={v.id}>
-            <iframe src={v.embedUrl} width="320" height="180" allow="autoplay; fullscreen" frameBorder="0" title={v.title} />
-            <p>{v.title}</p>
-          </div>
+      <h2>Videos</h2>
+      <ul>
+        {data.videos.map((v) => (
+          <li key={v.id} style={{ marginBottom: 8 }}>
+            <a href={`/watch/video/${v.id}`}>{v.title}</a>
+          </li>
         ))}
-      </div>
+      </ul>
+
+      {data.totalPages > 1 && (
+        <div style={{ marginTop: 16 }}>
+          <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            Previous
+          </button>
+          <span style={{ margin: '0 12px' }}>
+            Page {data.page} of {data.totalPages}
+          </span>
+          <button disabled={page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }
