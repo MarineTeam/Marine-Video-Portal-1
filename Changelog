@@ -6,3 +6,6 @@ Added adjustable homepage video count
 v1.0.1a fixed video count bug
 v1.0.2
 List videos instead of showing thumbnails with pagination.
+v1.0.3
+Fixed listing over 50 videos
+Added adjustable video list
