@@ -1,10 +1,7 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis } from '../../../lib/redis';
+import { isAdmin } from '../../../lib/auth';
 
-function isAdmin(session) {
-  const admins = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase());
-  return session?.user?.email && admins.includes(session.user.email.toLowerCase());
-}
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
