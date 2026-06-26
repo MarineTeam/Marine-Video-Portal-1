@@ -2,11 +2,7 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { listVideos } from '../../lib/bunny';
 import { redis } from '../../lib/redis';
 import { getOrder, applyOrder } from '../../lib/order';
-
-function isAdmin(email) {
-  const admins = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase());
-  return admins.includes(email);
-}
+import { isAdmin } from '../../lib/auth';
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
