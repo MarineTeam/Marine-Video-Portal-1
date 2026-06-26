@@ -4,7 +4,7 @@ import { isAdmin } from '../../../lib/auth';
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
-  if (!session || !isAdmin(session)) return res.status(403).json({ error: 'Forbidden' });
+  if (!session || !isAdmin(session?.user?.email)) return res.status(403).json({ error: 'Forbidden' });
 
   if (req.method === 'GET') {
     const count = await redis.get('homepage_video_count');
