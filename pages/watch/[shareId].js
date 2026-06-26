@@ -53,7 +53,7 @@ export default function Watch({ embedUrl, title, error }) {
         src={embedUrl}
         width="640"
         height="360"
-        allow="autoplay; fullscreen"
+        allow="fullscreen"
         frameBorder="0"
         title={title}
       />
