@@ -6,11 +6,11 @@ export default function Admin() {
   const [videos, setVideos] = useState([]);
   const [emails, setEmails] = useState({});
   const [shareLinks, setShareLinks] = useState({});
+  const [activeShares, setActiveShares] = useState([]);
   const [viewers, setViewers] = useState([]);
   const [newViewerEmail, setNewViewerEmail] = useState('');
   const [videoCount, setVideoCount] = useState(2);
   const [expiresHours, setExpiresHours] = useState({});
-  const [activeShares, setActiveShares] = useState([]);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -31,6 +31,9 @@ export default function Admin() {
     fetch('/api/admin/settings')
       .then((r) => r.json())
       .then((d) => setVideoCount(d.count));
+
+    fetch('/api/admin/shares').then((r) => r.json()).then(setActiveShares);
+    
   }, [user]);
 
   async function addViewer() {
@@ -53,6 +56,22 @@ export default function Admin() {
     });
     setViewers((prev) => prev.filter((e) => e !== email));
   }
+
+
+async function refreshShares() {
+  const r = await fetch('/api/admin/shares');
+  setActiveShares(await r.json());
+}
+
+async function revokeShare(shareId) {
+  await fetch('/api/admin/shares', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ shareId }),
+  });
+  setActiveShares((prev) => prev.filter((s) => s.shareId !== shareId));
+} 
+  
 
   async function handleShare(video) {
     const email = (emails[video.id] || '').trim();
