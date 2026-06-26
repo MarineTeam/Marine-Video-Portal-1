@@ -1,11 +1,8 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis } from '../../../lib/redis';
 import { listVideos, getEmbedUrl } from '../../../lib/bunny';
+import { isAdmin } from '../../../lib/auth';
 
-function isAdmin(email) {
-  const admins = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase());
-  return admins.includes(email);
-}
 
 export async function getServerSideProps({ req, res, params }) {
   const session = await getSession(req, res);
