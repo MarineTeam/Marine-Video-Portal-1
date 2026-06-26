@@ -17,13 +17,14 @@ export default async function handler(req, res) {
 
   const shareId = crypto.randomUUID();
   const ttlSeconds = Math.min(expiresInHours, 720) * 3600; // capped at 30 days
+  const expiresAt = Date.now() + ttlSeconds * 1000;
 
   await redis.set(
     `share:${shareId}`,
-    { videoId, title, email: email.toLowerCase().trim() },
+    { videoId, title, email: email.toLowerCase().trim(), expiresAt },
     { ex: ttlSeconds }
   );
-
+  await redis.sadd('active_shares', shareId);
   const watchUrl = `${process.env.AUTH0_BASE_URL}/watch/${shareId}`;
   res.json({ watchUrl, expiresInHours });
 }
