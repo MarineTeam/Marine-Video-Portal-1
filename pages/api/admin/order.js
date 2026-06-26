@@ -1,10 +1,6 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { getOrder, setOrder } from '../../../lib/order';
-
-function isAdmin(session) {
-  const admins = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase());
-  return session?.user?.email && admins.includes(session.user.email.toLowerCase());
-}
+import { isAdmin } from '../../../lib/auth';
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
