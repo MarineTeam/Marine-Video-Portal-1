@@ -20,13 +20,13 @@ export async function getServerSideProps({ req, res, params }) {
     return { props: { error: 'This link has expired or does not exist.' } };
   }
 
-  if (share.email !== session.user.email.toLowerCase()) {
-    return {
-      props: {
-        error: `This link was shared with ${share.email}. You're logged in as ${session.user.email}.`,
-      },
-    };
-  }
+if (share.email !== session.user.email.toLowerCase()) {
+  return {
+    props: {
+      error: "This link isn't valid for your account. If you believe this is a mistake, contact the person who shared it with you.",
+    },
+  };
+}
 
   return {
     props: {
