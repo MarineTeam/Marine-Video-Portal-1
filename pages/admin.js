@@ -10,6 +10,7 @@ export default function Admin() {
   const [newViewerEmail, setNewViewerEmail] = useState('');
   const [videoCount, setVideoCount] = useState(2);
   const [expiresHours, setExpiresHours] = useState({});
+  const [activeShares, setActiveShares] = useState([]);
   const [error, setError] = useState(null);
 
   useEffect(() => {
