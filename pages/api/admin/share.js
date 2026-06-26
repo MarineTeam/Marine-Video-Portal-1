@@ -1,7 +1,7 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis } from '../../../lib/redis';
-import crypto from 'crypto';
 import { isAdmin } from '../../../lib/auth';
+import crypto from 'crypto';
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
@@ -21,6 +21,7 @@ export default async function handler(req, res) {
     { ex: ttlSeconds }
   );
   await redis.sadd('active_shares', shareId);
+  
   const watchUrl = `${process.env.AUTH0_BASE_URL}/watch/${shareId}`;
   res.json({ watchUrl, expiresInHours });
 }
