@@ -86,6 +86,8 @@ async function revokeShare(shareId) {
     });
     const data = await res.json();
     setShareLinks((prev) => ({ ...prev, [video.id]: data.watchUrl }));
+      refreshShares();
+
   }
 
   
@@ -139,7 +141,7 @@ async function revokeShare(shareId) {
         <input
           type="number"
           min="1"
-          max="200"
+          max="1000"
           value={videoCount}
           onChange={(e) => setVideoCount(e.target.value)}
           style={{ width: 60 }}
@@ -165,7 +167,18 @@ async function revokeShare(shareId) {
           </li>
         ))}
       </ul>
-
+        
+<h2>Active Private Links</h2>
+{activeShares.length === 0 && <p style={{ color: '#666' }}>No active links.</p>}
+<ul>
+  {activeShares.map((s) => (
+    <li key={s.shareId} style={{ marginBottom: 8 }}>
+      <strong>{s.title}</strong> → {s.email} — expires {new Date(s.expiresAt).toLocaleString()}{' '}
+      <button onClick={() => revokeShare(s.shareId)}>Revoke now</button>
+    </li>
+  ))}
+</ul>
+        
       <h2>Video Library</h2>
       <p style={{ color: '#666' }}>Use the arrows to set the order videos appear in on the homepage.</p>
       <ul>
