@@ -24,6 +24,7 @@ export default function Admin() {
   const [uploadPct, setUploadPct] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState(false);
+  const [uploadErrorMsg, setUploadErrorMsg] = useState('');
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
@@ -80,10 +81,18 @@ export default function Admin() {
     setTimeout(() => setThemeSaved(false), 2000);
   }
 
+  function failUpload(message, err) {
+    if (err) console.error('Video upload failed:', err);
+    setUploading(false);
+    setUploadError(true);
+    setUploadErrorMsg(message || 'Upload failed');
+  }
+
   async function beginUpload() {
     if (!uploadFile || uploading) return;
     setUploading(true);
     setUploadError(false);
+    setUploadErrorMsg('');
     setUploadPct(0);
 
     let meta;
@@ -94,17 +103,23 @@ export default function Admin() {
         body: JSON.stringify({ title: uploadTitle.trim() || uploadFile.name }),
       });
       meta = await res.json();
-      if (!res.ok) throw new Error(meta.error || 'Failed to create video');
+      if (!res.ok) throw new Error(meta.error || `Create-video failed (HTTP ${res.status})`);
+      if (!meta.videoId) throw new Error('Server did not return a video id');
     } catch (e) {
-      setUploading(false);
-      setUploadError(true);
-      alert(e.message || 'Could not start upload');
+      failUpload(`Couldn't start upload: ${e.message}`, e);
       return;
     }
 
     uploadVideoIdRef.current = meta.videoId;
 
-    const { Upload } = await import('tus-js-client');
+    let Upload;
+    try {
+      ({ Upload } = await import('tus-js-client'));
+    } catch (e) {
+      failUpload('Upload library failed to load — try redeploying so tus-js-client installs.', e);
+      return;
+    }
+
     const upload = new Upload(uploadFile, {
       endpoint: 'https://video.bunnycdn.com/tusupload',
       retryDelays: [0, 3000, 5000, 10000, 20000],
@@ -115,13 +130,17 @@ export default function Admin() {
         LibraryId: String(meta.libraryId),
       },
       metadata: { filetype: uploadFile.type, title: meta.title },
-      onError: () => { setUploading(false); setUploadError(true); },
+      onError: (err) => {
+        const status = err?.originalResponse?.getStatus?.();
+        failUpload(`Upload failed${status ? ` (HTTP ${status})` : ''}: ${err?.message || err}`, err);
+      },
       onProgress: (sent, total) => setUploadPct(Math.round((sent / total) * 100)),
       onSuccess: async () => {
         uploadRef.current = null;
         uploadVideoIdRef.current = null;
         setUploading(false);
         setUploadError(false);
+        setUploadErrorMsg('');
         setUploadFile(null);
         setUploadTitle('');
         setUploadPct(0);
@@ -137,6 +156,7 @@ export default function Admin() {
   function retryUpload() {
     if (!uploadRef.current) { beginUpload(); return; }
     setUploadError(false);
+    setUploadErrorMsg('');
     setUploading(true);
     uploadRef.current.start();
   }
@@ -529,7 +549,8 @@ export default function Admin() {
 
             {uploadError && !uploading && (
               <div className="upload-status upload-failed">
-                <span className="badge badge-error">Upload failed</span>
+                <span className="badge badge-error">Failed</span>
+                {uploadErrorMsg && <span className="upload-error-msg">{uploadErrorMsg}</span>}
                 <button onClick={retryUpload} className="btn btn-primary btn-sm">Retry</button>
                 <button onClick={cancelUpload} className="btn btn-ghost btn-sm">Discard</button>
               </div>
