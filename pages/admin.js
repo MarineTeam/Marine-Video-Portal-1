@@ -1,5 +1,7 @@
 import { useUser } from '@auth0/nextjs-auth0/client';
 import { useEffect, useState } from 'react';
+import AppShell from '../components/AppShell';
+import { IconChevronUp, IconChevronDown, IconTrash, IconCopy } from '../components/icons';
 
 export default function Admin() {
   const { user, isLoading } = useUser();
@@ -12,6 +14,7 @@ export default function Admin() {
   const [videoCount, setVideoCount] = useState(2);
   const [expiresHours, setExpiresHours] = useState({});
   const [error, setError] = useState(null);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -24,16 +27,9 @@ export default function Admin() {
       .then(setVideos)
       .catch((e) => setError(e.message));
 
-    fetch('/api/admin/viewers')
-      .then((r) => r.json())
-      .then(setViewers);
-
-    fetch('/api/admin/settings')
-      .then((r) => r.json())
-      .then((d) => setVideoCount(d.count));
-
+    fetch('/api/admin/viewers').then((r) => r.json()).then(setViewers);
+    fetch('/api/admin/settings').then((r) => r.json()).then((d) => setVideoCount(d.count));
     fetch('/api/admin/shares').then((r) => r.json()).then(setActiveShares);
-    
   }, [user]);
 
   async function addViewer() {
@@ -57,28 +53,24 @@ export default function Admin() {
     setViewers((prev) => prev.filter((e) => e !== email));
   }
 
+  async function refreshShares() {
+    const r = await fetch('/api/admin/shares');
+    setActiveShares(await r.json());
+  }
 
-async function refreshShares() {
-  const r = await fetch('/api/admin/shares');
-  setActiveShares(await r.json());
-}
-
-async function revokeShare(shareId) {
-  await fetch('/api/admin/shares', {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ shareId }),
-  });
-  setActiveShares((prev) => prev.filter((s) => s.shareId !== shareId));
-} 
-  
+  async function revokeShare(shareId) {
+    await fetch('/api/admin/shares', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shareId }),
+    });
+    setActiveShares((prev) => prev.filter((s) => s.shareId !== shareId));
+  }
 
   async function handleShare(video) {
     const email = (emails[video.id] || '').trim();
     if (!email) return alert("Enter the recipient's email first");
-
     const hours = parseInt(expiresHours[video.id]) || 72;
-
     const res = await fetch('/api/admin/share', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -86,11 +78,8 @@ async function revokeShare(shareId) {
     });
     const data = await res.json();
     setShareLinks((prev) => ({ ...prev, [video.id]: data.watchUrl }));
-      refreshShares();
-
+    refreshShares();
   }
-
-  
 
   async function saveVideoCount() {
     const res = await fetch('/api/admin/settings', {
@@ -98,15 +87,10 @@ async function revokeShare(shareId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ count: videoCount }),
     });
-
     const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      alert(data.error || `Failed to save (status ${res.status})`);
-      return;
-    }
-
-    alert('Saved');
+    if (!res.ok) { alert(data.error || `Failed to save (status ${res.status})`); return; }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   }
 
   async function saveOrder(idList) {
@@ -118,106 +102,212 @@ async function revokeShare(shareId) {
   }
 
   function moveVideo(index, direction) {
-    const newVideos = [...videos];
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= newVideos.length) return;
-    [newVideos[index], newVideos[targetIndex]] = [newVideos[targetIndex], newVideos[index]];
-    setVideos(newVideos);
-    saveOrder(newVideos.map((v) => v.id));
+    const next = [...videos];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    setVideos(next);
+    saveOrder(next.map((v) => v.id));
   }
 
-  if (isLoading) return <p>Loading...</p>;
-  if (!user) return <a href="/api/auth/login">Log in</a>;
-  if (error) return <p>{error}</p>;
+  function copyLink(url) {
+    navigator.clipboard.writeText(url).catch(() => {});
+  }
+
+  if (isLoading) {
+    return (
+      <AppShell isAdmin>
+        <p className="text-muted">Loading…</p>
+      </AppShell>
+    );
+  }
+
+  if (!user) {
+    return (
+      <AppShell>
+        <div className="card" style={{ padding: '1.5rem', textAlign: 'center' }}>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>You need to be signed in.</p>
+          <a href="/api/auth/login" className="btn btn-primary btn-sm">Sign in</a>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (error) {
+    return (
+      <AppShell>
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <p className="text-muted">{error}</p>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
-    <div style={{ padding: 24, fontFamily: 'sans-serif' }}>
-      <h1>Admin</h1>
-      <a href="/api/auth/logout">Log out</a>
+    <AppShell isAdmin>
+      <div className="admin-stack">
 
-      <h2>Homepage Settings</h2>
-      <label>
-        Number of videos shown on homepage:{' '}
-        <input
-          type="number"
-          min="1"
-          max="1000"
-          value={videoCount}
-          onChange={(e) => setVideoCount(e.target.value)}
-          style={{ width: 60 }}
-        />
-      </label>
-      <button onClick={saveVideoCount} style={{ marginLeft: 8 }}>
-        Save
-      </button>
-
-      <h2>Approved Viewers (can see homepage videos)</h2>
-      <input
-        type="email"
-        placeholder="viewer@example.com"
-        value={newViewerEmail}
-        onChange={(e) => setNewViewerEmail(e.target.value)}
-        style={{ width: 240, marginRight: 8 }}
-      />
-      <button onClick={addViewer}>Add</button>
-      <ul>
-        {viewers.map((email) => (
-          <li key={email}>
-            {email} <button onClick={() => removeViewer(email)}>Remove</button>
-          </li>
-        ))}
-      </ul>
-        
-<h2>Active Private Links</h2>
-{activeShares.length === 0 && <p style={{ color: '#666' }}>No active links.</p>}
-<ul>
-  {activeShares.map((s) => (
-    <li key={s.shareId} style={{ marginBottom: 8 }}>
-      <strong>{s.title}</strong> → {s.email} — expires {new Date(s.expiresAt).toLocaleString()}{' '}
-      <button onClick={() => revokeShare(s.shareId)}>Revoke now</button>
-    </li>
-  ))}
-</ul>
-        
-      <h2>Video Library</h2>
-      <p style={{ color: '#666' }}>Use the arrows to set the order videos appear in on the homepage.</p>
-      <ul>
-        {videos.map((v, i) => (
-          <li key={v.id} style={{ marginBottom: 20 }}>
-            <button onClick={() => moveVideo(i, -1)} disabled={i === 0}>
-              ↑
-            </button>
-            <button onClick={() => moveVideo(i, 1)} disabled={i === videos.length - 1} style={{ marginRight: 8 }}>
-              ↓
-            </button>
-            <strong>{v.title}</strong>
-            <br />
-            <input
-              type="email"
-              placeholder="recipient@example.com"
-              value={emails[v.id] || ''}
-              onChange={(e) => setEmails((prev) => ({ ...prev, [v.id]: e.target.value }))}
-              style={{ width: 240, marginRight: 8 }}
-            />
+        {/* Homepage settings */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Homepage Settings</h2>
+          <div className="admin-row">
+            <label className="label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>
+              Videos shown:
+            </label>
             <input
               type="number"
-              placeholder="72"
               min="1"
-              max="720"
-              value={expiresHours[v.id] || ''}
-              onChange={(e) => setExpiresHours((prev) => ({ ...prev, [v.id]: e.target.value }))}
-              style={{ width: 70, marginRight: 8 }}
-              title="Hours until link expires"
-            />              
-            <button onClick={() => handleShare(v)}>Create private link</button>
-            {shareLinks[v.id] && (
-              <div style={{ marginTop: 4 }}>
-                <input style={{ width: 420 }} readOnly value={shareLinks[v.id]} />
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
+              max="1000"
+              value={videoCount}
+              onChange={(e) => setVideoCount(e.target.value)}
+              className="input input-sm"
+              style={{ width: '5rem', flex: 'none' }}
+            />
+            <button onClick={saveVideoCount} className="btn btn-primary btn-sm">
+              {saved ? 'Saved!' : 'Save'}
+            </button>
+          </div>
+        </div>
+
+        {/* Approved viewers */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Approved Viewers</h2>
+          <div className="admin-row">
+            <input
+              type="email"
+              placeholder="viewer@example.com"
+              value={newViewerEmail}
+              onChange={(e) => setNewViewerEmail(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addViewer()}
+              className="input input-sm"
+            />
+            <button onClick={addViewer} className="btn btn-primary btn-sm">Add</button>
+          </div>
+
+          {viewers.length > 0 ? (
+            <ul className="viewer-list">
+              {viewers.map((email) => (
+                <li key={email} className="viewer-item">
+                  <span>{email}</span>
+                  <button
+                    onClick={() => removeViewer(email)}
+                    className="btn btn-icon"
+                    title="Remove viewer"
+                  >
+                    <IconTrash />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted mt-4">No approved viewers yet.</p>
+          )}
+        </div>
+
+        {/* Active share links */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Active Private Links</h2>
+          {activeShares.length === 0 ? (
+            <p className="text-muted">No active links.</p>
+          ) : (
+            <ul className="shares-list">
+              {activeShares.map((s) => (
+                <li key={s.shareId} className="share-item">
+                  <div className="share-info">
+                    <span className="share-title">{s.title}</span>
+                    <span className="share-meta">
+                      {s.email} &mdash; expires {new Date(s.expiresAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => revokeShare(s.shareId)}
+                    className="btn btn-destructive btn-sm"
+                  >
+                    Revoke
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Video library */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Video Library</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Use the arrows to set the order videos appear on the homepage.
+          </p>
+          <ul className="admin-video-list">
+            {videos.map((v, i) => (
+              <li key={v.id} className="admin-video-item">
+                <div className="admin-video-header">
+                  <div className="admin-video-controls">
+                    <button
+                      onClick={() => moveVideo(i, -1)}
+                      disabled={i === 0}
+                      className="btn btn-icon"
+                      title="Move up"
+                    >
+                      <IconChevronUp />
+                    </button>
+                    <button
+                      onClick={() => moveVideo(i, 1)}
+                      disabled={i === videos.length - 1}
+                      className="btn btn-icon"
+                      title="Move down"
+                    >
+                      <IconChevronDown />
+                    </button>
+                  </div>
+                  <span className="admin-video-title">{v.title}</span>
+                </div>
+
+                <div className="admin-video-share">
+                  <input
+                    type="email"
+                    placeholder="recipient@example.com"
+                    value={emails[v.id] || ''}
+                    onChange={(e) => setEmails((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                    className="input input-sm"
+                  />
+                  <input
+                    type="number"
+                    placeholder="72h"
+                    min="1"
+                    max="720"
+                    value={expiresHours[v.id] || ''}
+                    onChange={(e) => setExpiresHours((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                    className="input input-sm"
+                    style={{ width: '5rem', flex: 'none' }}
+                    title="Hours until link expires"
+                  />
+                  <button onClick={() => handleShare(v)} className="btn btn-outline btn-sm">
+                    Create link
+                  </button>
+                </div>
+
+                {shareLinks[v.id] && (
+                  <div className="share-result">
+                    <input
+                      className="input input-sm"
+                      readOnly
+                      value={shareLinks[v.id]}
+                    />
+                    <button
+                      onClick={() => copyLink(shareLinks[v.id])}
+                      className="btn btn-icon"
+                      title="Copy link"
+                    >
+                      <IconCopy />
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+      </div>
+    </AppShell>
   );
 }
