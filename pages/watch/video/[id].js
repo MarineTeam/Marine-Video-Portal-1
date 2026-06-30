@@ -1,5 +1,5 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { redis } from '../../../lib/redis';
+import { redis, k } from '../../../lib/redis';
 import { listVideos, getEmbedUrl } from '../../../lib/bunny';
 import { isAdmin } from '../../../lib/auth';
 
@@ -17,7 +17,7 @@ export async function getServerSideProps({ req, res, params }) {
   }
 
   const email = session.user.email.toLowerCase();
-  const approved = await redis.sismember('approved_viewers', email);
+  const approved = await redis.sismember(k('approved_viewers'), email);
 
   if (!approved && !isAdmin(email)) {
     return { props: { error: 'Your account is not approved to view this content.' } };

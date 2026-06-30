@@ -1,5 +1,5 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { redis } from '../../../lib/redis';
+import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
 import crypto from 'crypto';
 
@@ -16,11 +16,11 @@ export default async function handler(req, res) {
   const expiresAt = Date.now() + ttlSeconds * 1000;
 
   await redis.set(
-    `share:${shareId}`,
+    k(`share:${shareId}`),
     { videoId, title, email: email.toLowerCase().trim(), expiresAt },
     { ex: ttlSeconds }
   );
-  await redis.sadd('active_shares', shareId);
+  await redis.sadd(k('active_shares'), shareId);
   
   const watchUrl = `${process.env.AUTH0_BASE_URL}/watch/${shareId}`;
   res.json({ watchUrl, expiresInHours });
