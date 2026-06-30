@@ -28,7 +28,7 @@ pages/
       viewers.js                   Add/remove/list approved viewer emails
       settings.js                  Get/set homepage video count
       order.js                     Get/set custom homepage video order
-      share.js                     Create a private share record + send email
+      share.js                     Create a private share record (link shown in panel; no email sent)
       shares.js                    List/revoke active share links
   watch/
     video/[id].js                 Plays a video for an approved viewer (clicked from homepage)
