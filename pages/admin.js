@@ -16,6 +16,7 @@ export default function Admin() {
   const [expiresHours, setExpiresHours] = useState({});
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [tab, setTab] = useState('videos');
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const [themeSaved, setThemeSaved] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -331,8 +332,31 @@ export default function Admin() {
 
   return (
     <AppShell isAdmin>
+      <div className="admin-topbar">
+        <h1 className="admin-page-title">Admin</h1>
+        <nav className="admin-tabs">
+          {[
+            { id: 'videos', label: 'Videos', count: videos.length },
+            { id: 'viewers', label: 'Viewers', count: viewers.length },
+            { id: 'shares', label: 'Shares', count: activeShares.length },
+            { id: 'settings', label: 'Settings', count: null },
+          ].map((t) => (
+            <button
+              key={t.id}
+              className={`admin-tab${tab === t.id ? ' active' : ''}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+              {t.count != null && <span className="tab-count">{t.count}</span>}
+            </button>
+          ))}
+        </nav>
+      </div>
+
       <div className="admin-stack">
 
+        {tab === 'settings' && (
+        <>
         {/* Appearance */}
         <div className="card admin-section">
           <h2 className="admin-section-title">Appearance</h2>
@@ -428,7 +452,11 @@ export default function Admin() {
             </button>
           </div>
         </div>
+        </>
+        )}
 
+        {tab === 'viewers' && (
+        <>
         {/* Approved viewers */}
         <div className="card admin-section">
           <h2 className="admin-section-title">Approved Viewers</h2>
@@ -463,7 +491,11 @@ export default function Admin() {
             <p className="text-muted mt-4">No approved viewers yet.</p>
           )}
         </div>
+        </>
+        )}
 
+        {tab === 'shares' && (
+        <>
         {/* Active share links */}
         <div className="card admin-section">
           <h2 className="admin-section-title">Active Private Links</h2>
@@ -491,6 +523,11 @@ export default function Admin() {
           )}
         </div>
 
+        </>
+        )}
+
+        {tab === 'videos' && (
+        <>
         {/* Upload video */}
         <div className="card admin-section">
           <h2 className="admin-section-title">Upload Video</h2>
@@ -641,6 +678,8 @@ export default function Admin() {
             ))}
           </ul>
         </div>
+        </>
+        )}
 
       </div>
     </AppShell>
