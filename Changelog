@@ -33,3 +33,5 @@ Cancel or retry an in-progress video upload
 v1.1.3
 Fixed video upload failing with a 401 (TUS signature auth)
 Clearer upload error messages
+v1.1.4
+New uploads show on top by default (newest first)
