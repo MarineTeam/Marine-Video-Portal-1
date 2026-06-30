@@ -30,3 +30,6 @@ Encoding status/progress indicator on the video library
 Drag-and-drop video upload
 v1.1.2
 Cancel or retry an in-progress video upload
+v1.1.3
+Fixed video upload failing with a 401 (TUS signature auth)
+Clearer upload error messages
