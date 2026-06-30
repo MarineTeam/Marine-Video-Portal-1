@@ -35,3 +35,5 @@ Fixed video upload failing with a 401 (TUS signature auth)
 Clearer upload error messages
 v1.1.4
 New uploads show on top by default (newest first)
+v1.1.5
+Tabbed admin page (Videos, Viewers, Shares, Settings) for easier navigation
