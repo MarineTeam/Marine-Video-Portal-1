@@ -1,5 +1,5 @@
 import { useUser } from '@auth0/nextjs-auth0/client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AppShell from '../components/AppShell';
 import { IconChevronUp, IconChevronDown, IconTrash, IconCopy } from '../components/icons';
 import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
@@ -18,6 +18,11 @@ export default function Admin() {
   const [saved, setSaved] = useState(false);
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const [themeSaved, setThemeSaved] = useState(false);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!user) return;
@@ -62,6 +67,51 @@ export default function Admin() {
     try { localStorage.setItem('mvp_theme', JSON.stringify(theme)); } catch (e) {}
     setThemeSaved(true);
     setTimeout(() => setThemeSaved(false), 2000);
+  }
+
+  async function uploadVideo() {
+    if (!uploadFile || uploading) return;
+    setUploading(true);
+    setUploadPct(0);
+    try {
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: uploadTitle.trim() || uploadFile.name }),
+      });
+      const meta = await res.json();
+      if (!res.ok) throw new Error(meta.error || 'Failed to create video');
+
+      const { Upload } = await import('tus-js-client');
+      await new Promise((resolve, reject) => {
+        const upload = new Upload(uploadFile, {
+          endpoint: 'https://video.bunnycdn.com/tusupload',
+          retryDelays: [0, 3000, 5000, 10000, 20000],
+          headers: {
+            AuthorizationSignature: meta.signature,
+            AuthorizationExpire: String(meta.expires),
+            VideoId: meta.videoId,
+            LibraryId: String(meta.libraryId),
+          },
+          metadata: { filetype: uploadFile.type, title: meta.title },
+          onError: reject,
+          onProgress: (sent, total) => setUploadPct(Math.round((sent / total) * 100)),
+          onSuccess: resolve,
+        });
+        upload.start();
+      });
+
+      setUploadFile(null);
+      setUploadTitle('');
+      setUploadPct(0);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      const r = await fetch('/api/admin/videos');
+      setVideos(await r.json());
+    } catch (e) {
+      alert(e.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function addViewer() {
@@ -334,6 +384,46 @@ export default function Admin() {
                 </li>
               ))}
             </ul>
+          )}
+        </div>
+
+        {/* Upload video */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Upload Video</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Upload a new video straight to bunny.net. It appears in the library below once processing finishes.
+          </p>
+
+          <div className="upload-controls">
+            <input
+              type="text"
+              placeholder="Title (optional — defaults to file name)"
+              value={uploadTitle}
+              onChange={(e) => setUploadTitle(e.target.value)}
+              className="input input-sm"
+              disabled={uploading}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="video/*"
+              onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+              className="file-input"
+              disabled={uploading}
+            />
+            <button
+              onClick={uploadVideo}
+              className="btn btn-primary btn-sm"
+              disabled={!uploadFile || uploading}
+            >
+              {uploading ? `Uploading ${uploadPct}%` : 'Upload'}
+            </button>
+          </div>
+
+          {uploading && (
+            <div className="progress" aria-label="Upload progress">
+              <div className="progress-bar" style={{ width: `${uploadPct}%` }} />
+            </div>
           )}
         </div>
 
