@@ -23,7 +23,10 @@ export default function Admin() {
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [uploadError, setUploadError] = useState(false);
   const fileInputRef = useRef(null);
+  const uploadRef = useRef(null);
+  const uploadVideoIdRef = useRef(null);
 
   async function fetchVideos() {
     const r = await fetch('/api/admin/videos');
@@ -77,47 +80,85 @@ export default function Admin() {
     setTimeout(() => setThemeSaved(false), 2000);
   }
 
-  async function uploadVideo() {
+  async function beginUpload() {
     if (!uploadFile || uploading) return;
     setUploading(true);
+    setUploadError(false);
     setUploadPct(0);
+
+    let meta;
     try {
       const res = await fetch('/api/admin/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: uploadTitle.trim() || uploadFile.name }),
       });
-      const meta = await res.json();
+      meta = await res.json();
       if (!res.ok) throw new Error(meta.error || 'Failed to create video');
-
-      const { Upload } = await import('tus-js-client');
-      await new Promise((resolve, reject) => {
-        const upload = new Upload(uploadFile, {
-          endpoint: 'https://video.bunnycdn.com/tusupload',
-          retryDelays: [0, 3000, 5000, 10000, 20000],
-          headers: {
-            AuthorizationSignature: meta.signature,
-            AuthorizationExpire: String(meta.expires),
-            VideoId: meta.videoId,
-            LibraryId: String(meta.libraryId),
-          },
-          metadata: { filetype: uploadFile.type, title: meta.title },
-          onError: reject,
-          onProgress: (sent, total) => setUploadPct(Math.round((sent / total) * 100)),
-          onSuccess: resolve,
-        });
-        upload.start();
-      });
-
-      setUploadFile(null);
-      setUploadTitle('');
-      setUploadPct(0);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      await fetchVideos().catch(() => {});
     } catch (e) {
-      alert(e.message || 'Upload failed');
-    } finally {
       setUploading(false);
+      setUploadError(true);
+      alert(e.message || 'Could not start upload');
+      return;
+    }
+
+    uploadVideoIdRef.current = meta.videoId;
+
+    const { Upload } = await import('tus-js-client');
+    const upload = new Upload(uploadFile, {
+      endpoint: 'https://video.bunnycdn.com/tusupload',
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      headers: {
+        AuthorizationSignature: meta.signature,
+        AuthorizationExpire: String(meta.expires),
+        VideoId: meta.videoId,
+        LibraryId: String(meta.libraryId),
+      },
+      metadata: { filetype: uploadFile.type, title: meta.title },
+      onError: () => { setUploading(false); setUploadError(true); },
+      onProgress: (sent, total) => setUploadPct(Math.round((sent / total) * 100)),
+      onSuccess: async () => {
+        uploadRef.current = null;
+        uploadVideoIdRef.current = null;
+        setUploading(false);
+        setUploadError(false);
+        setUploadFile(null);
+        setUploadTitle('');
+        setUploadPct(0);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        await fetchVideos().catch(() => {});
+      },
+    });
+    uploadRef.current = upload;
+    upload.start();
+  }
+
+  // Resume the same upload after a failure — TUS picks up where it left off.
+  function retryUpload() {
+    if (!uploadRef.current) { beginUpload(); return; }
+    setUploadError(false);
+    setUploading(true);
+    uploadRef.current.start();
+  }
+
+  // Stop the in-flight upload and remove the half-created video from bunny.net.
+  async function cancelUpload() {
+    if (uploadRef.current) {
+      try { await uploadRef.current.abort(); } catch (e) {}
+      uploadRef.current = null;
+    }
+    const id = uploadVideoIdRef.current;
+    uploadVideoIdRef.current = null;
+    setUploading(false);
+    setUploadError(false);
+    setUploadPct(0);
+    if (id) {
+      await fetch('/api/admin/videos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      }).catch(() => {});
+      await fetchVideos().catch(() => {});
     }
   }
 
@@ -469,7 +510,7 @@ export default function Admin() {
                 disabled={uploading}
               />
               <button
-                onClick={uploadVideo}
+                onClick={beginUpload}
                 className="btn btn-primary btn-sm"
                 disabled={!uploadFile || uploading}
               >
@@ -478,8 +519,19 @@ export default function Admin() {
             </div>
 
             {uploading && (
-              <div className="progress" aria-label="Upload progress">
-                <div className="progress-bar" style={{ width: `${uploadPct}%` }} />
+              <div className="upload-status">
+                <div className="progress" aria-label="Upload progress">
+                  <div className="progress-bar" style={{ width: `${uploadPct}%` }} />
+                </div>
+                <button onClick={cancelUpload} className="btn btn-outline btn-sm">Cancel</button>
+              </div>
+            )}
+
+            {uploadError && !uploading && (
+              <div className="upload-status upload-failed">
+                <span className="badge badge-error">Upload failed</span>
+                <button onClick={retryUpload} className="btn btn-primary btn-sm">Retry</button>
+                <button onClick={cancelUpload} className="btn btn-ghost btn-sm">Discard</button>
               </div>
             )}
           </div>

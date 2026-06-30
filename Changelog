@@ -28,3 +28,5 @@ v1.1.1
 Delete videos from admin
 Encoding status/progress indicator on the video library
 Drag-and-drop video upload
+v1.1.2
+Cancel or retry an in-progress video upload
