@@ -518,6 +518,23 @@ a { color: inherit; text-decoration: none; }
 
 /* ── Upload ──────────────────────────────────────── */
 
+.dropzone {
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.dropzone.drag {
+  border-color: var(--accent-1);
+  background: var(--accent-soft);
+}
+.dropzone-hint {
+  font-size: 13.5px;
+  color: var(--muted);
+  margin-bottom: 14px;
+  text-align: center;
+}
+
 .upload-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .upload-controls .input { flex: 1; min-width: 220px; }
 
@@ -555,6 +572,43 @@ a { color: inherit; text-decoration: none; }
   background: var(--accent-grad);
   border-radius: 999px;
   transition: width 0.25s ease;
+}
+
+/* ── Status badges ───────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.badge-processing {
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+.badge-processing::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fbbf24;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.badge-error {
+  color: #fda4b4;
+  background: var(--danger-soft);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 /* ── Utilities ───────────────────────────────────── */

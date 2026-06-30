@@ -22,24 +22,32 @@ export default function Admin() {
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
+
+  async function fetchVideos() {
+    const r = await fetch('/api/admin/videos');
+    if (!r.ok) throw new Error('Forbidden — this account is not an admin');
+    setVideos(await r.json());
+  }
 
   useEffect(() => {
     if (!user) return;
 
-    fetch('/api/admin/videos')
-      .then((r) => {
-        if (!r.ok) throw new Error('Forbidden — this account is not an admin');
-        return r.json();
-      })
-      .then(setVideos)
-      .catch((e) => setError(e.message));
-
+    fetchVideos().catch((e) => setError(e.message));
     fetch('/api/admin/viewers').then((r) => r.json()).then(setViewers);
     fetch('/api/admin/settings').then((r) => r.json()).then((d) => setVideoCount(d.count));
     fetch('/api/admin/shares').then((r) => r.json()).then(setActiveShares);
     fetch('/api/theme').then((r) => r.json()).then(setTheme).catch(() => {});
   }, [user]);
+
+  // While any video is still encoding (status 0–3), re-poll so progress updates.
+  useEffect(() => {
+    const encoding = videos.some((v) => typeof v.status === 'number' && v.status < 4);
+    if (!encoding) return;
+    const t = setTimeout(() => { fetchVideos().catch(() => {}); }, 4000);
+    return () => clearTimeout(t);
+  }, [videos]);
 
   // Live-preview a palette change across the whole page as the admin edits.
   function previewTheme(next) {
@@ -105,13 +113,38 @@ export default function Admin() {
       setUploadTitle('');
       setUploadPct(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      const r = await fetch('/api/admin/videos');
-      setVideos(await r.json());
+      await fetchVideos().catch(() => {});
     } catch (e) {
       alert(e.message || 'Upload failed');
     } finally {
       setUploading(false);
     }
+  }
+
+  async function removeVideo(v) {
+    if (!confirm(`Delete "${v.title || 'Untitled'}"? This permanently removes it from bunny.net.`)) return;
+    const res = await fetch('/api/admin/videos', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: v.id }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(d.error || 'Failed to delete');
+      return;
+    }
+    setVideos((prev) => prev.filter((x) => x.id !== v.id));
+  }
+
+  function onDropFile(e) {
+    e.preventDefault();
+    setDragOver(false);
+    if (uploading) return;
+    const f = e.dataTransfer.files?.[0];
+    if (!f) return;
+    if (!f.type.startsWith('video/')) { alert('Please drop a video file.'); return; }
+    setUploadFile(f);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
   async function addViewer() {
@@ -194,6 +227,16 @@ export default function Admin() {
 
   function copyLink(url) {
     navigator.clipboard.writeText(url).catch(() => {});
+  }
+
+  // Bunny video status: 0–3 still encoding, 4 finished, 5/6 failed.
+  function videoStatusBadge(v) {
+    if (typeof v.status !== 'number') return null;
+    if (v.status === 5 || v.status === 6) {
+      return <span className="badge badge-error">Failed</span>;
+    }
+    if (v.status >= 4) return null;
+    return <span className="badge badge-processing">Processing {v.encodeProgress || 0}%</span>;
   }
 
   if (isLoading) {
@@ -394,37 +437,52 @@ export default function Admin() {
             Upload a new video straight to bunny.net. It appears in the library below once processing finishes.
           </p>
 
-          <div className="upload-controls">
-            <input
-              type="text"
-              placeholder="Title (optional — defaults to file name)"
-              value={uploadTitle}
-              onChange={(e) => setUploadTitle(e.target.value)}
-              className="input input-sm"
-              disabled={uploading}
-            />
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="video/*"
-              onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-              className="file-input"
-              disabled={uploading}
-            />
-            <button
-              onClick={uploadVideo}
-              className="btn btn-primary btn-sm"
-              disabled={!uploadFile || uploading}
-            >
-              {uploading ? `Uploading ${uploadPct}%` : 'Upload'}
-            </button>
-          </div>
+          <div
+            className={`dropzone${dragOver ? ' drag' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); if (!uploading) setDragOver(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+            onDrop={onDropFile}
+          >
+            <p className="dropzone-hint">
+              {uploadFile ? (
+                <>Selected: <span className="font-medium">{uploadFile.name}</span></>
+              ) : (
+                <>Drag &amp; drop a video here, or pick a file below</>
+              )}
+            </p>
 
-          {uploading && (
-            <div className="progress" aria-label="Upload progress">
-              <div className="progress-bar" style={{ width: `${uploadPct}%` }} />
+            <div className="upload-controls">
+              <input
+                type="text"
+                placeholder="Title (optional — defaults to file name)"
+                value={uploadTitle}
+                onChange={(e) => setUploadTitle(e.target.value)}
+                className="input input-sm"
+                disabled={uploading}
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                className="file-input"
+                disabled={uploading}
+              />
+              <button
+                onClick={uploadVideo}
+                className="btn btn-primary btn-sm"
+                disabled={!uploadFile || uploading}
+              >
+                {uploading ? `Uploading ${uploadPct}%` : 'Upload'}
+              </button>
             </div>
-          )}
+
+            {uploading && (
+              <div className="progress" aria-label="Upload progress">
+                <div className="progress-bar" style={{ width: `${uploadPct}%` }} />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Video library */}
@@ -456,6 +514,14 @@ export default function Admin() {
                     </button>
                   </div>
                   <span className="admin-video-title">{v.title}</span>
+                  {videoStatusBadge(v)}
+                  <button
+                    onClick={() => removeVideo(v)}
+                    className="btn btn-icon"
+                    title="Delete video"
+                  >
+                    <IconTrash />
+                  </button>
                 </div>
 
                 <div className="admin-video-share">
