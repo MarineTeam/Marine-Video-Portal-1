@@ -16,3 +16,5 @@ see created private links in admin
 ability to make them expire
 v1.0.6
 Auth function
+v1.0.7
+database prefix
