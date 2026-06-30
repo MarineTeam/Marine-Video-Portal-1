@@ -2,6 +2,7 @@ import { useUser } from '@auth0/nextjs-auth0/client';
 import { useEffect, useState } from 'react';
 import AppShell from '../components/AppShell';
 import { IconChevronUp, IconChevronDown, IconTrash, IconCopy } from '../components/icons';
+import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
 
 export default function Admin() {
   const { user, isLoading } = useUser();
@@ -15,6 +16,8 @@ export default function Admin() {
   const [expiresHours, setExpiresHours] = useState({});
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [theme, setTheme] = useState(DEFAULT_THEME);
+  const [themeSaved, setThemeSaved] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -30,7 +33,36 @@ export default function Admin() {
     fetch('/api/admin/viewers').then((r) => r.json()).then(setViewers);
     fetch('/api/admin/settings').then((r) => r.json()).then((d) => setVideoCount(d.count));
     fetch('/api/admin/shares').then((r) => r.json()).then(setActiveShares);
+    fetch('/api/theme').then((r) => r.json()).then(setTheme).catch(() => {});
   }, [user]);
+
+  // Live-preview a palette change across the whole page as the admin edits.
+  function previewTheme(next) {
+    setTheme(next);
+    setThemeSaved(false);
+    applyTheme(next);
+  }
+
+  function setAccent(which, value) {
+    previewTheme({ ...theme, [which]: value });
+  }
+
+  async function saveTheme() {
+    if (!isValidHex(theme.accent1) || !isValidHex(theme.accent2)) {
+      alert('Both colors must be valid #rrggbb hex values.');
+      return;
+    }
+    const res = await fetch('/api/theme', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(theme),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || `Failed to save (status ${res.status})`); return; }
+    try { localStorage.setItem('mvp_theme', JSON.stringify(theme)); } catch (e) {}
+    setThemeSaved(true);
+    setTimeout(() => setThemeSaved(false), 2000);
+  }
 
   async function addViewer() {
     if (!newViewerEmail.trim()) return;
@@ -146,6 +178,80 @@ export default function Admin() {
   return (
     <AppShell isAdmin>
       <div className="admin-stack">
+
+        {/* Appearance */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Appearance</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Choose the accent palette used across the portal for every visitor.
+          </p>
+
+          <div className="theme-preview" />
+
+          <div className="preset-grid">
+            {PRESETS.map((p) => {
+              const active = theme.accent1 === p.accent1 && theme.accent2 === p.accent2;
+              return (
+                <button
+                  key={p.name}
+                  className="preset-btn"
+                  data-active={active}
+                  onClick={() => previewTheme({ accent1: p.accent1, accent2: p.accent2 })}
+                >
+                  <span
+                    className="preset-swatch"
+                    style={{ background: `linear-gradient(135deg, ${p.accent1}, ${p.accent2})` }}
+                  />
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="color-fields">
+            <div className="color-field">
+              <label className="label">Accent 1</label>
+              <div className="color-input-wrap">
+                <input
+                  type="color"
+                  className="color-swatch"
+                  value={theme.accent1}
+                  onChange={(e) => setAccent('accent1', e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="input input-sm color-hex"
+                  value={theme.accent1}
+                  onChange={(e) => setAccent('accent1', e.target.value)}
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+
+            <div className="color-field">
+              <label className="label">Accent 2</label>
+              <div className="color-input-wrap">
+                <input
+                  type="color"
+                  className="color-swatch"
+                  value={theme.accent2}
+                  onChange={(e) => setAccent('accent2', e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="input input-sm color-hex"
+                  value={theme.accent2}
+                  onChange={(e) => setAccent('accent2', e.target.value)}
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+
+            <button onClick={saveTheme} className="btn btn-primary btn-sm">
+              {themeSaved ? 'Saved!' : 'Save palette'}
+            </button>
+          </div>
+        </div>
 
         {/* Homepage settings */}
         <div className="card admin-section">
