@@ -18,3 +18,13 @@ v1.0.6
 Auth function
 v1.0.7
 database prefix
+v1.0.8
+New modern site design (dark theme, glass header, gradient accents)
+v1.0.9
+Admin-adjustable color palette (presets + custom colors, applies to all viewers)
+v1.1.0
+Video upload in admin (direct browser-to-bunny.net upload with progress)
+v1.1.1
+Delete videos from admin
+Encoding status/progress indicator on the video library
+Drag-and-drop video upload
