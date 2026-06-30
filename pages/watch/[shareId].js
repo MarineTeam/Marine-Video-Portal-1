@@ -1,5 +1,5 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { redis } from '../../lib/redis';
+import { redis, k } from '../../lib/redis';
 import { getEmbedUrl } from '../../lib/bunny';
 
 export async function getServerSideProps({ req, res, params }) {
@@ -14,7 +14,7 @@ export async function getServerSideProps({ req, res, params }) {
     };
   }
 
-  const share = await redis.get(`share:${params.shareId}`);
+  const share = await redis.get(k(`share:${params.shareId}`));
 
   if (!share) {
     return { props: { error: 'This link has expired or does not exist.' } };

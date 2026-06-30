@@ -1,5 +1,5 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { redis } from '../../../lib/redis';
+import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
 
 export default async function handler(req, res) {
@@ -7,14 +7,14 @@ export default async function handler(req, res) {
   if (!session || !isAdmin(session?.user?.email)) return res.status(403).json({ error: 'Forbidden' });
 
   if (req.method === 'GET') {
-    const ids = await redis.smembers('active_shares');
+    const ids = await redis.smembers(k('active_shares'));
     const shares = [];
 
     for (const id of ids) {
-      const data = await redis.get(`share:${id}`);
+      const data = await redis.get(k(`share:${id}`));
       if (!data) {
         // Already expired naturally — clean up the stale reference.
-        await redis.srem('active_shares', id);
+        await redis.srem(k('active_shares'), id);
         continue;
       }
       shares.push({ shareId: id, ...data });
@@ -27,8 +27,8 @@ export default async function handler(req, res) {
   if (req.method === 'DELETE') {
     const { shareId } = req.body || {};
     if (!shareId) return res.status(400).json({ error: 'shareId required' });
-    await redis.del(`share:${shareId}`);
-    await redis.srem('active_shares', shareId);
+    await redis.del(k(`share:${shareId}`));
+    await redis.srem(k('active_shares'), shareId);
     return res.json({ ok: true });
   }
 
