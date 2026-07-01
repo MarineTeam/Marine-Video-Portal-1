@@ -45,3 +45,10 @@ Drag-to-reorder videos (replaces up/down arrows)
 Share links show a viewed/not-viewed status
 Viewer last-seen tracking
 Admin activity log
+v1.3.0
+Homepage video search for viewers
+Auto sign-out after 30 minutes idle
+API rate limiting
+Opt-in Sentry error monitoring
+Content protection info panel in admin
+CI (lint + tests + build) and smoke tests
