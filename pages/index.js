@@ -11,6 +11,7 @@ export default function Home() {
   const [query, setQuery] = useState('');
   const [collection, setCollection] = useState('');
   const [collections, setCollections] = useState([]);
+  const [progress, setProgress] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export default function Home() {
     if (!user) return;
     fetch('/api/admin/settings').then((r) => { if (r.ok) setIsAdmin(true); });
     fetch('/api/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
+    fetch('/api/progress').then((r) => (r.ok ? r.json() : [])).then(setProgress).catch(() => {});
   }, [user]);
 
   if (isLoading) {
@@ -67,8 +69,31 @@ export default function Home() {
     );
   }
 
+  const inProgress = progress
+    .filter((p) => p.seconds > 5 && (!p.duration || p.seconds < p.duration * 0.95))
+    .slice(0, 6);
+
   return (
     <AppShell isAdmin={isAdmin}>
+      {inProgress.length > 0 && (
+        <div className="continue-section">
+          <h2 className="section-heading">Continue watching</h2>
+          <div className="continue-grid">
+            {inProgress.map((p) => (
+              <a key={p.id} href={`/watch/video/${p.id}`} className="continue-card">
+                <span className="continue-title">{p.title || 'Untitled'}</span>
+                <span className="continue-bar">
+                  <span
+                    className="continue-fill"
+                    style={{ width: `${p.duration ? Math.min(100, Math.round((p.seconds / p.duration) * 100)) : 5}%` }}
+                  />
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
       {collections.length > 0 && (
         <div className="collection-chips">
           <button

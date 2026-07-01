@@ -3,6 +3,7 @@ import { redis, k } from '../../../lib/redis';
 import { listVideos, getEmbedUrl } from '../../../lib/bunny';
 import { isAdmin } from '../../../lib/auth';
 import AppShell from '../../../components/AppShell';
+import ResumablePlayer from '../../../components/ResumablePlayer';
 import { IconChevronLeft } from '../../../components/icons';
 
 export async function getServerSideProps({ req, res, params }) {
@@ -37,12 +38,13 @@ export async function getServerSideProps({ req, res, params }) {
     props: {
       embedUrl: getEmbedUrl(video.guid, 3600),
       title: video.title,
+      videoId: video.guid,
       adminUser: isAdmin(email),
     },
   };
 }
 
-export default function WatchVideo({ embedUrl, title, error, adminUser }) {
+export default function WatchVideo({ embedUrl, title, videoId, error, adminUser }) {
   return (
     <AppShell isAdmin={adminUser}>
       <div className="watch-back">
@@ -59,9 +61,7 @@ export default function WatchVideo({ embedUrl, title, error, adminUser }) {
       ) : (
         <>
           <h1 className="watch-title">{title}</h1>
-          <div className="watch-player">
-            <iframe src={embedUrl} allow="fullscreen" title={title} />
-          </div>
+          <ResumablePlayer embedUrl={embedUrl} title={title} videoId={videoId} />
         </>
       )}
     </AppShell>
