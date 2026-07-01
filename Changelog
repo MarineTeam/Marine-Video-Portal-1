@@ -52,3 +52,6 @@ API rate limiting
 Opt-in Sentry error monitoring
 Content protection info panel in admin
 CI (lint + tests + build) and smoke tests
+v1.4.0
+Video collections/categories with homepage filtering
+Resume playback and Continue-watching history
