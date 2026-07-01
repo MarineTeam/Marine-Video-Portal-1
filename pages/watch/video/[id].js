@@ -24,6 +24,8 @@ export async function getServerSideProps({ req, res, params }) {
     return { props: { error: 'Your account is not approved to view this content.', adminUser: false } };
   }
 
+  if (approved) await redis.hset(k('viewer_last_seen'), { [email]: Date.now() });
+
   const videos = await listVideos({ itemsPerPage: 100 });
   const video = videos.find((v) => v.guid === params.id);
 

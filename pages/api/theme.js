@@ -2,6 +2,7 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../lib/redis';
 import { isAdmin } from '../../lib/auth';
 import { DEFAULT_THEME, normalizeTheme, isValidHex } from '../../lib/theme';
+import { logAudit } from '../../lib/audit';
 
 export default async function handler(req, res) {
   // GET is public so the palette loads for every visitor (including the login page).
@@ -21,6 +22,7 @@ export default async function handler(req, res) {
     }
     const theme = { accent1: accent1.toLowerCase(), accent2: accent2.toLowerCase() };
     await redis.set(k('theme'), theme);
+    await logAudit(session.user.email, 'theme.update', `${theme.accent1} / ${theme.accent2}`);
     return res.json({ ok: true, ...theme });
   }
 

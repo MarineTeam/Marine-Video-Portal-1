@@ -15,6 +15,9 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'not_approved' });
   }
 
+  // Track viewer activity for the admin "last seen" column.
+  if (approved) await redis.hset(k('viewer_last_seen'), { [email]: Date.now() });
+
   const storedCount = await redis.get(k('homepage_video_count'));
   const totalLimit = storedCount ? Number(storedCount) : 2;
 

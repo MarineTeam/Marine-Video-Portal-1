@@ -1,11 +1,13 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
+import { logAudit } from '../../../lib/audit';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
-  if (!session || !isAdmin(session?.user?.email)) return res.status(403).json({ error: 'Forbidden' });
+  const actor = session?.user?.email;
+  if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
   if (req.method !== 'POST') return res.status(405).end();
 
   const { videoId, title, email, expiresInHours = 72 } = req.body || {};
@@ -21,7 +23,8 @@ export default async function handler(req, res) {
     { ex: ttlSeconds }
   );
   await redis.sadd(k('active_shares'), shareId);
-  
+  await logAudit(actor, 'share.create', `${title || videoId} → ${email}`);
+
   const watchUrl = `${process.env.AUTH0_BASE_URL}/watch/${shareId}`;
   res.json({ watchUrl, expiresInHours });
 }

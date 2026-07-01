@@ -1,8 +1,21 @@
 import { useUser } from '@auth0/nextjs-auth0/client';
 import { useEffect, useRef, useState } from 'react';
 import AppShell from '../components/AppShell';
-import { IconChevronUp, IconChevronDown, IconTrash, IconCopy } from '../components/icons';
+import { IconTrash, IconCopy, IconGrip, IconPencil, IconSearch, IconCheck, IconX } from '../components/icons';
 import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
 
 export default function Admin() {
   const { user, isLoading } = useUser();
@@ -26,9 +39,16 @@ export default function Admin() {
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const [uploadErrorMsg, setUploadErrorMsg] = useState('');
+  const [bulkEmails, setBulkEmails] = useState('');
+  const [videoQuery, setVideoQuery] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [dragOverId, setDragOverId] = useState(null);
+  const [audit, setAudit] = useState([]);
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
+  const dragIdRef = useRef(null);
 
   async function fetchVideos() {
     const r = await fetch('/api/admin/videos');
@@ -53,6 +73,12 @@ export default function Admin() {
     const t = setTimeout(() => { fetchVideos().catch(() => {}); }, 4000);
     return () => clearTimeout(t);
   }, [videos]);
+
+  // Load the audit log the first time the Activity tab is opened (and refresh on revisit).
+  useEffect(() => {
+    if (!user || tab !== 'activity') return;
+    fetch('/api/admin/audit').then((r) => (r.ok ? r.json() : [])).then(setAudit).catch(() => {});
+  }, [user, tab]);
 
   // Live-preview a palette change across the whole page as the admin edits.
   function previewTheme(next) {
@@ -227,7 +253,62 @@ export default function Admin() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
     });
-    setViewers((prev) => prev.filter((e) => e !== email));
+    setViewers((prev) => prev.filter((v) => v.email !== email));
+  }
+
+  async function addBulkViewers() {
+    const text = bulkEmails.trim();
+    if (!text) return;
+    const res = await fetch('/api/admin/viewers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emails: text }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Failed to add viewers'); return; }
+    setBulkEmails('');
+    const r = await fetch('/api/admin/viewers');
+    setViewers(await r.json());
+  }
+
+  function startRename(v) { setEditingId(v.id); setEditTitle(v.title || ''); }
+  function cancelRename() { setEditingId(null); setEditTitle(''); }
+
+  async function saveRename(v) {
+    const title = editTitle.trim();
+    if (!title) return;
+    const res = await fetch('/api/admin/videos', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: v.id, title }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(d.error || 'Rename failed');
+      return;
+    }
+    setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, title } : x)));
+    cancelRename();
+  }
+
+  function onDragStartRow(e, id) { dragIdRef.current = id; e.dataTransfer.effectAllowed = 'move'; }
+  function onDragOverRow(e, id) { e.preventDefault(); if (id !== dragOverId) setDragOverId(id); }
+  function onDragEndRow() { dragIdRef.current = null; setDragOverId(null); }
+
+  function onDropRow(e, id) {
+    e.preventDefault();
+    const fromId = dragIdRef.current;
+    dragIdRef.current = null;
+    setDragOverId(null);
+    if (!fromId || fromId === id) return;
+    const from = videos.findIndex((v) => v.id === fromId);
+    const to = videos.findIndex((v) => v.id === id);
+    if (from < 0 || to < 0) return;
+    const next = [...videos];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setVideos(next);
+    saveOrder(next.map((v) => v.id));
   }
 
   async function refreshShares() {
@@ -278,15 +359,6 @@ export default function Admin() {
     });
   }
 
-  function moveVideo(index, direction) {
-    const next = [...videos];
-    const target = index + direction;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
-    setVideos(next);
-    saveOrder(next.map((v) => v.id));
-  }
-
   function copyLink(url) {
     navigator.clipboard.writeText(url).catch(() => {});
   }
@@ -330,6 +402,9 @@ export default function Admin() {
     );
   }
 
+  const q = videoQuery.trim().toLowerCase();
+  const shownVideos = q ? videos.filter((v) => (v.title || '').toLowerCase().includes(q)) : videos;
+
   return (
     <AppShell isAdmin>
       <div className="admin-topbar">
@@ -340,6 +415,7 @@ export default function Admin() {
             { id: 'viewers', label: 'Viewers', count: viewers.length },
             { id: 'shares', label: 'Shares', count: activeShares.length },
             { id: 'settings', label: 'Settings', count: null },
+            { id: 'activity', label: 'Activity', count: null },
           ].map((t) => (
             <button
               key={t.id}
@@ -472,13 +548,28 @@ export default function Admin() {
             <button onClick={addViewer} className="btn btn-primary btn-sm">Add</button>
           </div>
 
+          <details className="bulk-add">
+            <summary>Bulk add several at once</summary>
+            <textarea
+              className="input"
+              rows={4}
+              placeholder="Paste emails separated by commas, spaces, or new lines"
+              value={bulkEmails}
+              onChange={(e) => setBulkEmails(e.target.value)}
+            />
+            <button onClick={addBulkViewers} className="btn btn-primary btn-sm" style={{ marginTop: 10 }}>
+              Add all
+            </button>
+          </details>
+
           {viewers.length > 0 ? (
             <ul className="viewer-list">
-              {viewers.map((email) => (
-                <li key={email} className="viewer-item">
-                  <span>{email}</span>
+              {viewers.map((v) => (
+                <li key={v.email} className="viewer-item">
+                  <span className="viewer-email">{v.email}</span>
+                  <span className="viewer-seen">{v.lastSeen ? `seen ${timeAgo(v.lastSeen)}` : 'never seen'}</span>
                   <button
-                    onClick={() => removeViewer(email)}
+                    onClick={() => removeViewer(v.email)}
                     className="btn btn-icon"
                     title="Remove viewer"
                   >
@@ -506,9 +597,15 @@ export default function Admin() {
               {activeShares.map((s) => (
                 <li key={s.shareId} className="share-item">
                   <div className="share-info">
-                    <span className="share-title">{s.title}</span>
+                    <span className="share-title">
+                      {s.title}
+                      {s.viewedAt
+                        ? <span className="badge badge-ok">Viewed</span>
+                        : <span className="badge badge-muted">Not viewed</span>}
+                    </span>
                     <span className="share-meta">
                       {s.email} &mdash; expires {new Date(s.expiresAt).toLocaleString()}
+                      {s.viewedAt ? ` · viewed ${timeAgo(s.viewedAt)}` : ''}
                     </span>
                   </div>
                   <button
@@ -599,39 +696,84 @@ export default function Admin() {
         <div className="card admin-section">
           <h2 className="admin-section-title">Video Library</h2>
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
-            Use the arrows to set the order videos appear on the homepage.
+            Drag the handle to set the order videos appear on the homepage.
           </p>
+
+          <div className="search-box">
+            <IconSearch className="search-icon" />
+            <input
+              className="input input-sm"
+              placeholder="Search videos…"
+              value={videoQuery}
+              onChange={(e) => setVideoQuery(e.target.value)}
+            />
+            {videoQuery && (
+              <button className="btn btn-icon" onClick={() => setVideoQuery('')} title="Clear search">
+                <IconX />
+              </button>
+            )}
+          </div>
+
+          {shownVideos.length === 0 ? (
+            <p className="text-muted mt-4">
+              {videoQuery ? 'No videos match your search.' : 'No videos yet.'}
+            </p>
+          ) : (
           <ul className="admin-video-list">
-            {videos.map((v, i) => (
-              <li key={v.id} className="admin-video-item">
+            {shownVideos.map((v) => (
+              <li
+                key={v.id}
+                className={`admin-video-item${dragOverId === v.id ? ' drag-over' : ''}`}
+                onDragOver={!q ? (e) => onDragOverRow(e, v.id) : undefined}
+                onDrop={!q ? (e) => onDropRow(e, v.id) : undefined}
+              >
                 <div className="admin-video-header">
-                  <div className="admin-video-controls">
-                    <button
-                      onClick={() => moveVideo(i, -1)}
-                      disabled={i === 0}
-                      className="btn btn-icon"
-                      title="Move up"
-                    >
-                      <IconChevronUp />
-                    </button>
-                    <button
-                      onClick={() => moveVideo(i, 1)}
-                      disabled={i === videos.length - 1}
-                      className="btn btn-icon"
-                      title="Move down"
-                    >
-                      <IconChevronDown />
-                    </button>
-                  </div>
-                  <span className="admin-video-title">{v.title}</span>
-                  {videoStatusBadge(v)}
-                  <button
-                    onClick={() => removeVideo(v)}
-                    className="btn btn-icon"
-                    title="Delete video"
+                  <span
+                    className="drag-handle"
+                    draggable={!q}
+                    onDragStart={(e) => onDragStartRow(e, v.id)}
+                    onDragEnd={onDragEndRow}
+                    title={q ? 'Clear search to reorder' : 'Drag to reorder'}
                   >
-                    <IconTrash />
-                  </button>
+                    <IconGrip />
+                  </span>
+
+                  {editingId === v.id ? (
+                    <>
+                      <input
+                        className="input input-sm"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveRename(v);
+                          if (e.key === 'Escape') cancelRename();
+                        }}
+                        autoFocus
+                        style={{ flex: 1 }}
+                      />
+                      <button onClick={() => saveRename(v)} className="btn btn-icon" title="Save">
+                        <IconCheck />
+                      </button>
+                      <button onClick={cancelRename} className="btn btn-icon" title="Cancel">
+                        <IconX />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="admin-video-title">{v.title}</span>
+                      {videoStatusBadge(v)}
+                      <button onClick={() => startRename(v)} className="btn btn-icon" title="Rename">
+                        <IconPencil />
+                      </button>
+                      <button
+                        onClick={() => removeVideo(v)}
+                        className="btn btn-icon"
+                        title="Delete video"
+                      >
+                        <IconTrash />
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 <div className="admin-video-share">
@@ -677,6 +819,32 @@ export default function Admin() {
               </li>
             ))}
           </ul>
+          )}
+        </div>
+        </>
+        )}
+
+        {tab === 'activity' && (
+        <>
+        {/* Activity log */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Activity Log</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            The 100 most recent admin actions.
+          </p>
+          {audit.length === 0 ? (
+            <p className="text-muted">No recorded activity yet.</p>
+          ) : (
+            <ul className="audit-list">
+              {audit.map((a, i) => (
+                <li key={i} className="audit-item">
+                  <span className="audit-action">{a.action}</span>
+                  {a.detail && <span className="audit-detail">{a.detail}</span>}
+                  <span className="audit-meta">{a.actor} · {timeAgo(a.at)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         </>
         )}

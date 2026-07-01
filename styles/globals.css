@@ -408,6 +408,79 @@ a { color: inherit; text-decoration: none; }
 }
 .admin-tab.active .tab-count { background: rgba(4, 18, 31, 0.2); color: #04121f; }
 
+/* Bulk add */
+.bulk-add { margin-top: 14px; }
+.bulk-add summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  user-select: none;
+  width: max-content;
+}
+.bulk-add summary:hover { color: var(--fg); }
+.bulk-add textarea { margin-top: 10px; resize: vertical; font-family: inherit; line-height: 1.5; }
+
+/* Viewer rows with last-seen */
+.viewer-item { gap: 10px; }
+.viewer-email { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.viewer-seen { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+
+/* Library search */
+.search-box { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; position: relative; }
+.search-box .search-icon { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
+.search-box .input { flex: 1; }
+
+/* Drag-to-reorder */
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: var(--muted);
+  cursor: grab;
+  border-radius: 7px;
+  flex-shrink: 0;
+}
+.drag-handle:hover { color: var(--fg); background: var(--surface-2); }
+.drag-handle:active { cursor: grabbing; }
+.drag-handle svg { width: 18px; height: 18px; }
+.admin-video-item.drag-over { border-color: var(--accent-1); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* Share viewed badges */
+.share-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.badge-ok {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.badge-muted {
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+/* Activity log */
+.audit-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.audit-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+}
+.audit-action {
+  font-weight: 600;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--accent-1);
+  white-space: nowrap;
+}
+.audit-detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.audit-meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; margin-left: auto; }
+
 .admin-section-title {
   font-size: 17px;
   font-weight: 600;

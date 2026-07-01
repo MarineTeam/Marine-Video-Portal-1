@@ -30,6 +30,12 @@ export async function getServerSideProps({ req, res, params }) {
     };
   }
 
+  // Record the first view, preserving the link's remaining time-to-live.
+  if (!share.viewedAt) {
+    const remaining = Math.max(1, Math.ceil((share.expiresAt - Date.now()) / 1000));
+    await redis.set(k(`share:${params.shareId}`), { ...share, viewedAt: Date.now() }, { ex: remaining });
+  }
+
   return {
     props: {
       embedUrl: getEmbedUrl(share.videoId, 3600),
