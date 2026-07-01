@@ -55,3 +55,6 @@ CI (lint + tests + build) and smoke tests
 v1.4.0
 Video collections/categories with homepage filtering
 Resume playback and Continue-watching history
+v1.5.0
+Video thumbnails on the homepage grid and admin library
+Analytics dashboard (views, watch time, 30-day chart, most-watched)
