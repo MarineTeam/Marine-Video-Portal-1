@@ -37,3 +37,11 @@ v1.1.4
 New uploads show on top by default (newest first)
 v1.1.5
 Tabbed admin page (Videos, Viewers, Shares, Settings) for easier navigation
+v1.2.0
+Bulk-add approved viewers
+Rename videos from the admin library
+Search/filter the video library
+Drag-to-reorder videos (replaces up/down arrows)
+Share links show a viewed/not-viewed status
+Viewer last-seen tracking
+Admin activity log
