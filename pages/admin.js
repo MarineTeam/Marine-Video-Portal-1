@@ -1,8 +1,24 @@
 import { useUser } from '@auth0/nextjs-auth0/client';
+import { getSession } from '@auth0/nextjs-auth0';
 import { useEffect, useRef, useState } from 'react';
 import AppShell from '../components/AppShell';
 import { IconTrash, IconCopy, IconGrip, IconPencil, IconSearch, IconCheck, IconX } from '../components/icons';
 import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
+import { isAdmin as isAdminEmail } from '../lib/auth';
+
+// Server-side gate: only admins can load the admin page at all. The client-side
+// checks and per-route 403s remain as defense in depth, but this stops a
+// logged-in non-admin from ever receiving the admin UI shell.
+export async function getServerSideProps({ req, res }) {
+  const session = await getSession(req, res);
+  if (!session) {
+    return { redirect: { destination: '/api/auth/login?returnTo=/admin', permanent: false } };
+  }
+  if (!isAdminEmail(session.user?.email)) {
+    return { redirect: { destination: '/', permanent: false } };
+  }
+  return { props: {} };
+}
 
 function timeAgo(ts) {
   if (!ts) return '';
