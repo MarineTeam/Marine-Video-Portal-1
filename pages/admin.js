@@ -528,6 +528,40 @@ export default function Admin() {
             </button>
           </div>
         </div>
+
+        {/* Content protection */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Content Protection</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            How this portal keeps videos private.
+          </p>
+          <ul className="protection-list">
+            <li>
+              <span className="dot dot-ok" />
+              Every play uses a fresh signed, time-limited token — never a public URL.
+            </li>
+            <li>
+              <span className="dot dot-ok" />
+              Share links require login and an email match before the video plays.
+            </li>
+            <li>
+              <span className="dot dot-warn" />
+              Direct bunny.net CDN file URLs stay public unless you enable{' '}
+              <strong>Block Direct URL File Access</strong> in your bunny.net library&rsquo;s Security
+              settings. This app never exposes those URLs, but enabling it closes the gap for anyone
+              who obtains one.
+            </li>
+          </ul>
+          <a
+            className="btn btn-outline btn-sm"
+            href="https://dash.bunny.net/stream"
+            target="_blank"
+            rel="noreferrer"
+            style={{ marginTop: 14 }}
+          >
+            Open bunny.net dashboard
+          </a>
+        </div>
         </>
         )}
 

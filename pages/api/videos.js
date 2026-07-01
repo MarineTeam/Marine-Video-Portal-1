@@ -3,10 +3,15 @@ import { listVideos } from '../../lib/bunny';
 import { redis, k } from '../../lib/redis';
 import { getOrder, applyOrder } from '../../lib/order';
 import { isAdmin } from '../../lib/auth';
+import { allow, callerId } from '../../lib/ratelimit';
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
   if (!session) return res.status(401).json({ error: 'Not logged in' });
+
+  if (!(await allow(callerId(req, session, 'videos')))) {
+    return res.status(429).json({ error: 'Too many requests — slow down.' });
+  }
 
   const email = session.user.email.toLowerCase();
   const approved = await redis.sismember(k('approved_viewers'), email);
@@ -21,10 +26,14 @@ export default async function handler(req, res) {
   const storedCount = await redis.get(k('homepage_video_count'));
   const totalLimit = storedCount ? Number(storedCount) : 2;
 
+  const q = (req.query.q || '').trim().toLowerCase();
   const fetched = await listVideos({ itemsPerPage: 100 });
   const order = await getOrder();
   const ordered = applyOrder(fetched, order);
-  const allVideos = ordered.slice(0, totalLimit);
+  // A search looks across the whole library; otherwise respect the homepage cap.
+  const allVideos = q
+    ? ordered.filter((v) => (v.title || '').toLowerCase().includes(q))
+    : ordered.slice(0, totalLimit);
 
   const page = parseInt(req.query.page) || 1;
   const perPage = 10;

@@ -1,24 +1,32 @@
 import { useUser } from '@auth0/nextjs-auth0/client';
 import { useEffect, useState } from 'react';
 import AppShell from '../components/AppShell';
-import { IconPlay, IconLock } from '../components/icons';
+import { IconPlay, IconLock, IconSearch, IconX } from '../components/icons';
 
 export default function Home() {
   const { user, isLoading } = useUser();
   const [data, setData] = useState({ videos: [], page: 1, totalPages: 1 });
   const [notApproved, setNotApproved] = useState(false);
   const [page, setPage] = useState(1);
+  const [query, setQuery] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     setNotApproved(false);
-    fetch(`/api/videos?page=${page}`).then((r) => {
-      if (r.status === 403) { setNotApproved(true); return; }
-      r.json().then(setData);
-    });
+    const t = setTimeout(() => {
+      fetch(`/api/videos?page=${page}&q=${encodeURIComponent(query)}`).then((r) => {
+        if (r.status === 403) { setNotApproved(true); return; }
+        r.json().then(setData);
+      });
+    }, query ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [user, page, query]);
+
+  useEffect(() => {
+    if (!user) return;
     fetch('/api/admin/settings').then((r) => { if (r.ok) setIsAdmin(true); });
-  }, [user, page]);
+  }, [user]);
 
   if (isLoading) {
     return (
@@ -58,8 +66,25 @@ export default function Home() {
 
   return (
     <AppShell isAdmin={isAdmin}>
+      <div className="search-box">
+        <IconSearch className="search-icon" />
+        <input
+          className="input input-sm"
+          placeholder="Search videos…"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+        />
+        {query && (
+          <button className="btn btn-icon" onClick={() => { setQuery(''); setPage(1); }} title="Clear search">
+            <IconX />
+          </button>
+        )}
+      </div>
+
       {data.videos.length === 0 ? (
-        <p className="text-muted">No videos have been published yet.</p>
+        <p className="text-muted">
+          {query ? 'No videos match your search.' : 'No videos have been published yet.'}
+        </p>
       ) : (
         <ul className="video-list">
           {data.videos.map((v) => (

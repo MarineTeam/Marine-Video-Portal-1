@@ -459,6 +459,27 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--border);
 }
 
+/* Content protection */
+.protection-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.protection-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.protection-list strong { color: var(--fg); font-weight: 600; }
+.protection-list .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+.dot-ok { background: #6ee7b7; box-shadow: 0 0 8px rgba(16, 185, 129, 0.5); }
+.dot-warn { background: #fbbf24; box-shadow: 0 0 8px rgba(251, 191, 36, 0.5); }
+
 /* Activity log */
 .audit-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .audit-item {
