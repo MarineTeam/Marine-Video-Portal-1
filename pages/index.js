@@ -9,23 +9,26 @@ export default function Home() {
   const [notApproved, setNotApproved] = useState(false);
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
+  const [collection, setCollection] = useState('');
+  const [collections, setCollections] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     setNotApproved(false);
     const t = setTimeout(() => {
-      fetch(`/api/videos?page=${page}&q=${encodeURIComponent(query)}`).then((r) => {
+      fetch(`/api/videos?page=${page}&q=${encodeURIComponent(query)}&collection=${encodeURIComponent(collection)}`).then((r) => {
         if (r.status === 403) { setNotApproved(true); return; }
         r.json().then(setData);
       });
     }, query ? 300 : 0);
     return () => clearTimeout(t);
-  }, [user, page, query]);
+  }, [user, page, query, collection]);
 
   useEffect(() => {
     if (!user) return;
     fetch('/api/admin/settings').then((r) => { if (r.ok) setIsAdmin(true); });
+    fetch('/api/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
   }, [user]);
 
   if (isLoading) {
@@ -66,13 +69,33 @@ export default function Home() {
 
   return (
     <AppShell isAdmin={isAdmin}>
+      {collections.length > 0 && (
+        <div className="collection-chips">
+          <button
+            className={`chip${collection === '' ? ' active' : ''}`}
+            onClick={() => { setCollection(''); setQuery(''); setPage(1); }}
+          >
+            All
+          </button>
+          {collections.map((c) => (
+            <button
+              key={c.id}
+              className={`chip${collection === c.id ? ' active' : ''}`}
+              onClick={() => { setCollection(c.id); setQuery(''); setPage(1); }}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="search-box">
         <IconSearch className="search-icon" />
         <input
           className="input input-sm"
           placeholder="Search videos…"
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+          onChange={(e) => { setQuery(e.target.value); setCollection(''); setPage(1); }}
         />
         {query && (
           <button className="btn btn-icon" onClick={() => { setQuery(''); setPage(1); }} title="Clear search">

@@ -27,13 +27,20 @@ export default async function handler(req, res) {
   const totalLimit = storedCount ? Number(storedCount) : 2;
 
   const q = (req.query.q || '').trim().toLowerCase();
+  const collection = (req.query.collection || '').trim();
   const fetched = await listVideos({ itemsPerPage: 100 });
   const order = await getOrder();
   const ordered = applyOrder(fetched, order);
-  // A search looks across the whole library; otherwise respect the homepage cap.
-  const allVideos = q
-    ? ordered.filter((v) => (v.title || '').toLowerCase().includes(q))
-    : ordered.slice(0, totalLimit);
+  // A search or collection filter looks across the whole library; the default
+  // (unfiltered) view respects the admin's homepage cap.
+  let allVideos;
+  if (q) {
+    allVideos = ordered.filter((v) => (v.title || '').toLowerCase().includes(q));
+  } else if (collection) {
+    allVideos = ordered.filter((v) => v.collectionId === collection);
+  } else {
+    allVideos = ordered.slice(0, totalLimit);
+  }
 
   const page = parseInt(req.query.page) || 1;
   const perPage = 10;

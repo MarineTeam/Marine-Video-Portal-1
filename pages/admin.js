@@ -45,6 +45,8 @@ export default function Admin() {
   const [editTitle, setEditTitle] = useState('');
   const [dragOverId, setDragOverId] = useState(null);
   const [audit, setAudit] = useState([]);
+  const [collections, setCollections] = useState([]);
+  const [newCollection, setNewCollection] = useState('');
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
@@ -64,6 +66,7 @@ export default function Admin() {
     fetch('/api/admin/settings').then((r) => r.json()).then((d) => setVideoCount(d.count));
     fetch('/api/admin/shares').then((r) => r.json()).then(setActiveShares);
     fetch('/api/theme').then((r) => r.json()).then(setTheme).catch(() => {});
+    fetch('/api/admin/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
   }, [user]);
 
   // While any video is still encoding (status 0–3), re-poll so progress updates.
@@ -289,6 +292,42 @@ export default function Admin() {
     }
     setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, title } : x)));
     cancelRename();
+  }
+
+  async function addCollection() {
+    const name = newCollection.trim();
+    if (!name) return;
+    const res = await fetch('/api/admin/collections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Failed to create collection'); return; }
+    setNewCollection('');
+    setCollections((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+  }
+
+  async function removeCollection(id) {
+    if (!confirm('Delete this collection? Videos stay, but become uncategorized.')) return;
+    const res = await fetch('/api/admin/collections', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Failed to delete'); return; }
+    setCollections((prev) => prev.filter((c) => c.id !== id));
+    setVideos((prev) => prev.map((v) => (v.collectionId === id ? { ...v, collectionId: '' } : v)));
+  }
+
+  async function assignCollection(v, collectionId) {
+    const res = await fetch('/api/admin/videos', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: v.id, collectionId }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Failed to update'); return; }
+    setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, collectionId } : x)));
   }
 
   function onDragStartRow(e, id) { dragIdRef.current = id; e.dataTransfer.effectAllowed = 'move'; }
@@ -726,6 +765,41 @@ export default function Admin() {
           </div>
         </div>
 
+        {/* Collections */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Collections</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Group videos into categories. Viewers can filter the homepage by collection.
+          </p>
+          <div className="admin-row">
+            <input
+              className="input input-sm"
+              placeholder="New collection name"
+              value={newCollection}
+              onChange={(e) => setNewCollection(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addCollection()}
+            />
+            <button onClick={addCollection} className="btn btn-primary btn-sm">Add</button>
+          </div>
+          {collections.length > 0 && (
+            <ul className="viewer-list">
+              {collections.map((c) => (
+                <li key={c.id} className="viewer-item">
+                  <span className="viewer-email">{c.name}</span>
+                  <span className="viewer-seen">{c.videoCount ?? 0} videos</span>
+                  <button
+                    onClick={() => removeCollection(c.id)}
+                    className="btn btn-icon"
+                    title="Delete collection"
+                  >
+                    <IconTrash />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         {/* Video library */}
         <div className="card admin-section">
           <h2 className="admin-section-title">Video Library</h2>
@@ -809,6 +883,22 @@ export default function Admin() {
                     </>
                   )}
                 </div>
+
+                {collections.length > 0 && (
+                  <div className="admin-video-collection">
+                    <label className="collection-label">Collection</label>
+                    <select
+                      className="input input-sm"
+                      value={v.collectionId || ''}
+                      onChange={(e) => assignCollection(v, e.target.value)}
+                    >
+                      <option value="">No collection</option>
+                      {collections.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="admin-video-share">
                   <input

@@ -1,5 +1,5 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { listVideos, deleteVideo, updateVideoTitle } from '../../../lib/bunny';
+import { listVideos, deleteVideo, updateVideoTitle, setVideoCollection } from '../../../lib/bunny';
 import { getOrder, setOrder, applyOrder } from '../../../lib/order';
 import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
@@ -21,21 +21,27 @@ export default async function handler(req, res) {
         dateUploaded: v.dateUploaded,
         status: v.status,
         encodeProgress: v.encodeProgress,
+        collectionId: v.collectionId || '',
       }))
     );
   }
 
   if (req.method === 'PUT') {
-    const { id, title } = req.body || {};
-    if (!id || !title || !title.trim()) {
-      return res.status(400).json({ error: 'id and title are required' });
-    }
+    const { id, title, collectionId } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'id required' });
     try {
-      await updateVideoTitle(id, title.trim());
+      if (typeof collectionId === 'string') {
+        await setVideoCollection(id, collectionId);
+        await logAudit(actor, 'video.collection', `${id} → ${collectionId || 'none'}`);
+      } else if (title && title.trim()) {
+        await updateVideoTitle(id, title.trim());
+        await logAudit(actor, 'video.rename', `${id} → ${title.trim()}`);
+      } else {
+        return res.status(400).json({ error: 'title or collectionId required' });
+      }
     } catch (e) {
-      return res.status(502).json({ error: e.message || 'Failed to rename video' });
+      return res.status(502).json({ error: e.message || 'Update failed' });
     }
-    await logAudit(actor, 'video.rename', `${id} → ${title.trim()}`);
     return res.json({ ok: true });
   }
 
