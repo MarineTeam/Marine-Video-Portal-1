@@ -1,5 +1,5 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { listVideos, deleteVideo, updateVideoTitle, setVideoCollection } from '../../../lib/bunny';
+import { listVideos, deleteVideo, updateVideoTitle, setVideoCollection, getThumbnailUrl } from '../../../lib/bunny';
 import { getOrder, setOrder, applyOrder } from '../../../lib/order';
 import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
@@ -22,6 +22,8 @@ export default async function handler(req, res) {
         status: v.status,
         encodeProgress: v.encodeProgress,
         collectionId: v.collectionId || '',
+        thumbnail: getThumbnailUrl(v),
+        views: v.views || 0,
       }))
     );
   }

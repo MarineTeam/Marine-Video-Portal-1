@@ -1,5 +1,5 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { listVideos } from '../../lib/bunny';
+import { listVideos, getThumbnailUrl } from '../../lib/bunny';
 import { redis, k } from '../../lib/redis';
 import { getOrder, applyOrder } from '../../lib/order';
 import { isAdmin } from '../../lib/auth';
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
   const pageVideos = allVideos.slice(start, start + perPage);
 
   res.json({
-    videos: pageVideos.map((v) => ({ id: v.guid, title: v.title })),
+    videos: pageVideos.map((v) => ({ id: v.guid, title: v.title, thumbnail: getThumbnailUrl(v) })),
     page,
     totalPages: Math.max(1, Math.ceil(allVideos.length / perPage)),
   });

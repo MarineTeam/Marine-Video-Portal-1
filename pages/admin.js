@@ -17,6 +17,17 @@ function timeAgo(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
+function formatNumber(n) {
+  return (n || 0).toLocaleString();
+}
+
+function formatDuration(seconds) {
+  const s = Math.floor(seconds || 0);
+  const m = Math.floor(s / 60);
+  if (m >= 60) return `${Math.floor(m / 60)}h ${m % 60}m`;
+  return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+
 export default function Admin() {
   const { user, isLoading } = useUser();
   const [videos, setVideos] = useState([]);
@@ -45,6 +56,7 @@ export default function Admin() {
   const [editTitle, setEditTitle] = useState('');
   const [dragOverId, setDragOverId] = useState(null);
   const [audit, setAudit] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
   const [collections, setCollections] = useState([]);
   const [newCollection, setNewCollection] = useState('');
   const fileInputRef = useRef(null);
@@ -81,6 +93,12 @@ export default function Admin() {
   useEffect(() => {
     if (!user || tab !== 'activity') return;
     fetch('/api/admin/audit').then((r) => (r.ok ? r.json() : [])).then(setAudit).catch(() => {});
+  }, [user, tab]);
+
+  // Load analytics when the Analytics tab is opened (and refresh on revisit).
+  useEffect(() => {
+    if (!user || tab !== 'analytics') return;
+    fetch('/api/admin/analytics').then((r) => (r.ok ? r.json() : null)).then(setAnalytics).catch(() => {});
   }, [user, tab]);
 
   // Live-preview a palette change across the whole page as the admin edits.
@@ -455,6 +473,7 @@ export default function Admin() {
             { id: 'shares', label: 'Shares', count: activeShares.length },
             { id: 'settings', label: 'Settings', count: null },
             { id: 'activity', label: 'Activity', count: null },
+            { id: 'analytics', label: 'Analytics', count: null },
           ].map((t) => (
             <button
               key={t.id}
@@ -836,6 +855,15 @@ export default function Admin() {
                 onDrop={!q ? (e) => onDropRow(e, v.id) : undefined}
               >
                 <div className="admin-video-header">
+                  {v.thumbnail && (
+                    <img
+                      className="admin-video-thumb"
+                      src={v.thumbnail}
+                      alt=""
+                      loading="lazy"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  )}
                   <span
                     className="drag-handle"
                     draggable={!q}
@@ -968,6 +996,73 @@ export default function Admin() {
                 </li>
               ))}
             </ul>
+          )}
+        </div>
+        </>
+        )}
+
+        {tab === 'analytics' && (
+        <>
+        {/* Analytics */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Analytics</h2>
+          {!analytics ? (
+            <p className="text-muted">Loading…</p>
+          ) : (
+            <>
+              <div className="stat-grid">
+                <div className="stat-card">
+                  <span className="stat-value">{formatNumber(analytics.totalViews)}</span>
+                  <span className="stat-label">Total views</span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-value">{formatNumber(analytics.last30Views)}</span>
+                  <span className="stat-label">Views · 30 days</span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-value">{analytics.totalWatchHours}h</span>
+                  <span className="stat-label">Watch time</span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-value">{formatNumber(analytics.videoCount)}</span>
+                  <span className="stat-label">Videos</span>
+                </div>
+              </div>
+
+              {analytics.chart && analytics.chart.length > 0 && (
+                <div className="analytics-chart">
+                  <div className="chart-heading">Views · last 30 days</div>
+                  <div className="chart-bars">
+                    {(() => {
+                      const max = Math.max(...analytics.chart.map((d) => d.count), 1);
+                      return analytics.chart.map((d) => (
+                        <span
+                          key={d.date}
+                          className="chart-bar"
+                          style={{ height: `${Math.max(2, Math.round((d.count / max) * 100))}%` }}
+                          title={`${d.date}: ${d.count} views`}
+                        />
+                      ));
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              <h3 className="analytics-subhead">Most watched</h3>
+              {analytics.topVideos.length === 0 ? (
+                <p className="text-muted">No views recorded yet.</p>
+              ) : (
+                <ul className="analytics-list">
+                  {analytics.topVideos.map((v) => (
+                    <li key={v.id} className="analytics-row">
+                      <span className="analytics-title">{v.title}</span>
+                      {v.length > 0 && <span className="analytics-dur">{formatDuration(v.length)}</span>}
+                      <span className="analytics-views">{formatNumber(v.views)} views</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </div>
         </>

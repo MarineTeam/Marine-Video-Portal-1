@@ -73,6 +73,8 @@ export default function Home() {
     .filter((p) => p.seconds > 5 && (!p.duration || p.seconds < p.duration * 0.95))
     .slice(0, 6);
 
+  const hasThumbs = data.videos.some((v) => v.thumbnail);
+
   return (
     <AppShell isAdmin={isAdmin}>
       {inProgress.length > 0 && (
@@ -133,6 +135,25 @@ export default function Home() {
         <p className="text-muted">
           {query ? 'No videos match your search.' : 'No videos have been published yet.'}
         </p>
+      ) : hasThumbs ? (
+        <div className="video-grid">
+          {data.videos.map((v) => (
+            <a key={v.id} href={`/watch/video/${v.id}`} className="video-card">
+              <span className="video-card-thumb">
+                {v.thumbnail && (
+                  <img
+                    src={v.thumbnail}
+                    alt=""
+                    loading="lazy"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                )}
+                <span className="video-card-play"><IconPlay /></span>
+              </span>
+              <span className="video-card-title">{v.title || 'Untitled'}</span>
+            </a>
+          ))}
+        </div>
       ) : (
         <ul className="video-list">
           {data.videos.map((v) => (
