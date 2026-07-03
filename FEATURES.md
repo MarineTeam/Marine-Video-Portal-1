@@ -1,45 +1,79 @@
-# Private Video Portal — Features
+# Marine Video Portal — Features
+
+Current as of **v1.5.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
-- Two-tier access: **admins** (fixed email list via `ADMIN_EMAILS`) and **approved viewers** (managed live by admins, no redeploy needed).
-- Logged-in users who aren't approved viewers see a clear "not approved" message instead of any video data.
-- Centralized admin-check logic in a single shared helper (`lib/auth.js`) — used by every protected route, so there's one place to update if the rule ever changes.
-- Auth0 sign-ups can be disabled tenant-wide (via Auth0's Database connection settings) so random strangers can't create their own account and reach the "not approved" screen at all.
+- Two-tier access: **admins** (fixed `ADMIN_EMAILS` list) and **approved viewers** (managed live by admins, no redeploy needed).
+- Logged-in users who aren't approved see a clear "not approved" message instead of any video data.
+- **Server-side admin gate** — `/admin` checks the session + admin email in `getServerSideProps` and redirects non-admins before any admin UI is sent; every `/api/admin/*` route also independently returns `403`.
+- Centralized admin-check logic in one shared helper (`lib/auth.js`).
+- **Auto sign-out after 30 minutes of inactivity** (protects a portal left open on a shared machine).
+- **API rate limiting** (sliding window) on the video list, upload, and share-creation endpoints; fails open so an infrastructure hiccup never blocks real users.
+- Auth0 sign-ups can be disabled tenant-wide so strangers can't self-register.
 
-## Homepage
-- Shows a list of video titles (not embedded players) — clicking a title opens a dedicated watch page.
-- **Admin-adjustable video count** — admin sets exactly how many videos are visible in total; enforced as a hard cap in code (not just requested from bunny.net, since bunny's API doesn't reliably honor it as a strict limit).
-- **Admin-controlled custom ordering** — videos appear in whatever order the admin sets (↑/↓ controls in `/admin`), not just bunny's upload-date order, since bunny.net has no native reordering feature.
-- **Pagination** — 10 videos per page, with Previous/Next controls, once the visible count exceeds 10.
-- Autoplay disabled on all embedded video players.
+## Homepage & viewer experience
+- **Modern dark design** — glassmorphism, gradient accents, Inter typography.
+- **Admin-adjustable color palette** _(admin)_ — 7 presets plus custom hex colors, applied to **all** visitors; cached client-side with a no-flash pre-paint script so returning visitors never see a color flicker.
+- **Video thumbnails** — the homepage upgrades to a responsive **thumbnail grid** (16:9 cards with a play overlay) when thumbnails are configured, and falls back to a clean title list otherwise. The admin library shows thumbnails too. Thumbnail URLs are **CDN token-signed** so they work with "Block Direct URL File Access" enabled.
+- **Search** — viewers can search the whole library by title (debounced).
+- **Collections / categories** — filter the homepage by collection via chips.
+- **Resume playback & Continue-watching** — videos remember where each viewer left off (via player.js); the homepage shows a Continue-watching strip with progress bars. Degrades gracefully if the player protocol is unavailable.
+- **Admin-adjustable video count** _(admin)_ — hard cap enforced in code (bunny.net's API doesn't honor it as a strict limit).
+- **Custom ordering** _(admin)_ — drag-to-reorder; newly uploaded videos float to the top (newest first) until placed.
+- **Pagination** — 10 per page with Previous/Next.
+- Autoplay disabled on all embedded players.
 
 ## Video playback & security
-- Every video play uses a **signed, time-limited bunny.net embed token**, generated fresh per request — never a permanent or public URL.
-- Direct bunny.net CDN file URLs (`*.b-cdn.net/.../playlist.m3u8`, `play_720p.mp4`, etc.) are never used or exposed by the app. (Documented separately: these are public by default unless bunny's own "Block Direct URL File Access" setting is enabled — unrelated to anything this app does, but worth knowing.)
+- Every play uses a **signed, time-limited bunny.net embed token**, generated fresh per request — never a permanent or public URL.
+- Direct bunny.net CDN file URLs are never used or exposed by the app.
+- Thumbnail requests carry the site's `Referer`, so hotlink protection blocks direct/off-site access while the app still works.
 
-## Private share links (per-recipient sharing)
-- Admin can generate a one-off private link for any video, tied to a specific recipient's email address.
-- **Forced login required** — opening the link requires an Auth0 login, and the video only plays if the logged-in email matches the one the admin specified when creating the link.
-- Wrong-account attempts show a generic mismatch message — **the intended recipient's email is never revealed** in that error, to prevent leaking it to someone who guesses or forwards the link.
-- **Adjustable expiry per link** — admin sets hours until expiry when creating it (defaults to 72, capped at 720 / 30 days).
-- **Active link visibility** — admin panel lists every currently live share link with its recipient and exact expiry time.
-- **Instant revocation** — admin can kill any active link immediately, before its natural expiry, with one click.
-- Expired or revoked links show a clean "expired or doesn't exist" message rather than erroring.
+## Video management _(admin)_
+- **Upload directly from the browser to bunny.net** — TUS resumable upload with a progress bar, **drag-and-drop**, and **cancel/retry** for in-progress uploads (a cancelled upload cleans up its half-created video).
+- **Encoding status** — per-video "Processing %" / "Failed" badges, auto-refreshing while anything is encoding.
+- **Rename** videos inline.
+- **Delete** videos (removes from bunny.net and prunes them from the saved order).
+- **Drag-to-reorder** the library.
+- **Search/filter** the library.
+- **Collections** — create/delete collections and assign each video to one.
 
-## Admin panel (`/admin`)
-- Homepage video count setting.
-- Approved viewer management (add/remove emails).
-- Video library list with reorder controls and per-video share-link creation.
-- Active share link list with revoke buttons.
-- All admin API routes return 403 for non-admin accounts rather than exposing any data.
+## Private share links (per-recipient sharing) _(admin)_
+- Generate a one-off private link for any video, tied to a specific recipient email.
+- **Forced login** — opening the link requires an Auth0 login and only plays if the logged-in email matches the one specified.
+- Wrong-account attempts show a generic mismatch message — **the intended recipient's email is never revealed**.
+- **Adjustable expiry** per link (default 72 hours, capped at 720 / 30 days).
+- **Viewed status** — each active link shows whether the recipient has opened it yet (stamped on first play, preserving remaining TTL).
+- **Active link visibility** — every live link with recipient and exact expiry.
+- **Instant revocation** — kill any active link immediately, one click.
+- Expired/revoked links show a clean "expired or doesn't exist" message.
 
-## Infrastructure
-- Hosted entirely on Vercel; dependencies installed automatically during deploy (no local Node/npm setup required).
-- Settings, approved-viewer list, video order, and share-link records are all stored in a Redis database (Upstash, connected via Vercel Storage) — editable live from `/admin` without redeploying.
-- Usage stays well within typical free-tier database command limits at moderate traffic (~1,000 visits/day ≈ 150,000 Redis commands/month against a 500,000 ceiling); notes included on migrating low-write settings data to Vercel Edge Config if traffic grows substantially (10,000+ daily visits).
+## People & oversight _(admin)_
+- **Approved viewer management** — add/remove emails, with **bulk add** (paste comma/space/newline-separated lists; validated + deduped).
+- **Viewer last-seen** — each viewer's most recent activity time.
+- **Activity / audit log** — the most recent admin actions (viewer add/remove, share create/revoke, video rename/delete, collection create/delete, settings, palette), each with actor and time. Logging is best-effort so it never breaks the underlying action.
+- **Analytics dashboard** — total views, 30-day views, watch time, video count, a 30-day views bar chart, and a most-watched list (from bunny.net video stats + the statistics API).
+- **Content-protection panel** — explains the tokenized-playback model and the bunny.net "Block Direct URL File Access" setting.
 
-## Not yet implemented
-- Automatic email delivery of share links (admin currently copies the generated link and sends it manually).
-- Bulk actions (e.g. approving/removing multiple viewers at once, bulk re-sharing).
-- Visibility into *who has requested access but hasn't been approved yet* (currently admins must already know who to approve).
+## Admin panel structure _(admin)_
+- **Tabbed layout** — Videos, Viewers, Shares, Settings, Activity, Analytics — so admins jump straight to a section instead of one long scroll. Live count badges on Viewers/Shares.
+- All admin API routes return `403` for non-admins rather than exposing any data.
+
+## Platform, quality & observability
+- Hosted on Vercel; dependencies install automatically during deploy (no local Node/npm required to ship).
+- Settings, viewers, order, collections, share records, watch history, and the audit log are stored in Upstash Redis (via Vercel Storage), editable live from `/admin` without redeploying. All keys are namespaced with a `pvp:` prefix.
+- **Opt-in Sentry error monitoring** — client/server/edge configs; inert until `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` are set.
+- **CI pipeline** — GitHub Actions runs lint + tests + build on every push/PR to `main`, catching breakage before Vercel deploys.
+- **Smoke tests** — Vitest coverage for the auth check, video-ordering logic, and theme helpers.
+
+## Configuration knobs (environment)
+- `BUNNY_CDN_HOSTNAME` — enables thumbnails.
+- `BUNNY_CDN_TOKEN_KEY` — signs thumbnail URLs when the pull-zone token key differs from the embed key.
+- `SENTRY_*` — enable error monitoring and source-map upload.
+
+## Known gaps / not yet implemented
+- **Automatic email delivery of share links** (admin still copies the link and sends it manually).
+- **Access-request flow** — no self-serve way for unapproved users to request access; admins must know who to add.
+- **`email_verified` enforcement** — access checks trust the email claim; pair with Auth0 sign-up controls (see Security notes in the README).
+- **In-app admin management** — admins are configured via `ADMIN_EMAILS`, not the UI.
+- **Captions/transcripts, comments/ratings, scheduled publish/expiry** — not implemented.
