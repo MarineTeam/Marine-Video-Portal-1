@@ -3,7 +3,21 @@ import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_EMAIL_LENGTH = 254; // RFC 5321 practical limit
+
+// Plain string ops instead of a single regex: the previous
+// /^[^\s@]+@[^\s@]+\.[^\s@]+$/ didn't exclude '.' from its char classes, so
+// the boundary before the literal '.' was ambiguous — a crafted string in a
+// bulk-paste input could cause polynomial-time backtracking. This is linear.
+function isLikelyEmail(s) {
+  if (typeof s !== 'string' || s.length === 0 || s.length > MAX_EMAIL_LENGTH) return false;
+  if (/\s/.test(s)) return false;
+  const at = s.indexOf('@');
+  if (at <= 0 || at !== s.lastIndexOf('@')) return false;
+  const domain = s.slice(at + 1);
+  const dot = domain.indexOf('.');
+  return dot > 0 && dot < domain.length - 1;
+}
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
@@ -28,7 +42,7 @@ export default async function handler(req, res) {
     else if (email) list = [email];
 
     const clean = [
-      ...new Set(list.map((e) => String(e).toLowerCase().trim()).filter((e) => EMAIL_RE.test(e))),
+      ...new Set(list.map((e) => String(e).toLowerCase().trim()).filter(isLikelyEmail)),
     ];
     if (clean.length === 0) return res.status(400).json({ error: 'No valid emails provided' });
 
