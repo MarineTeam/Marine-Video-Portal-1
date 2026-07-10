@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "next": "14.2.30",
+    "next": "^14.2.35",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "@auth0/nextjs-auth0": "^3.5.0",
@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "eslint": "^8.57.1",
-    "eslint-config-next": "14.2.30",
-    "vitest": "^2.1.9"
+    "eslint-config-next": "^14.2.35",
+    "vitest": "^3.2.6"
   }
 }
