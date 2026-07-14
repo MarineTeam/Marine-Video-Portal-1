@@ -58,3 +58,6 @@ Resume playback and Continue-watching history
 v1.5.0
 Video thumbnails on the homepage grid and admin library
 Analytics dashboard (views, watch time, 30-day chart, most-watched)
+v1.6.0
+Installable as a desktop and mobile app (PWA) — Windows, Mac, Android, iOS
+Admin is hidden in the installed app (viewer-only); still available in the browser

@@ -59,6 +59,12 @@ Current as of **v1.5.0**. Grouped by area; items marked _(admin)_ live in the `/
 - **Tabbed layout** — Videos, Viewers, Shares, Settings, Activity, Analytics — so admins jump straight to a section instead of one long scroll. Live count badges on Viewers/Shares.
 - All admin API routes return `403` for non-admins rather than exposing any data.
 
+## Installable app (PWA)
+- **Installable on desktop and mobile** — Windows, Mac, Android, and iOS can install the portal as a standalone app (web manifest + app icon + service worker). No separate build or app store; it runs off the same Vercel deployment.
+- **Login works unchanged** — the installed app is the same site, so Auth0 sign-in behaves exactly as in the browser.
+- **Viewer-only when installed** — the Admin button is hidden in standalone (installed) mode; admin stays fully available in a normal browser tab.
+- The service worker intentionally caches nothing (private, authenticated, streaming content) — it exists only to make the app installable.
+
 ## Platform, quality & observability
 - Hosted on Vercel; dependencies install automatically during deploy (no local Node/npm required to ship).
 - Settings, viewers, order, collections, share records, watch history, and the audit log are stored in Upstash Redis (via Vercel Storage), editable live from `/admin` without redeploying. All keys are namespaced with a `pvp:` prefix.
@@ -77,3 +83,4 @@ Current as of **v1.5.0**. Grouped by area; items marked _(admin)_ live in the `/
 - **`email_verified` enforcement** — access checks trust the email claim; pair with Auth0 sign-up controls (see Security notes in the README).
 - **In-app admin management** — admins are configured via `ADMIN_EMAILS`, not the UI.
 - **Captions/transcripts, comments/ratings, scheduled publish/expiry** — not implemented.
+- **PWA iOS icon** — the app icon is an SVG; iOS Safari prefers a PNG `apple-touch-icon`, so the iOS home-screen icon may not render the logo cleanly until PNG icons are added (desktop and Android use the SVG fine).

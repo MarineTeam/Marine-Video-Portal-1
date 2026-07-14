@@ -14,6 +14,7 @@ Videos are never public: every play uses a **signed, time-limited bunny.net toke
 - Clicking a video opens a watch page that plays it in a tokenized bunny.net embed and remembers playback position.
 - Admins manage everything from a tabbed **`/admin`** panel: upload videos, organize the library, manage viewers and share links, adjust the site's color palette, and view analytics and an activity log.
 - `/admin` is gated **server-side** (redirects non-admins before any UI is sent) and every `/api/admin/*` route independently returns `403` for non-admins.
+- The portal is an **installable PWA** — it can be installed as a standalone app on Windows, Mac, Android, and iOS off the same deployment. The installed app is **viewer-only** (the Admin button is hidden in standalone mode); admin stays available in a normal browser tab.
 
 ---
 
@@ -158,6 +159,16 @@ Tabbed layout, gated server-side to `ADMIN_EMAILS`:
 - **Analytics** — total views, 30-day views, watch time, video count, a 30-day views chart, and a most-watched list.
 
 ---
+
+## Installing as an app (PWA)
+
+The site is installable as a standalone app off the live deployment — no app store, no separate build:
+
+- **Windows / Mac (Chrome or Edge):** open the site → click the install icon in the address bar → **Install**.
+- **Android (Chrome):** menu → **Install app** / **Add to Home screen**.
+- **iOS (Safari):** **Share** → **Add to Home Screen**.
+
+The installed app is **viewer-only** — the Admin button is hidden in standalone mode (admin stays available in a normal browser tab). Login is unchanged (same site, same Auth0 flow). The service worker caches nothing, so the app always needs a connection. The app icon is [public/icon.svg](public/icon.svg); note iOS Safari prefers a PNG `apple-touch-icon`, so the iOS home-screen icon may need PNG assets to render the logo cleanly.
 
 ## Security notes
 
