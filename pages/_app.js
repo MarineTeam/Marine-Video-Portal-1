@@ -15,6 +15,13 @@ export default function App({ Component, pageProps }) {
       .catch(() => {});
   }, []);
 
+  // Register the PWA service worker so the app is installable on desktop and mobile.
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  }, []);
+
   return (
     <UserProvider>
       <IdleTimeout />
