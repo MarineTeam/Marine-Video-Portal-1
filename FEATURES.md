@@ -66,6 +66,13 @@ Current as of **v1.5.0**. Grouped by area; items marked _(admin)_ live in the `/
 - Ships PNG app icons (192/512, maskable, plus a 180px Apple touch icon) so home-screen/taskbar icons render cleanly on every platform including iOS.
 - The service worker caches only public static assets (app icons + manifest) — never API responses, authed pages, or video — so nothing private or stale is ever served.
 
+## Push notifications
+- **New-video announcements** — approved viewers who opt in with a **"Notify me"** button get a Web Push notification when a newly uploaded video finishes encoding. Each video is announced **exactly once** (an atomic Redis `SADD` guard), and only recently uploaded videos are announced, so enabling the feature never back-blasts the existing library.
+- **Manual broadcasts** _(admin)_ — send a custom push message to everyone from the Settings tab.
+- **Targeted & self-cleaning** — sends reach only **currently-approved** viewers and admins (a removed viewer stops receiving them even if their device subscription lingers); dead subscriptions (HTTP 404/410 from the push service) are pruned automatically.
+- **Viewer-controlled** — the button toggles notifications on/off per device; unsubscribing is always allowed. Clicking a notification opens the relevant video.
+- **Inert until configured** — the whole feature (button, broadcast form, sends) stays hidden and silent unless `NEXT_PUBLIC_VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` are set, so it never breaks a deployment that doesn't use it.
+
 ## Platform, quality & observability
 - Hosted on Vercel; dependencies install automatically during deploy (no local Node/npm required to ship).
 - Settings, viewers, order, collections, share records, watch history, and the audit log are stored in Upstash Redis (via Vercel Storage), editable live from `/admin` without redeploying. All keys are namespaced with a `pvp:` prefix.
@@ -77,6 +84,7 @@ Current as of **v1.5.0**. Grouped by area; items marked _(admin)_ live in the `/
 - `BUNNY_CDN_HOSTNAME` — enables thumbnails.
 - `BUNNY_CDN_TOKEN_KEY` — signs thumbnail URLs when the pull-zone token key differs from the embed key.
 - `SENTRY_*` — enable error monitoring and source-map upload.
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — enable push notifications (both required; generate with `npx web-push generate-vapid-keys`). `VAPID_SUBJECT` optionally overrides the contact URI.
 
 ## Known gaps / not yet implemented
 - **Automatic email delivery of share links** (admin still copies the link and sends it manually).

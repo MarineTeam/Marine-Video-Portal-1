@@ -39,3 +39,43 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(caches.match(request).then((hit) => hit || fetch(request)));
   }
 });
+
+// Web Push: show the notification the server sent. Payload is a JSON string
+// { title, body, url }. Guarded so a malformed payload can't crash the handler.
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (e) {
+    payload = {};
+  }
+  const title = payload.title || 'Marine Video Portal';
+  const options = {
+    body: payload.body || '',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    data: { url: payload.url || '/' },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Clicking a notification focuses an existing tab (navigating it to the target)
+// or opens a new one.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          if ('navigate' in client) {
+            try { client.navigate(target); } catch (e) {}
+          }
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
+      return undefined;
+    })
+  );
+});

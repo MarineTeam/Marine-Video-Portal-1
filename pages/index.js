@@ -1,6 +1,7 @@
 import { useUser } from '@auth0/nextjs-auth0/client';
 import { useEffect, useState } from 'react';
 import AppShell from '../components/AppShell';
+import NotifyButton from '../components/NotifyButton';
 import { IconPlay, IconLock, IconSearch, IconX } from '../components/icons';
 
 export default function Home() {
@@ -77,6 +78,10 @@ export default function Home() {
 
   return (
     <AppShell isAdmin={isAdmin}>
+      <div className="home-toolbar">
+        <NotifyButton />
+      </div>
+
       {inProgress.length > 0 && (
         <div className="continue-section">
           <h2 className="section-heading">Continue watching</h2>

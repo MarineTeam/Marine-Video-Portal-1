@@ -598,6 +598,10 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--border);
 }
 
+/* Homepage toolbar (Notify me) */
+.home-toolbar { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+.home-toolbar:empty { display: none; }
+
 /* Continue watching (homepage) */
 .continue-section { margin-bottom: 28px; }
 .section-heading {

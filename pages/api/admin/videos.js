@@ -3,6 +3,7 @@ import { listVideos, deleteVideo, updateVideoTitle, setVideoCollection, getThumb
 import { getOrder, setOrder, applyOrder } from '../../../lib/order';
 import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
+import { maybeAnnounceReady } from '../../../lib/push';
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
@@ -13,6 +14,15 @@ export default async function handler(req, res) {
     const videos = await listVideos({ itemsPerPage: 100 });
     const order = await getOrder();
     const ordered = applyOrder(videos, order);
+
+    // Best-effort: notify viewers about any newly-ready video. This admin poll is
+    // the natural trigger (admins watch the library refresh while encoding). It
+    // must never break the listing, so failures are swallowed.
+    try {
+      await maybeAnnounceReady(ordered);
+    } catch (e) {
+      // swallow — announcements are a convenience, the library must still load
+    }
 
     return res.json(
       ordered.map((v) => ({

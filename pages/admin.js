@@ -2,6 +2,7 @@ import { useUser } from '@auth0/nextjs-auth0/client';
 import { getSession } from '@auth0/nextjs-auth0';
 import { useEffect, useRef, useState } from 'react';
 import AppShell from '../components/AppShell';
+import NotifyButton from '../components/NotifyButton';
 import { IconTrash, IconCopy, IconGrip, IconPencil, IconSearch, IconCheck, IconX } from '../components/icons';
 import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
 import { isAdmin as isAdminEmail } from '../lib/auth';
@@ -75,6 +76,10 @@ export default function Admin() {
   const [analytics, setAnalytics] = useState(null);
   const [collections, setCollections] = useState([]);
   const [newCollection, setNewCollection] = useState('');
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastBody, setBroadcastBody] = useState('');
+  const [broadcastMsg, setBroadcastMsg] = useState('');
+  const [broadcasting, setBroadcasting] = useState(false);
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
@@ -412,6 +417,36 @@ export default function Admin() {
     refreshShares();
   }
 
+  async function sendBroadcast() {
+    const body = broadcastBody.trim();
+    if (!body) return;
+    setBroadcasting(true);
+    setBroadcastMsg('');
+    try {
+      const res = await fetch('/api/admin/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: broadcastTitle.trim(), body }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setBroadcastMsg(data.error || `Failed (status ${res.status})`);
+        return;
+      }
+      setBroadcastMsg(
+        `Sent to ${data.sent} device${data.sent === 1 ? '' : 's'}` +
+          (data.pruned ? ` · ${data.pruned} stale removed` : '') +
+          '.'
+      );
+      setBroadcastTitle('');
+      setBroadcastBody('');
+    } catch (e) {
+      setBroadcastMsg('Broadcast failed');
+    } finally {
+      setBroadcasting(false);
+    }
+  }
+
   async function saveVideoCount() {
     const res = await fetch('/api/admin/settings', {
       method: 'POST',
@@ -600,6 +635,46 @@ export default function Admin() {
             <button onClick={saveVideoCount} className="btn btn-primary btn-sm">
               {saved ? 'Saved!' : 'Save'}
             </button>
+          </div>
+        </div>
+
+        {/* Notifications */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Notifications</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Approved viewers who opt in get a push notification when a new video is ready.
+            Send a manual announcement to everyone below. (Inactive until VAPID keys are set —
+            see the README.)
+          </p>
+          <div style={{ marginBottom: '1rem' }}>
+            <NotifyButton />
+          </div>
+          <div className="admin-row" style={{ marginBottom: 10 }}>
+            <input
+              className="input input-sm"
+              placeholder="Title (optional)"
+              value={broadcastTitle}
+              onChange={(e) => setBroadcastTitle(e.target.value)}
+              disabled={broadcasting}
+            />
+          </div>
+          <textarea
+            className="input"
+            rows={3}
+            placeholder="Message to send to all approved viewers…"
+            value={broadcastBody}
+            onChange={(e) => setBroadcastBody(e.target.value)}
+            disabled={broadcasting}
+          />
+          <div className="admin-row" style={{ marginTop: 10 }}>
+            <button
+              onClick={sendBroadcast}
+              className="btn btn-primary btn-sm"
+              disabled={broadcasting || !broadcastBody.trim()}
+            >
+              {broadcasting ? 'Sending…' : 'Send broadcast'}
+            </button>
+            {broadcastMsg && <span className="text-muted">{broadcastMsg}</span>}
           </div>
         </div>
 
