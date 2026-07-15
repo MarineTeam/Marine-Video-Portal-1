@@ -61,3 +61,6 @@ Analytics dashboard (views, watch time, 30-day chart, most-watched)
 v1.6.0
 Installable as a desktop and mobile app (PWA) — Windows, Mac, Android, iOS
 Admin is hidden in the installed app (viewer-only); still available in the browser
+v1.6.1
+Proper PNG app icons (fixes install prompt and the iOS/desktop home-screen icon)
+Service worker now precaches app icons (still never caches private content)
