@@ -129,6 +129,16 @@ Run these against the **deployed** site. Each step pairs an action with the obse
 1. From a signed-in session, fire a quick burst at `/api/videos` (e.g. paste a 70-iteration `fetch` loop in the console — the limit is a sliding window of 60 requests per 10 s per caller per route) → later requests return HTTP **429** `{"error":"Too many requests — slow down."}`.
 2. **Then stop.** Wait ~10 s and confirm one normal request succeeds again. Note: the limiter fails **open** on backend errors — a burst that never 429s could mean the limiter can't reach Redis, which is worth a look, not a shrug.
 
+### 3.9 Push notifications (required for any `lib/push.js`, SW push, or subscribe/broadcast change)
+
+Requires `NEXT_PUBLIC_VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` set in Vercel and a redeploy — with keys absent the whole feature is inert by design (button hidden, routes 503), so there is nothing to E2E and CI green is the gate. With keys set:
+
+1. **Opt in.** As an approved viewer on the homepage, the **"Notify me"** button shows. Click it → browser permission prompt → grant → button flips to "Notifications on". (Chrome/Edge desktop or Android. iOS only exposes push to an **installed** PWA — add to home screen first.)
+2. **Auto-announce.** Keep `/admin` open on the Videos tab, upload a video, and let it finish encoding (the admin poll is the announce trigger). When the processing badge clears (status 4) the subscribed device gets **one** "New video available" notification. Re-poll/refresh must **not** produce a second one (the `pvp:announced_videos` SADD guard). Clicking it opens `/watch/video/<id>`.
+3. **Manual broadcast.** `/admin` → Settings → Notifications → type a message → **Send broadcast** → the status line reports "Sent to N devices" and subscribed devices receive it.
+4. **Targeting + pruning.** A removed viewer stops receiving sends even if still subscribed (targeting reads the live approved set). Revoke a subscription at the OS/browser level, broadcast again → the send response's `pruned` count reflects the dead endpoint being HDEL'd from `pvp:push_subs:{email}`.
+5. **Degradation.** Confirm the admin video list still loads normally even if a send would fail — announce is wrapped best-effort and must never break the listing (Decision 10 in `architecture-contract`).
+
 ## 4. Writing tests
 
 - Runner: `npm test` → `vitest run`, `environment: 'node'`. Tests live in `lib/__tests__/*.test.js` (config includes `lib/**/*.test.js`).

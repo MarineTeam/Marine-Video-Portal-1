@@ -76,7 +76,7 @@ npm run build      # next build
 
 Package scripts (verified in `package.json`): `dev` = `next dev`, `build` = `next build`, `start` = `next start`, `lint` = `next lint`, `test` = `vitest run`.
 
-Key dependency versions (verified in `package.json`, as of 2026-07-10): `next ^14.2.35`, `react 18.3.1` (pinned), `@auth0/nextjs-auth0 ^3.5.0`, `@upstash/redis ^1.34.0`, `@upstash/ratelimit ^2.0.5`, `@sentry/nextjs ^7.120.3`, `tus-js-client ^4.1.0`, `player.js ^0.1.0`; dev: `eslint ^8.57.1`, `eslint-config-next ^14.2.35`, `vitest ^3.2.6`.
+Key dependency versions (verified in `package.json`, as of 2026-07-10): `next ^14.2.35`, `react 18.3.1` (pinned), `@auth0/nextjs-auth0 ^3.5.0`, `@upstash/redis ^1.34.0`, `@upstash/ratelimit ^2.0.5`, `@sentry/nextjs ^7.120.3`, `tus-js-client ^4.1.0`, `player.js ^0.1.0`, `web-push ^3.6.7` (added v1.7.0, server-side only — push notifications); dev: `eslint ^8.57.1`, `eslint-config-next ^14.2.35`, `vitest ^3.2.6`.
 
 ### .env.local for running against real services
 

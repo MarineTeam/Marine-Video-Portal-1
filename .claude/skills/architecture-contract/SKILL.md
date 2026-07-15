@@ -49,7 +49,7 @@ The app: a private, invite-only video portal. Next.js 14 **Pages Router** + Reac
 **Decision.** Two independent layers, both mandatory:
 
 1. `getServerSideProps` in `pages/admin.js` — no session → redirect to login; session but not admin → redirect to `/`. A non-admin never receives the admin UI shell HTML/JS.
-2. Every one of the 10 routes in `pages/api/admin/*` (as of 2026-07-10) independently calls `getSession` + `isAdmin` and returns 403 `Forbidden`.
+2. Every one of the 11 routes in `pages/api/admin/*` (as of 2026-07-15) independently calls `getSession` + `isAdmin` and returns 403 `Forbidden`.
 
 **Why.** Either layer alone has a known failure mode: client-only gating ships the admin bundle to attackers and trusts the browser; API-only gating means a future refactor of the page could leak admin data through props. The API layer is the real security boundary; the page gate stops UI enumeration.
 
@@ -113,9 +113,10 @@ The app: a private, invite-only video portal. Next.js 14 **Pages Router** + Reac
 
 ### 10. Resilience-by-degradation: optional features must never break their host
 
-**Decision.** Two features are explicitly best-effort:
+**Decision.** Three features are explicitly best-effort:
 - **Resume playback** (`components/ResumablePlayer.js`): `player.js` is dynamic-imported in try/catch; if the library fails to load, the constructor isn't found, or the progress fetch fails, the function returns early and **the video still plays** in a plain iframe. Progress saves at most every 8 s and its `fetch` swallows errors.
 - **Audit logging** (`lib/audit.js`): `logAudit()` never throws — the write is try/catch-swallowed. The log is a capped Redis list (`lpush` + `ltrim` to 200 entries, as of 2026-07-10), so it cannot grow unbounded.
+- **Push auto-announce** (`lib/push.js` `maybeAnnounceReady`, added v1.7.0): called from `GET /api/admin/videos` inside a try/catch — a push-send or Redis failure must never break the admin video listing. The whole push feature is also **inert unless both VAPID keys are set** (`pushEnabled()`), the same opt-in/inert posture as Sentry (Decision 12): no keys → button hidden, routes 503, no sends, nothing throws.
 
 **Why.** Playback and admin actions are the product; resume-position and audit trails are conveniences. A broken convenience must degrade to absence, not take the core feature down with it.
 
@@ -143,7 +144,7 @@ The app: a private, invite-only video portal. Next.js 14 **Pages Router** + Reac
 
 Walk this list on every review that touches auth, API routes, Redis, or `lib/bunny.js`. Every line must hold:
 
-- [ ] Every route in `pages/api/admin/*` calls `getSession` + `isAdmin` and 403s otherwise (10 routes, as of 2026-07-10). `isAdmin` in `lib/auth.js` is the only admin check.
+- [ ] Every route in `pages/api/admin/*` calls `getSession` + `isAdmin` and 403s otherwise (11 routes, as of 2026-07-15 — `broadcast.js` added with v1.7.0 push). `isAdmin` in `lib/auth.js` is the only admin check.
 - [ ] `pages/admin.js` still has its `getServerSideProps` gate (redirect non-session → login, non-admin → `/`).
 - [ ] Every Redis key goes through `k()` (`lib/redis.js`); no raw string keys anywhere, including limiter prefixes.
 - [ ] No `middleware.js` file, no `app/` directory (Decision 1 — this is a security posture, not a style choice).
