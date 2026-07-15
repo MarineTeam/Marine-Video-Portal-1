@@ -64,3 +64,7 @@ Admin is hidden in the installed app (viewer-only); still available in the brows
 v1.6.1
 Proper PNG app icons (fixes install prompt and the iOS/desktop home-screen icon)
 Service worker now precaches app icons (still never caches private content)
+v1.7.0
+Push notifications — approved viewers opt in with "Notify me" and are alerted when a new video is ready
+Admins can broadcast a custom push message to all viewers from the Settings tab
+Off by default — inert until the VAPID keys are configured
