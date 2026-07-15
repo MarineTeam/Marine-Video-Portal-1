@@ -168,7 +168,7 @@ The site is installable as a standalone app off the live deployment — no app s
 - **Android (Chrome):** menu → **Install app** / **Add to Home screen**.
 - **iOS (Safari):** **Share** → **Add to Home Screen**.
 
-The installed app is **viewer-only** — the Admin button is hidden in standalone mode (admin stays available in a normal browser tab). Login is unchanged (same site, same Auth0 flow). The service worker caches nothing, so the app always needs a connection. The app icon is [public/icon.svg](public/icon.svg); note iOS Safari prefers a PNG `apple-touch-icon`, so the iOS home-screen icon may need PNG assets to render the logo cleanly.
+The installed app is **viewer-only** — the Admin button is hidden in standalone mode (admin stays available in a normal browser tab). Login is unchanged (same site, same Auth0 flow). App icons are provided as PNG (192/512 + a 180px Apple touch icon) and SVG, so home-screen/taskbar icons render cleanly on all platforms including iOS. The service worker caches only the app icons and manifest (never authed pages, API, or video), so the app still needs a connection to use.
 
 ## Security notes
 

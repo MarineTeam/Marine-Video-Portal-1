@@ -63,7 +63,8 @@ Current as of **v1.5.0**. Grouped by area; items marked _(admin)_ live in the `/
 - **Installable on desktop and mobile** — Windows, Mac, Android, and iOS can install the portal as a standalone app (web manifest + app icon + service worker). No separate build or app store; it runs off the same Vercel deployment.
 - **Login works unchanged** — the installed app is the same site, so Auth0 sign-in behaves exactly as in the browser.
 - **Viewer-only when installed** — the Admin button is hidden in standalone (installed) mode; admin stays fully available in a normal browser tab.
-- The service worker intentionally caches nothing (private, authenticated, streaming content) — it exists only to make the app installable.
+- Ships PNG app icons (192/512, maskable, plus a 180px Apple touch icon) so home-screen/taskbar icons render cleanly on every platform including iOS.
+- The service worker caches only public static assets (app icons + manifest) — never API responses, authed pages, or video — so nothing private or stale is ever served.
 
 ## Platform, quality & observability
 - Hosted on Vercel; dependencies install automatically during deploy (no local Node/npm required to ship).
@@ -83,4 +84,3 @@ Current as of **v1.5.0**. Grouped by area; items marked _(admin)_ live in the `/
 - **`email_verified` enforcement** — access checks trust the email claim; pair with Auth0 sign-up controls (see Security notes in the README).
 - **In-app admin management** — admins are configured via `ADMIN_EMAILS`, not the UI.
 - **Captions/transcripts, comments/ratings, scheduled publish/expiry** — not implemented.
-- **PWA iOS icon** — the app icon is an SVG; iOS Safari prefers a PNG `apple-touch-icon`, so the iOS home-screen icon may not render the logo cleanly until PNG icons are added (desktop and Android use the SVG fine).
