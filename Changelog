@@ -68,3 +68,7 @@ v1.7.0
 Push notifications — approved viewers opt in with "Notify me" and are alerted when a new video is ready
 Admins can broadcast a custom push message to all viewers from the Settings tab
 Off by default — inert until the VAPID keys are configured
+v1.8.0
+Email a share link to its recipient (opt-in on the share form) and resend it from the Shares tab
+Off by default — inert until a Resend API key is configured
+The installed app now shows Admin for admin accounts (previously hidden in the installed app)
