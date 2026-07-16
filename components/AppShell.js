@@ -1,19 +1,8 @@
 import { useUser } from '@auth0/nextjs-auth0/client';
-import { useState, useEffect } from 'react';
 import { IconAnchor, IconShield, IconLogOut } from './icons';
 
 export default function AppShell({ children, isAdmin = false }) {
   const { user } = useUser();
-
-  // Detect the installed-PWA (standalone) display mode so the desktop/mobile app
-  // stays viewer-only. Admin remains available in a normal browser tab.
-  const [standalone, setStandalone] = useState(false);
-  useEffect(() => {
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      window.navigator.standalone === true;
-    setStandalone(isStandalone);
-  }, []);
 
   return (
     <div className="shell">
@@ -27,7 +16,7 @@ export default function AppShell({ children, isAdmin = false }) {
             {user ? (
               <>
                 <span className="shell-email">{user.email}</span>
-                {isAdmin && !standalone && (
+                {isAdmin && (
                   <a href="/admin" className="btn btn-ghost btn-sm">
                     <IconShield />
                     Admin

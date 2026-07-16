@@ -14,7 +14,7 @@ Videos are never public: every play uses a **signed, time-limited bunny.net toke
 - Clicking a video opens a watch page that plays it in a tokenized bunny.net embed and remembers playback position.
 - Admins manage everything from a tabbed **`/admin`** panel: upload videos, organize the library, manage viewers and share links, adjust the site's color palette, and view analytics and an activity log.
 - `/admin` is gated **server-side** (redirects non-admins before any UI is sent) and every `/api/admin/*` route independently returns `403` for non-admins.
-- The portal is an **installable PWA** — it can be installed as a standalone app on Windows, Mac, Android, and iOS off the same deployment. The installed app is **viewer-only** (the Admin button is hidden in standalone mode); admin stays available in a normal browser tab.
+- The portal is an **installable PWA** — it can be installed as a standalone app on Windows, Mac, Android, and iOS off the same deployment. Admins get the full admin panel in the installed app too (the Admin button is shown for admin accounts everywhere, standalone or browser tab).
 
 ---
 
@@ -115,6 +115,8 @@ vitest.config.js          Test config (node env + dummy env)
 | `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | Enable Sentry source-map upload during build. |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Enable **push notifications** (new-video announcements + admin broadcasts). Set **both** to turn the feature on; leave unset and the "Notify me" button and broadcast form stay hidden. Generate a keypair with `npx web-push generate-vapid-keys`. `NEXT_PUBLIC_VAPID_PUBLIC_KEY` is baked in at build time — changing it needs a rebuild, not just a restart. |
 | `VAPID_SUBJECT` | Contact URI for push (a `mailto:` address or https URL). Defaults to `mailto:<first ADMIN_EMAILS entry>`. |
+| `RESEND_API_KEY` | Enable **emailing/resending share links** to recipients via [Resend](https://resend.com). Unset → the email checkbox and Resend button stay hidden and nothing is sent (admin copies links by hand). |
+| `MAIL_FROM` | From address for share-link emails (a Resend-verified sender). Defaults to `onboarding@resend.dev`. |
 
 After adding or changing any variable, **redeploy** — changes only apply to new deployments.
 
@@ -153,9 +155,9 @@ Every push / PR to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci
 
 Tabbed layout, gated server-side to `ADMIN_EMAILS`:
 
-- **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, and per-video private share-link creation. Also a Collections manager (create/delete).
+- **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, and per-video private share-link creation (with an optional **"email the link to the recipient"** checkbox when email is configured). Also a Collections manager (create/delete).
 - **Viewers** — add/remove approved emails, **bulk add** (paste a list), and each viewer's **last-seen** time.
-- **Shares** — every active private link with recipient, expiry, and **viewed/not-viewed** status; revoke instantly.
+- **Shares** — every active private link with recipient, expiry, and **viewed/not-viewed** status; **resend** the email (when email is configured) or revoke instantly.
 - **Settings** — homepage video count, the site **color palette** (7 presets + custom, applied to all visitors), and a content-protection info panel.
 - **Activity** — the most recent admin actions (add/remove viewer, share create/revoke, video rename/delete/reorder, settings, palette, collections).
 - **Analytics** — total views, 30-day views, watch time, video count, a 30-day views chart, and a most-watched list.
@@ -170,7 +172,7 @@ The site is installable as a standalone app off the live deployment — no app s
 - **Android (Chrome):** menu → **Install app** / **Add to Home screen**.
 - **iOS (Safari):** **Share** → **Add to Home Screen**.
 
-The installed app is **viewer-only** — the Admin button is hidden in standalone mode (admin stays available in a normal browser tab). Login is unchanged (same site, same Auth0 flow). App icons are provided as PNG (192/512 + a 180px Apple touch icon) and SVG, so home-screen/taskbar icons render cleanly on all platforms including iOS. The service worker caches only the app icons and manifest (never authed pages, API, or video), so the app still needs a connection to use.
+The installed app is the **full portal** — admins see the Admin button and can manage everything from the installed app, exactly as in a normal browser tab. Login is unchanged (same site, same Auth0 flow). App icons are provided as PNG (192/512 + a 180px Apple touch icon) and SVG, so home-screen/taskbar icons render cleanly on all platforms including iOS. The service worker caches only the app icons and manifest (never authed pages, API, or video), so the app still needs a connection to use.
 
 ## Security notes
 

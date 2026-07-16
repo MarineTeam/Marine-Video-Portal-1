@@ -80,6 +80,10 @@ export default function Admin() {
   const [broadcastBody, setBroadcastBody] = useState('');
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [broadcasting, setBroadcasting] = useState(false);
+  const [mailEnabled, setMailEnabled] = useState(false);
+  const [notifyShare, setNotifyShare] = useState({});
+  const [shareMsg, setShareMsg] = useState({});
+  const [resendMsg, setResendMsg] = useState({});
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
@@ -96,7 +100,7 @@ export default function Admin() {
 
     fetchVideos().catch((e) => setError(e.message));
     fetch('/api/admin/viewers').then((r) => r.json()).then(setViewers);
-    fetch('/api/admin/settings').then((r) => r.json()).then((d) => setVideoCount(d.count));
+    fetch('/api/admin/settings').then((r) => r.json()).then((d) => { setVideoCount(d.count); setMailEnabled(Boolean(d.mailEnabled)); });
     fetch('/api/admin/shares').then((r) => r.json()).then(setActiveShares);
     fetch('/api/theme').then((r) => r.json()).then(setTheme).catch(() => {});
     fetch('/api/admin/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
@@ -403,17 +407,38 @@ export default function Admin() {
     setActiveShares((prev) => prev.filter((s) => s.shareId !== shareId));
   }
 
+  async function resendShare(shareId) {
+    setResendMsg((prev) => ({ ...prev, [shareId]: 'Sending…' }));
+    try {
+      const res = await fetch('/api/admin/shares', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shareId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setResendMsg((prev) => ({ ...prev, [shareId]: res.ok ? 'Email sent' : (data.error || 'Send failed') }));
+    } catch (e) {
+      setResendMsg((prev) => ({ ...prev, [shareId]: 'Send failed' }));
+    }
+    setTimeout(() => setResendMsg((prev) => ({ ...prev, [shareId]: '' })), 4000);
+  }
+
   async function handleShare(video) {
     const email = (emails[video.id] || '').trim();
     if (!email) return alert("Enter the recipient's email first");
     const hours = parseInt(expiresHours[video.id]) || 72;
+    const notify = mailEnabled && Boolean(notifyShare[video.id]);
     const res = await fetch('/api/admin/share', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId: video.id, title: video.title, email, expiresInHours: hours }),
+      body: JSON.stringify({ videoId: video.id, title: video.title, email, expiresInHours: hours, notify }),
     });
     const data = await res.json();
     setShareLinks((prev) => ({ ...prev, [video.id]: data.watchUrl }));
+    setShareMsg((prev) => ({
+      ...prev,
+      [video.id]: notify ? (data.emailed ? `Link emailed to ${email}` : 'Link created — email failed to send') : '',
+    }));
     refreshShares();
   }
 
@@ -791,12 +816,28 @@ export default function Admin() {
                       {s.viewedAt ? ` · viewed ${timeAgo(s.viewedAt)}` : ''}
                     </span>
                   </div>
-                  <button
-                    onClick={() => revokeShare(s.shareId)}
-                    className="btn btn-destructive btn-sm"
-                  >
-                    Revoke
-                  </button>
+                  <div className="share-actions">
+                    {mailEnabled && (
+                      <>
+                        <button
+                          onClick={() => resendShare(s.shareId)}
+                          className="btn btn-outline btn-sm"
+                          title={`Resend the link to ${s.email}`}
+                        >
+                          Resend email
+                        </button>
+                        {resendMsg[s.shareId] && (
+                          <span className="share-resend-msg text-muted">{resendMsg[s.shareId]}</span>
+                        )}
+                      </>
+                    )}
+                    <button
+                      onClick={() => revokeShare(s.shareId)}
+                      className="btn btn-destructive btn-sm"
+                    >
+                      Revoke
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -1043,6 +1084,17 @@ export default function Admin() {
                   </button>
                 </div>
 
+                {mailEnabled && (
+                  <label className="share-notify">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(notifyShare[v.id])}
+                      onChange={(e) => setNotifyShare((prev) => ({ ...prev, [v.id]: e.target.checked }))}
+                    />
+                    Email the link to the recipient
+                  </label>
+                )}
+
                 {shareLinks[v.id] && (
                   <div className="share-result">
                     <input
@@ -1058,6 +1110,10 @@ export default function Admin() {
                       <IconCopy />
                     </button>
                   </div>
+                )}
+
+                {shareMsg[v.id] && (
+                  <p className="share-sent-msg text-muted">{shareMsg[v.id]}</p>
                 )}
               </li>
             ))}

@@ -43,6 +43,9 @@ Current as of **v1.7.0**. Grouped by area; items marked _(admin)_ live in the `/
 - **Forced login** — opening the link requires an Auth0 login and only plays if the logged-in email matches the one specified.
 - Wrong-account attempts show a generic mismatch message — **the intended recipient's email is never revealed**.
 - **Adjustable expiry** per link (default 72 hours, capped at 720 / 30 days).
+- **Email delivery** _(opt-in)_ — a checkbox on the share form emails the link straight to the recipient via [Resend](https://resend.com), so the admin no longer has to copy-and-send by hand. Best-effort: a mail failure never blocks link creation.
+- **Resend** — each active link has a "Resend email" button that re-delivers it to the original recipient (rate-limited, like link creation).
+- **Inert until configured** — the email checkbox and Resend button stay hidden unless `RESEND_API_KEY` is set; without it, sharing works exactly as before (copy the link manually).
 - **Viewed status** — each active link shows whether the recipient has opened it yet (stamped on first play, preserving remaining TTL).
 - **Active link visibility** — every live link with recipient and exact expiry.
 - **Instant revocation** — kill any active link immediately, one click.
@@ -62,7 +65,7 @@ Current as of **v1.7.0**. Grouped by area; items marked _(admin)_ live in the `/
 ## Installable app (PWA)
 - **Installable on desktop and mobile** — Windows, Mac, Android, and iOS can install the portal as a standalone app (web manifest + app icon + service worker). No separate build or app store; it runs off the same Vercel deployment.
 - **Login works unchanged** — the installed app is the same site, so Auth0 sign-in behaves exactly as in the browser.
-- **Viewer-only when installed** — the Admin button is hidden in standalone (installed) mode; admin stays fully available in a normal browser tab.
+- **Full admin in the installed app** — admin accounts see the Admin button and can manage everything from the installed (standalone) app, exactly as in a normal browser tab. (Admin access is still gated server-side, so nothing sensitive is exposed to non-admins either way.)
 - Ships PNG app icons (192/512, maskable, plus a 180px Apple touch icon) so home-screen/taskbar icons render cleanly on every platform including iOS.
 - The service worker caches only public static assets (app icons + manifest) — never API responses, authed pages, or video — so nothing private or stale is ever served.
 
@@ -85,9 +88,9 @@ Current as of **v1.7.0**. Grouped by area; items marked _(admin)_ live in the `/
 - `BUNNY_CDN_TOKEN_KEY` — signs thumbnail URLs when the pull-zone token key differs from the embed key.
 - `SENTRY_*` — enable error monitoring and source-map upload.
 - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — enable push notifications (both required; generate with `npx web-push generate-vapid-keys`). `VAPID_SUBJECT` optionally overrides the contact URI.
+- `RESEND_API_KEY` — enable emailing/resending share links via Resend. `MAIL_FROM` optionally sets the from address (a Resend-verified sender; defaults to `onboarding@resend.dev`).
 
 ## Known gaps / not yet implemented
-- **Automatic email delivery of share links** (admin still copies the link and sends it manually).
 - **Access-request flow** — no self-serve way for unapproved users to request access; admins must know who to add.
 - **`email_verified` enforcement** — access checks trust the email claim; pair with Auth0 sign-up controls (see Security notes in the README).
 - **In-app admin management** — admins are configured via `ADMIN_EMAILS`, not the UI.

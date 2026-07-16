@@ -768,6 +768,8 @@ select.input { cursor: pointer; appearance: none; -webkit-appearance: none; }
 .share-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .share-title { font-weight: 600; font-size: 14.5px; }
 .share-meta { font-size: 13px; color: var(--muted); }
+.share-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.share-resend-msg { font-size: 12.5px; }
 
 /* Video library */
 .admin-video-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
@@ -800,6 +802,10 @@ select.input { cursor: pointer; appearance: none; -webkit-appearance: none; }
 
 .share-result { display: flex; gap: 8px; align-items: center; }
 .share-result .input { flex: 1; font-size: 13px; color: var(--muted); }
+
+.share-notify { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.share-notify input { width: auto; margin: 0; cursor: pointer; }
+.share-sent-msg { font-size: 13px; margin: 0; }
 
 /* ── Form controls ───────────────────────────────── */
 

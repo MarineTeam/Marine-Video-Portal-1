@@ -1,0 +1,19 @@
+# Dependencies (installed by Vercel at deploy time; not committed)
+node_modules/
+
+# Lockfile intentionally not committed — a stray package-lock.json has caused
+# ERESOLVE peer-dependency failures on Vercel deploys.
+package-lock.json
+
+# Next.js build output
+.next/
+out/
+
+# Local env
+.env
+.env.local
+.env*.local
+
+# Logs / OS cruft
+*.log
+.DS_Store

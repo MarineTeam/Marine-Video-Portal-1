@@ -2,6 +2,7 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
+import { mailEnabled } from '../../../lib/mail';
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
@@ -10,7 +11,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     const count = await redis.get(k('homepage_video_count'));
-    return res.json({ count: count ? Number(count) : 2 });
+    return res.json({ count: count ? Number(count) : 2, mailEnabled: mailEnabled() });
   }
 
   if (req.method === 'POST') {
