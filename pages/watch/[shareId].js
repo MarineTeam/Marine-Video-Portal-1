@@ -2,6 +2,7 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../lib/redis';
 import { getEmbedUrl } from '../../lib/bunny';
 import AppShell from '../../components/AppShell';
+import SharePlayer from '../../components/SharePlayer';
 import { IconChevronLeft } from '../../components/icons';
 
 export async function getServerSideProps({ req, res, params }) {
@@ -30,21 +31,25 @@ export async function getServerSideProps({ req, res, params }) {
     };
   }
 
-  // Record the first view, preserving the link's remaining time-to-live.
-  if (!share.viewedAt) {
-    const remaining = Math.max(1, Math.ceil((share.expiresAt - Date.now()) / 1000));
-    await redis.set(k(`share:${params.shareId}`), { ...share, viewedAt: Date.now() }, { ex: remaining });
-  }
+  // Record every view (count + last-viewed), preserving the link's remaining TTL.
+  const remaining = Math.max(1, Math.ceil((share.expiresAt - Date.now()) / 1000));
+  const now = Date.now();
+  await redis.set(
+    k(`share:${params.shareId}`),
+    { ...share, viewedAt: share.viewedAt || now, views: (share.views || 0) + 1, lastViewedAt: now },
+    { ex: remaining }
+  );
 
   return {
     props: {
       embedUrl: getEmbedUrl(share.videoId, 3600),
       title: share.title || '',
+      shareId: params.shareId,
     },
   };
 }
 
-export default function Watch({ embedUrl, title, error }) {
+export default function Watch({ embedUrl, title, shareId, error }) {
   return (
     <AppShell>
       <div className="watch-back">
@@ -64,9 +69,7 @@ export default function Watch({ embedUrl, title, error }) {
       ) : (
         <>
           <h1 className="watch-title">{title}</h1>
-          <div className="watch-player">
-            <iframe src={embedUrl} allow="fullscreen" title={title} />
-          </div>
+          <SharePlayer embedUrl={embedUrl} title={title} shareId={shareId} />
         </>
       )}
     </AppShell>

@@ -84,6 +84,13 @@ export default function Admin() {
   const [notifyShare, setNotifyShare] = useState({});
   const [shareMsg, setShareMsg] = useState({});
   const [resendMsg, setResendMsg] = useState({});
+  const [bulkSelected, setBulkSelected] = useState({});
+  const [bulkRecipients, setBulkRecipients] = useState('');
+  const [bulkExpiresHours, setBulkExpiresHours] = useState('72');
+  const [bulkNotify, setBulkNotify] = useState(true);
+  const [bulkSharing, setBulkSharing] = useState(false);
+  const [bulkShareResult, setBulkShareResult] = useState(null);
+  const [bulkVideoQuery, setBulkVideoQuery] = useState('');
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
@@ -431,15 +438,59 @@ export default function Admin() {
     const res = await fetch('/api/admin/share', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId: video.id, title: video.title, email, expiresInHours: hours, notify }),
+      body: JSON.stringify({
+        videos: [{ id: video.id, title: video.title }],
+        emails: [email],
+        expiresInHours: hours,
+        notify,
+      }),
     });
     const data = await res.json();
-    setShareLinks((prev) => ({ ...prev, [video.id]: data.watchUrl }));
+    const watchUrl = data.links?.[0]?.watchUrl;
+    setShareLinks((prev) => ({ ...prev, [video.id]: watchUrl }));
     setShareMsg((prev) => ({
       ...prev,
-      [video.id]: notify ? (data.emailed ? `Link emailed to ${email}` : 'Link created — email failed to send') : '',
+      [video.id]: notify ? (data.emailedTo?.includes(email) ? `Link emailed to ${email}` : 'Link created — email failed to send') : '',
     }));
     refreshShares();
+  }
+
+  // Bulk share: any number of selected videos × any number of recipients.
+  async function handleBulkShare() {
+    const videoIds = Object.keys(bulkSelected).filter((id) => bulkSelected[id]);
+    const emailList = [...new Set(
+      bulkRecipients.split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean)
+    )];
+    if (videoIds.length === 0) return alert('Select at least one video');
+    if (emailList.length === 0) return alert('Enter at least one recipient email');
+
+    setBulkSharing(true);
+    setBulkShareResult(null);
+    try {
+      const res = await fetch('/api/admin/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videos: videoIds.map((id) => ({ id, title: videos.find((v) => v.id === id)?.title || '' })),
+          emails: emailList,
+          expiresInHours: parseInt(bulkExpiresHours) || 72,
+          notify: mailEnabled && bulkNotify,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.error || 'Failed to create links'); return; }
+      setBulkShareResult({
+        linkCount: data.links?.length || 0,
+        recipients: data.recipients || emailList.length,
+        emailedTo: data.emailedTo || [],
+        notify: mailEnabled && bulkNotify,
+      });
+      setBulkSelected({});
+      setBulkRecipients('');
+      refreshShares();
+    } finally {
+      setBulkSharing(false);
+    }
   }
 
   async function sendBroadcast() {
@@ -537,6 +588,10 @@ export default function Admin() {
 
   const q = videoQuery.trim().toLowerCase();
   const shownVideos = q ? videos.filter((v) => (v.title || '').toLowerCase().includes(q)) : videos;
+
+  const bulkQ = bulkVideoQuery.trim().toLowerCase();
+  const bulkShownVideos = bulkQ ? videos.filter((v) => (v.title || '').toLowerCase().includes(bulkQ)) : videos;
+  const bulkSelectedCount = Object.values(bulkSelected).filter(Boolean).length;
 
   return (
     <AppShell isAdmin>
@@ -795,6 +850,96 @@ export default function Admin() {
 
         {tab === 'shares' && (
         <>
+        {/* Bulk share: N videos × M recipients, each pair gets its own link */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Bulk Share</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Pick one or more videos and one or more recipients. Every video/recipient pair gets its
+            own private link, independently revocable. Each recipient gets a single email listing
+            only their own links.
+          </p>
+
+          <div className="bulk-share-videos">
+            <div className="search-box">
+              <IconSearch className="search-icon" />
+              <input
+                className="input input-sm"
+                placeholder="Filter videos…"
+                value={bulkVideoQuery}
+                onChange={(e) => setBulkVideoQuery(e.target.value)}
+              />
+            </div>
+            <ul className="bulk-video-picklist">
+              {bulkShownVideos.map((v) => (
+                <li key={v.id} className="bulk-video-pick">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(bulkSelected[v.id])}
+                      onChange={(e) =>
+                        setBulkSelected((prev) => ({ ...prev, [v.id]: e.target.checked }))
+                      }
+                    />
+                    {v.title}
+                  </label>
+                </li>
+              ))}
+              {bulkShownVideos.length === 0 && <p className="text-muted">No videos match.</p>}
+            </ul>
+          </div>
+
+          <textarea
+            className="input"
+            placeholder="Recipient emails — separate with commas, spaces, or new lines"
+            value={bulkRecipients}
+            onChange={(e) => setBulkRecipients(e.target.value)}
+            rows={3}
+            style={{ width: '100%', marginTop: '0.75rem', resize: 'vertical' }}
+          />
+
+          <div className="admin-video-share" style={{ marginTop: '0.75rem' }}>
+            <input
+              type="number"
+              placeholder="72h"
+              min="1"
+              max="720"
+              value={bulkExpiresHours}
+              onChange={(e) => setBulkExpiresHours(e.target.value)}
+              className="input input-sm"
+              style={{ width: '5rem', flex: 'none' }}
+              title="Hours until links expire"
+            />
+            {mailEnabled && (
+              <label className="share-notify">
+                <input
+                  type="checkbox"
+                  checked={bulkNotify}
+                  onChange={(e) => setBulkNotify(e.target.checked)}
+                />
+                Email each recipient their links
+              </label>
+            )}
+            <button
+              onClick={handleBulkShare}
+              className="btn btn-outline btn-sm"
+              disabled={bulkSharing || bulkSelectedCount === 0}
+            >
+              {bulkSharing
+                ? 'Creating…'
+                : `Create links${bulkSelectedCount ? ` (${bulkSelectedCount} video${bulkSelectedCount > 1 ? 's' : ''})` : ''}`}
+            </button>
+          </div>
+
+          {bulkShareResult && (
+            <p className="share-sent-msg text-muted" style={{ marginTop: '0.5rem' }}>
+              Created {bulkShareResult.linkCount} link{bulkShareResult.linkCount === 1 ? '' : 's'} for{' '}
+              {bulkShareResult.recipients} recipient{bulkShareResult.recipients === 1 ? '' : 's'}.
+              {bulkShareResult.notify &&
+                ` Emailed ${bulkShareResult.emailedTo.length}/${bulkShareResult.recipients}.`}
+            </p>
+          )}
+        </div>
+
         {/* Active share links */}
         <div className="card admin-section">
           <h2 className="admin-section-title">Active Private Links</h2>
@@ -810,10 +955,18 @@ export default function Admin() {
                       {s.viewedAt
                         ? <span className="badge badge-ok">Viewed</span>
                         : <span className="badge badge-muted">Not viewed</span>}
+                      {s.completed && <span className="badge badge-ok">Completed</span>}
                     </span>
                     <span className="share-meta">
                       {s.email} &mdash; expires {new Date(s.expiresAt).toLocaleString()}
-                      {s.viewedAt ? ` · viewed ${timeAgo(s.viewedAt)}` : ''}
+                      {s.views ? ` · ${s.views} view${s.views === 1 ? '' : 's'}` : ''}
+                      {s.lastViewedAt ? ` (last ${timeAgo(s.lastViewedAt)})` : ''}
+                    </span>
+                    <span className="share-meta">
+                      {s.plays ? `${s.plays} play${s.plays === 1 ? '' : 's'}` : 'not played'}
+                      {typeof s.furthestPct === 'number' && s.furthestPct > 0
+                        ? ` · furthest ${s.furthestPct}%`
+                        : ''}
                     </span>
                   </div>
                   <div className="share-actions">

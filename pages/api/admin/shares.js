@@ -3,7 +3,7 @@ import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
-import { mailEnabled, sendShareEmail } from '../../../lib/mail';
+import { mailEnabled, sendShareLinksEmail } from '../../../lib/mail';
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
@@ -43,10 +43,9 @@ export default async function handler(req, res) {
 
     const watchUrl = `${process.env.AUTH0_BASE_URL}/watch/${shareId}`;
     const hoursLeft = Math.max(1, Math.round((share.expiresAt - Date.now()) / 3600000));
-    const emailed = await sendShareEmail({
+    const emailed = await sendShareLinksEmail({
       to: share.email,
-      watchUrl,
-      title: share.title,
+      items: [{ title: share.title, watchUrl }],
       expiresInHours: hoursLeft,
     });
     if (emailed) await logAudit(actor, 'share.resend', `${share.title || share.videoId} → ${share.email}`);

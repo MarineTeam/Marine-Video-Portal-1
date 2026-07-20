@@ -807,6 +807,25 @@ select.input { cursor: pointer; appearance: none; -webkit-appearance: none; }
 .share-notify input { width: auto; margin: 0; cursor: pointer; }
 .share-sent-msg { font-size: 13px; margin: 0; }
 
+/* Bulk share picklist */
+.bulk-share-videos { display: flex; flex-direction: column; gap: 10px; }
+.bulk-video-picklist {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  background: var(--surface-2);
+}
+.bulk-video-pick { font-size: 14px; }
+.bulk-video-pick label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; cursor: pointer; border-radius: 6px; }
+.bulk-video-pick label:hover { background: var(--surface-3, rgba(255, 255, 255, 0.04)); }
+.bulk-video-pick input { width: auto; margin: 0; cursor: pointer; }
+
 /* ── Form controls ───────────────────────────────── */
 
 .input {
