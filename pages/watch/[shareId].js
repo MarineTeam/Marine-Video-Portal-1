@@ -21,8 +21,9 @@ export async function getServerSideProps({ req, res, params }) {
   const share = await getShare(params.shareId);
 
   // A record surviving past its logical expiry (grace period, so it can
-  // still be extended) is not a valid watch — same generic message either way.
-  if (!share || isExpired(share)) {
+  // still be extended) or one that's been revoked (soft-deleted, so it can
+  // be un-revoked) is not a valid watch — same generic message either way.
+  if (!share || isExpired(share) || share.revoked) {
     return { props: { error: 'This link has expired or does not exist.' } };
   }
 

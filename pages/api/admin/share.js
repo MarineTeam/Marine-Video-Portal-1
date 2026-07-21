@@ -4,7 +4,12 @@ import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
 import { mailEnabled, sendShareLinksEmail, sendBundleEmail } from '../../../lib/mail';
-import { ttlSecondsFor, syncBundleForEmail, getBundle, listActiveSharesForEmail } from '../../../lib/shareBundle';
+import {
+  ttlSecondsFor,
+  syncBundleForEmail,
+  getBundle,
+  listActiveSharesForEmail,
+} from '../../../lib/shareBundle';
 import crypto from 'crypto';
 
 // Bulk share creation: any number of videos × any number of recipients.

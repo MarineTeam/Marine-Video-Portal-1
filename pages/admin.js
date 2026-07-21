@@ -544,7 +544,20 @@ export default function Admin() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ shareId }),
     });
-    setActiveShares((prev) => prev.filter((s) => s.shareId !== shareId));
+    setActiveShares((prev) =>
+      prev.map((s) => (s.shareId === shareId ? { ...s, revoked: true } : s))
+    );
+  }
+
+  async function unrevokeShare(shareId) {
+    await fetch('/api/admin/shares', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shareId }),
+    });
+    setActiveShares((prev) =>
+      prev.map((s) => (s.shareId === shareId ? { ...s, revoked: false } : s))
+    );
   }
 
   async function resendShare(shareId) {
@@ -604,6 +617,7 @@ export default function Admin() {
 
   function bulkResendSelected() { bulkAction('POST', {}, 'Resent'); }
   function bulkRevokeSelected() { bulkAction('DELETE', {}, 'Revoked'); }
+  function bulkUnrevokeSelected() { bulkAction('PATCH', {}, 'Un-revoked'); }
   function bulkExtendSelected() {
     const hours = parseInt(extendHours) || 0;
     if (hours <= 0) return alert('Enter a positive number of hours');
@@ -1226,6 +1240,13 @@ export default function Admin() {
               >
                 Revoke {selectedShareIds().length || ''}
               </button>
+              <button
+                onClick={bulkUnrevokeSelected}
+                className="btn btn-outline btn-sm"
+                disabled={bulkActing || selectedShareIds().length === 0}
+              >
+                Un-revoke {selectedShareIds().length || ''}
+              </button>
               {bulkActionMsg && <span className="share-resend-msg text-muted">{bulkActionMsg}</span>}
             </div>
             <ul className="shares-list">
@@ -1246,6 +1267,7 @@ export default function Admin() {
                       {s.completed && <span className="badge badge-ok">Completed</span>}
                       {s.bundleId && <span className="badge badge-muted">Bundled</span>}
                       {s.expiresAt < Date.now() && <span className="badge badge-muted">Expired</span>}
+                      {s.revoked && <span className="badge badge-error">Revoked</span>}
                     </span>
                     <span className="share-meta">
                       {s.email} &mdash; expires {new Date(s.expiresAt).toLocaleString()}
@@ -1274,12 +1296,30 @@ export default function Admin() {
                         )}
                       </>
                     )}
-                    <button
-                      onClick={() => revokeShare(s.shareId)}
-                      className="btn btn-destructive btn-sm"
-                    >
-                      Revoke
-                    </button>
+                    {s.bundleId && (
+                      <button
+                        onClick={() => copyLink(`${window.location.origin}/watch/bundle/${s.bundleId}`)}
+                        className="btn btn-outline btn-sm"
+                        title={`Copy ${s.email}'s bundle link`}
+                      >
+                        Copy bundle link
+                      </button>
+                    )}
+                    {s.revoked ? (
+                      <button
+                        onClick={() => unrevokeShare(s.shareId)}
+                        className="btn btn-outline btn-sm"
+                      >
+                        Un-revoke
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => revokeShare(s.shareId)}
+                        className="btn btn-destructive btn-sm"
+                      >
+                        Revoke
+                      </button>
+                    )}
                   </div>
                 </li>
               ))}

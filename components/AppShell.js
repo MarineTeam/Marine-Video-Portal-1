@@ -16,6 +16,9 @@ export default function AppShell({ children, isAdmin = false }) {
             {user ? (
               <>
                 <span className="shell-email">{user.email}</span>
+                <a href="/activity" className="btn btn-ghost btn-sm">
+                  Activity
+                </a>
                 {isAdmin && (
                   <a href="/admin" className="btn btn-ghost btn-sm">
                     <IconShield />
