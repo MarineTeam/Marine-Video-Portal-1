@@ -95,6 +95,16 @@ export default function Admin() {
   const [bulkActionMsg, setBulkActionMsg] = useState('');
   const [bulkActing, setBulkActing] = useState(false);
   const [extendHours, setExtendHours] = useState('72');
+  const [watermarkGlobal, setWatermarkGlobal] = useState(false);
+  const [watermarkExempt, setWatermarkExempt] = useState([]);
+  const [newExemptEmail, setNewExemptEmail] = useState('');
+  const [shareWatermark, setShareWatermark] = useState({});
+  const [bulkWatermark, setBulkWatermark] = useState('default');
+  const [videoAnalytics, setVideoAnalytics] = useState({});
+  const [videoOpsSelected, setVideoOpsSelected] = useState({});
+  const [videoOpsCollection, setVideoOpsCollection] = useState('');
+  const [videoOpsMsg, setVideoOpsMsg] = useState('');
+  const [videoOpsActing, setVideoOpsActing] = useState(false);
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
@@ -115,7 +125,18 @@ export default function Admin() {
     fetch('/api/admin/shares').then((r) => r.json()).then(setActiveShares);
     fetch('/api/theme').then((r) => r.json()).then(setTheme).catch(() => {});
     fetch('/api/admin/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
+    fetch('/api/admin/watermark')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { setWatermarkGlobal(Boolean(d.global)); setWatermarkExempt(d.exempt || []); } })
+      .catch(() => {});
   }, [user]);
+
+  // Load the per-video analytics rollup the first time the Videos tab is opened
+  // (and refresh on revisit) — same lazy pattern as Activity/Analytics.
+  useEffect(() => {
+    if (!user || tab !== 'videos') return;
+    fetch('/api/admin/video-analytics').then((r) => (r.ok ? r.json() : {})).then(setVideoAnalytics).catch(() => {});
+  }, [user, tab]);
 
   // While any video is still encoding (status 0–3), re-poll so progress updates.
   useEffect(() => {
@@ -384,6 +405,114 @@ export default function Admin() {
     setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, collectionId } : x)));
   }
 
+  async function assignWatermarkMode(v, watermarkMode) {
+    const res = await fetch('/api/admin/videos', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: v.id, watermarkMode }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Failed to update'); return; }
+    setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, watermarkMode } : x)));
+  }
+
+  async function saveWatermarkGlobal(next) {
+    const res = await fetch('/api/admin/watermark', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ global: next }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Failed to save'); return; }
+    setWatermarkGlobal(next);
+  }
+
+  async function addWatermarkExempt() {
+    const email = newExemptEmail.trim();
+    if (!email) return;
+    const res = await fetch('/api/admin/watermark', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Failed to add exemption'); return; }
+    setNewExemptEmail('');
+    setWatermarkExempt((prev) => [...new Set([...prev, email.toLowerCase()])].sort());
+  }
+
+  async function removeWatermarkExempt(email) {
+    await fetch('/api/admin/watermark', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    setWatermarkExempt((prev) => prev.filter((e) => e !== email));
+  }
+
+  function selectedVideoOpsIds() {
+    return Object.keys(videoOpsSelected).filter((id) => videoOpsSelected[id]);
+  }
+
+  async function bulkDeleteVideos() {
+    const ids = selectedVideoOpsIds();
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} video(s)? This permanently removes them from bunny.net.`)) return;
+    setVideoOpsActing(true);
+    setVideoOpsMsg('');
+    try {
+      const res = await fetch('/api/admin/videos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setVideoOpsMsg(data.error || 'Delete failed'); return; }
+      const results = data.results || ids.map((id) => ({ id, ok: true }));
+      const okIds = new Set(results.filter((r) => r.ok).map((r) => r.id));
+      setVideos((prev) => prev.filter((v) => !okIds.has(v.id)));
+      const failed = results.filter((r) => !r.ok);
+      setVideoOpsMsg(
+        failed.length === 0
+          ? `Deleted ${okIds.size}/${ids.length}.`
+          : `Deleted ${okIds.size}/${ids.length} (failed: ${failed.map((f) => f.error || 'error').join('; ')}).`
+      );
+      setVideoOpsSelected({});
+    } catch (e) {
+      setVideoOpsMsg('Delete failed');
+    } finally {
+      setVideoOpsActing(false);
+    }
+  }
+
+  async function bulkAssignVideoCollection() {
+    const ids = selectedVideoOpsIds();
+    if (ids.length === 0) return;
+    setVideoOpsActing(true);
+    setVideoOpsMsg('');
+    try {
+      const res = await fetch('/api/admin/videos', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, collectionId: videoOpsCollection }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setVideoOpsMsg(data.error || 'Update failed'); return; }
+      const results = data.results || ids.map((id) => ({ id, ok: true }));
+      const okIds = new Set(results.filter((r) => r.ok).map((r) => r.id));
+      setVideos((prev) => prev.map((v) => (okIds.has(v.id) ? { ...v, collectionId: videoOpsCollection } : v)));
+      const failed = results.filter((r) => !r.ok);
+      setVideoOpsMsg(
+        failed.length === 0
+          ? `Assigned ${okIds.size}/${ids.length}.`
+          : `Assigned ${okIds.size}/${ids.length} (failed: ${failed.map((f) => f.error || 'error').join('; ')}).`
+      );
+      setVideoOpsSelected({});
+    } catch (e) {
+      setVideoOpsMsg('Update failed');
+    } finally {
+      setVideoOpsActing(false);
+    }
+  }
+
   function onDragStartRow(e, id) { dragIdRef.current = id; e.dataTransfer.effectAllowed = 'move'; }
   function onDragOverRow(e, id) { e.preventDefault(); if (id !== dragOverId) setDragOverId(id); }
   function onDragEndRow() { dragIdRef.current = null; setDragOverId(null); }
@@ -494,6 +623,7 @@ export default function Admin() {
         emails: [email],
         expiresInHours: hours,
         notify,
+        watermarkMode: shareWatermark[video.id] || 'default',
       }),
     });
     const data = await res.json();
@@ -526,6 +656,7 @@ export default function Admin() {
           emails: emailList,
           expiresInHours: parseInt(bulkExpiresHours) || 72,
           notify: mailEnabled && bulkNotify,
+          watermarkMode: bulkWatermark,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -769,6 +900,55 @@ export default function Admin() {
           </div>
         </div>
 
+        {/* Watermark */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Watermark</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Overlays the viewer&rsquo;s email on playback as a deterrent against screen
+            recording. Layered: an exemption always wins; below that, a share&rsquo;s own
+            setting beats a video&rsquo;s, which beats this global default.
+          </p>
+          <label className="share-notify" style={{ marginBottom: '1rem' }}>
+            <input
+              type="checkbox"
+              checked={watermarkGlobal}
+              onChange={(e) => saveWatermarkGlobal(e.target.checked)}
+            />
+            Watermark video by default
+          </label>
+
+          <h3 className="analytics-subhead" style={{ marginTop: 0 }}>Exempt from watermarking</h3>
+          <div className="admin-row">
+            <input
+              type="email"
+              placeholder="viewer@example.com"
+              value={newExemptEmail}
+              onChange={(e) => setNewExemptEmail(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addWatermarkExempt()}
+              className="input input-sm"
+            />
+            <button onClick={addWatermarkExempt} className="btn btn-primary btn-sm">Add</button>
+          </div>
+          {watermarkExempt.length > 0 ? (
+            <ul className="viewer-list">
+              {watermarkExempt.map((email) => (
+                <li key={email} className="viewer-item">
+                  <span className="viewer-email">{email}</span>
+                  <button
+                    onClick={() => removeWatermarkExempt(email)}
+                    className="btn btn-icon"
+                    title="Remove exemption"
+                  >
+                    <IconTrash />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted mt-4">No exemptions — everyone follows the layered setting above.</p>
+          )}
+        </div>
+
         {/* Notifications */}
         <div className="card admin-section">
           <h2 className="admin-section-title">Notifications</h2>
@@ -960,6 +1140,17 @@ export default function Admin() {
               style={{ width: '5rem', flex: 'none' }}
               title="Hours until links expire"
             />
+            <select
+              className="input input-sm"
+              value={bulkWatermark}
+              onChange={(e) => setBulkWatermark(e.target.value)}
+              style={{ width: '9rem', flex: 'none' }}
+              title="Watermark for these links"
+            >
+              <option value="default">Watermark: Default</option>
+              <option value="always">Watermark: Always</option>
+              <option value="never">Watermark: Never</option>
+            </select>
             {mailEnabled && (
               <label className="share-notify">
                 <input
@@ -1226,6 +1417,44 @@ export default function Admin() {
             )}
           </div>
 
+          {shownVideos.length > 0 && (
+            <div className="bulk-action-bar">
+              <span className="text-muted">
+                {selectedVideoOpsIds().length > 0 ? `${selectedVideoOpsIds().length} selected` : 'Select videos for bulk actions'}
+              </span>
+              {collections.length > 0 && (
+                <>
+                  <select
+                    className="input input-sm"
+                    value={videoOpsCollection}
+                    onChange={(e) => setVideoOpsCollection(e.target.value)}
+                    style={{ width: '10rem', flex: 'none' }}
+                  >
+                    <option value="">No collection</option>
+                    {collections.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={bulkAssignVideoCollection}
+                    className="btn btn-outline btn-sm"
+                    disabled={videoOpsActing || selectedVideoOpsIds().length === 0}
+                  >
+                    Assign {selectedVideoOpsIds().length || ''}
+                  </button>
+                </>
+              )}
+              <button
+                onClick={bulkDeleteVideos}
+                className="btn btn-destructive btn-sm"
+                disabled={videoOpsActing || selectedVideoOpsIds().length === 0}
+              >
+                Delete {selectedVideoOpsIds().length || ''}
+              </button>
+              {videoOpsMsg && <span className="share-resend-msg text-muted">{videoOpsMsg}</span>}
+            </div>
+          )}
+
           {shownVideos.length === 0 ? (
             <p className="text-muted mt-4">
               {videoQuery ? 'No videos match your search.' : 'No videos yet.'}
@@ -1240,6 +1469,11 @@ export default function Admin() {
                 onDrop={!q ? (e) => onDropRow(e, v.id) : undefined}
               >
                 <div className="admin-video-header">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(videoOpsSelected[v.id])}
+                    onChange={(e) => setVideoOpsSelected((prev) => ({ ...prev, [v.id]: e.target.checked }))}
+                  />
                   {v.thumbnail && (
                     <img
                       className="admin-video-thumb"
@@ -1313,6 +1547,19 @@ export default function Admin() {
                   </div>
                 )}
 
+                <div className="admin-video-collection">
+                  <label className="collection-label">Watermark</label>
+                  <select
+                    className="input input-sm"
+                    value={v.watermarkMode || 'default'}
+                    onChange={(e) => assignWatermarkMode(v, e.target.value)}
+                  >
+                    <option value="default">Default</option>
+                    <option value="always">Always</option>
+                    <option value="never">Never</option>
+                  </select>
+                </div>
+
                 <div className="admin-video-share">
                   <input
                     type="email"
@@ -1332,6 +1579,17 @@ export default function Admin() {
                     style={{ width: '5rem', flex: 'none' }}
                     title="Hours until link expires"
                   />
+                  <select
+                    className="input input-sm"
+                    value={shareWatermark[v.id] || 'default'}
+                    onChange={(e) => setShareWatermark((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                    style={{ width: '9rem', flex: 'none' }}
+                    title="Watermark for this link"
+                  >
+                    <option value="default">Watermark: Default</option>
+                    <option value="always">Watermark: Always</option>
+                    <option value="never">Watermark: Never</option>
+                  </select>
                   <button onClick={() => handleShare(v)} className="btn btn-outline btn-sm">
                     Create link
                   </button>
@@ -1368,6 +1626,42 @@ export default function Admin() {
                 {shareMsg[v.id] && (
                   <p className="share-sent-msg text-muted">{shareMsg[v.id]}</p>
                 )}
+
+                <details className="bulk-add">
+                  <summary>Analytics</summary>
+                  {videoAnalytics[v.id] ? (
+                    <ul className="analytics-list">
+                      <li className="analytics-row">
+                        <span className="analytics-title">Shares created</span>
+                        <span className="analytics-views">{formatNumber(videoAnalytics[v.id].shares)}</span>
+                      </li>
+                      <li className="analytics-row">
+                        <span className="analytics-title">Unique recipients</span>
+                        <span className="analytics-views">{formatNumber(videoAnalytics[v.id].uniqueRecipients)}</span>
+                      </li>
+                      <li className="analytics-row">
+                        <span className="analytics-title">Views</span>
+                        <span className="analytics-views">{formatNumber(videoAnalytics[v.id].views)}</span>
+                      </li>
+                      <li className="analytics-row">
+                        <span className="analytics-title">Started</span>
+                        <span className="analytics-views">{formatNumber(videoAnalytics[v.id].started)}</span>
+                      </li>
+                      <li className="analytics-row">
+                        <span className="analytics-title">Completed</span>
+                        <span className="analytics-views">
+                          {formatNumber(videoAnalytics[v.id].completed)} ({videoAnalytics[v.id].completionRate}% of starters)
+                        </span>
+                      </li>
+                      <li className="analytics-row">
+                        <span className="analytics-title">Avg. furthest progress</span>
+                        <span className="analytics-views">{videoAnalytics[v.id].avgProgress}%</span>
+                      </li>
+                    </ul>
+                  ) : (
+                    <p className="text-muted mt-4">No active shares for this video yet.</p>
+                  )}
+                </details>
               </li>
             ))}
           </ul>

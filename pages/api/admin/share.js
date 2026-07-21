@@ -39,6 +39,12 @@ export default async function handler(req, res) {
     : [];
   const expiresInHours = body.expiresInHours || 72;
   const notify = Boolean(body.notify);
+  // Watermark override for every link created by this action: 'always'/'never'
+  // is stored on each share record; 'default' (or anything else) is left
+  // unset so the share inherits the per-video/global setting at watch time.
+  const watermarkMode = body.watermarkMode === 'always' || body.watermarkMode === 'never'
+    ? body.watermarkMode
+    : undefined;
 
   const cleanVideos = videos.filter((v) => v && v.id);
   const cleanEmails = [...new Set(emails.map((e) => (e || '').toLowerCase().trim()).filter(Boolean))];
@@ -72,6 +78,7 @@ export default async function handler(req, res) {
         furthestPct: 0,
         completed: false,
         completedAt: null,
+        ...(watermarkMode ? { watermark: watermarkMode } : {}),
       };
       await redis.set(k(`share:${shareId}`), share, { ex: ttlSecondsFor(expiresAt) });
       await redis.sadd(k('active_shares'), shareId);

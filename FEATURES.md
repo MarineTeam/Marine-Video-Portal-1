@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.9.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.10.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
@@ -28,6 +28,7 @@ Current as of **v1.9.0**. Grouped by area; items marked _(admin)_ live in the `/
 - Every play uses a **signed, time-limited bunny.net embed token**, generated fresh per request — never a permanent or public URL.
 - Direct bunny.net CDN file URLs are never used or exposed by the app.
 - Thumbnail requests carry the site's `Referer`, so hotlink protection blocks direct/off-site access while the app still works.
+- **Watermark overlay** — playback can show the viewer's own email as a faint, tiled overlay on the player, a deterrent against screen-recording/redistribution. Layered control: an **exemption** (per-viewer) always wins; below that, a **per-share** setting beats a **per-video** setting, which beats a **global default** _(admin, Settings tab)_. Purely visual — never blocks playback, and it's simply absent wherever nothing applies.
 
 ## Video management _(admin)_
 - **Upload directly from the browser to bunny.net** — TUS resumable upload with a progress bar, **drag-and-drop**, and **cancel/retry** for in-progress uploads (a cancelled upload cleans up its half-created video). The Bunny API key never reaches the client.
@@ -37,6 +38,7 @@ Current as of **v1.9.0**. Grouped by area; items marked _(admin)_ live in the `/
 - **Drag-to-reorder** the library.
 - **Search/filter** the library.
 - **Collections** — create/delete collections and assign each video to one.
+- **Bulk operations** — select multiple videos to **delete** or **assign to a collection** at once, mirroring the bulk-share UX, with per-item success/failure reporting.
 
 ## Private share links (per-recipient sharing) _(admin)_
 - Generate a one-off private link for any video, tied to a specific recipient email — singly, or in **bulk**.
@@ -60,6 +62,7 @@ Current as of **v1.9.0**. Grouped by area; items marked _(admin)_ live in the `/
 - **Viewer last-seen** — each viewer's most recent activity time.
 - **Activity / audit log** — the most recent admin actions (viewer add/remove, share create/revoke, video rename/delete, collection create/delete, settings, palette), each with actor and time. Logging is best-effort so it never breaks the underlying action.
 - **Analytics dashboard** — total views, 30-day views, watch time, video count, a 30-day views bar chart, and a most-watched list (from bunny.net video stats + the statistics API).
+- **Per-video analytics** — a collapsible panel per video (Videos tab) rolling up its existing share data: shares created, unique recipients, views, started, completed and completion rate, and average furthest progress. Reads only fields already tracked per share — adds no new tracking.
 - **Content-protection panel** — explains the tokenized-playback model and the bunny.net "Block Direct URL File Access" setting.
 
 ## Admin panel structure _(admin)_

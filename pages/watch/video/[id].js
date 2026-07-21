@@ -2,6 +2,7 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../../lib/redis';
 import { listVideos, getEmbedUrl } from '../../../lib/bunny';
 import { isAdmin } from '../../../lib/auth';
+import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWatermark } from '../../../lib/watermark';
 import AppShell from '../../../components/AppShell';
 import ResumablePlayer from '../../../components/ResumablePlayer';
 import { IconChevronLeft } from '../../../components/icons';
@@ -34,17 +35,25 @@ export async function getServerSideProps({ req, res, params }) {
     return { props: { error: 'Video not found.', adminUser: isAdmin(email) } };
   }
 
+  const [globalDefault, videoMode, exempt] = await Promise.all([
+    getGlobalWatermark(),
+    getVideoWatermarkMode(video.guid),
+    isWatermarkExempt(email),
+  ]);
+  const watermark = resolveWatermark({ exempt, shareMode: undefined, videoMode, globalDefault });
+
   return {
     props: {
       embedUrl: getEmbedUrl(video.guid, 3600),
       title: video.title,
       videoId: video.guid,
       adminUser: isAdmin(email),
+      watermarkText: watermark ? email : null,
     },
   };
 }
 
-export default function WatchVideo({ embedUrl, title, videoId, error, adminUser }) {
+export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText }) {
   return (
     <AppShell isAdmin={adminUser}>
       <div className="watch-back">
@@ -61,7 +70,7 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser 
       ) : (
         <>
           <h1 className="watch-title">{title}</h1>
-          <ResumablePlayer embedUrl={embedUrl} title={title} videoId={videoId} />
+          <ResumablePlayer embedUrl={embedUrl} title={title} videoId={videoId} watermarkText={watermarkText} />
         </>
       )}
     </AppShell>

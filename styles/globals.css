@@ -460,6 +460,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 .watch-player {
+  position: relative;
   border-radius: var(--radius);
   overflow: hidden;
   background: #000;
@@ -470,6 +471,14 @@ a { color: inherit; text-decoration: none; }
   box-shadow: var(--shadow);
 }
 .watch-player iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+.video-watermark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-repeat: repeat;
+  z-index: 2;
+}
 
 .watch-error { padding: 22px 24px; max-width: 640px; }
 .watch-error p { font-size: 14.5px; }

@@ -4,6 +4,15 @@ import { getOrder, setOrder, applyOrder } from '../../../lib/order';
 import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { maybeAnnounceReady } from '../../../lib/push';
+import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/watermark';
+
+// Bulk video ops (delete, collection assignment) accept either a single `id`
+// or an `ids` array, mirroring pages/api/admin/shares.js: every id is
+// processed independently and reported back with its own ok/error, and the
+// single-id shape keeps its original response for backward compatibility.
+function idsFrom(body) {
+  return Array.isArray(body.ids) ? body.ids : body.id ? [body.id] : [];
+}
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
@@ -14,6 +23,7 @@ export default async function handler(req, res) {
     const videos = await listVideos({ itemsPerPage: 100 });
     const order = await getOrder();
     const ordered = applyOrder(videos, order);
+    const watermarkModes = await listVideoWatermarkModes();
 
     // Best-effort: notify viewers about any newly-ready video. This admin poll is
     // the natural trigger (admins watch the library refresh while encoding). It
@@ -34,42 +44,90 @@ export default async function handler(req, res) {
         collectionId: v.collectionId || '',
         thumbnail: getThumbnailUrl(v),
         views: v.views || 0,
+        watermarkMode: watermarkModes[v.guid] || 'default',
       }))
     );
   }
 
   if (req.method === 'PUT') {
-    const { id, title, collectionId } = req.body || {};
-    if (!id) return res.status(400).json({ error: 'id required' });
-    try {
-      if (typeof collectionId === 'string') {
-        await setVideoCollection(id, collectionId);
-        await logAudit(actor, 'video.collection', `${id} → ${collectionId || 'none'}`);
-      } else if (title && title.trim()) {
-        await updateVideoTitle(id, title.trim());
-        await logAudit(actor, 'video.rename', `${id} → ${title.trim()}`);
-      } else {
-        return res.status(400).json({ error: 'title or collectionId required' });
+    const body = req.body || {};
+    const { title, watermarkMode } = body;
+    const ids = idsFrom(body);
+    if (ids.length === 0) return res.status(400).json({ error: 'id(s) required' });
+
+    // Per-video watermark override — always a single id (there's no bulk
+    // watermark control), 'default' clears back to inheriting the global setting.
+    if (typeof watermarkMode === 'string') {
+      try {
+        await setVideoWatermarkMode(ids[0], watermarkMode);
+        await logAudit(actor, 'video.watermark', `${ids[0]} → ${watermarkMode}`);
+        return res.json({ ok: true });
+      } catch (e) {
+        return res.status(502).json({ error: e.message || 'Update failed' });
       }
-    } catch (e) {
-      return res.status(502).json({ error: e.message || 'Update failed' });
     }
-    return res.json({ ok: true });
+
+    if (typeof body.collectionId === 'string') {
+      const results = [];
+      for (const id of ids) {
+        try {
+          await setVideoCollection(id, body.collectionId);
+          results.push({ id, ok: true });
+        } catch (e) {
+          results.push({ id, ok: false, error: e.message || 'Update failed' });
+        }
+      }
+      await logAudit(actor, 'video.collection', `${ids.length} video(s) → ${body.collectionId || 'none'}`);
+      if (ids.length === 1) {
+        const r = results[0];
+        return r.ok ? res.json({ ok: true }) : res.status(502).json({ error: r.error });
+      }
+      return res.json({ results });
+    }
+
+    if (title && title.trim()) {
+      try {
+        await updateVideoTitle(ids[0], title.trim());
+        await logAudit(actor, 'video.rename', `${ids[0]} → ${title.trim()}`);
+      } catch (e) {
+        return res.status(502).json({ error: e.message || 'Update failed' });
+      }
+      return res.json({ ok: true });
+    }
+
+    return res.status(400).json({ error: 'title, collectionId, or watermarkMode required' });
   }
 
   if (req.method === 'DELETE') {
-    const { id } = req.body || {};
-    if (!id) return res.status(400).json({ error: 'id required' });
-    try {
-      await deleteVideo(id);
-    } catch (e) {
-      return res.status(502).json({ error: e.message || 'Failed to delete video' });
+    const body = req.body || {};
+    const ids = idsFrom(body);
+    if (ids.length === 0) return res.status(400).json({ error: 'id(s) required' });
+
+    const results = [];
+    for (const id of ids) {
+      try {
+        await deleteVideo(id);
+        results.push({ id, ok: true });
+      } catch (e) {
+        results.push({ id, ok: false, error: e.message || 'Failed to delete video' });
+      }
     }
-    // Drop the deleted id from the saved custom order so it doesn't linger.
-    const order = await getOrder();
-    if (order.includes(id)) await setOrder(order.filter((x) => x !== id));
-    await logAudit(actor, 'video.delete', id);
-    return res.json({ ok: true });
+
+    // Drop every successfully-deleted id from the saved custom order so it doesn't linger.
+    const okIds = new Set(results.filter((r) => r.ok).map((r) => r.id));
+    if (okIds.size > 0) {
+      const order = await getOrder();
+      const pruned = order.filter((x) => !okIds.has(x));
+      if (pruned.length !== order.length) await setOrder(pruned);
+    }
+
+    await logAudit(actor, 'video.delete', ids.length === 1 ? ids[0] : `${okIds.size}/${ids.length} video(s)`);
+
+    if (ids.length === 1) {
+      const r = results[0];
+      return r.ok ? res.json({ ok: true }) : res.status(502).json({ error: r.error });
+    }
+    return res.json({ results });
   }
 
   res.status(405).end();

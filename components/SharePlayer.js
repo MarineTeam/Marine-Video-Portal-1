@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
+import Watermark from './Watermark';
 
 // Wraps the Bunny embed iframe on a share-link watch page and uses the
 // player.js protocol to report real playback signal — plays, furthest
 // progress reached, and completion — back to the share record. Degrades
 // gracefully: if player.js can't attach, the video still plays, it just
 // isn't tracked beyond the page view already recorded server-side.
-export default function SharePlayer({ embedUrl, title, shareId }) {
+export default function SharePlayer({ embedUrl, title, shareId, watermarkText }) {
   const iframeRef = useRef(null);
 
   useEffect(() => {
@@ -102,6 +103,7 @@ export default function SharePlayer({ embedUrl, title, shareId }) {
   return (
     <div className="watch-player">
       <iframe ref={iframeRef} src={embedUrl} allow="fullscreen" title={title} />
+      <Watermark text={watermarkText} />
     </div>
   );
 }

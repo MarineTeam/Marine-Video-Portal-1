@@ -1,6 +1,7 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { getEmbedUrl } from '../../lib/bunny';
 import { getShare, saveShare, isExpired } from '../../lib/shareBundle';
+import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWatermark } from '../../lib/watermark';
 import AppShell from '../../components/AppShell';
 import SharePlayer from '../../components/SharePlayer';
 import { IconChevronLeft } from '../../components/icons';
@@ -42,16 +43,25 @@ export async function getServerSideProps({ req, res, params }) {
     lastViewedAt: now,
   });
 
+  const email = session.user.email.toLowerCase();
+  const [globalDefault, videoMode, exempt] = await Promise.all([
+    getGlobalWatermark(),
+    getVideoWatermarkMode(share.videoId),
+    isWatermarkExempt(email),
+  ]);
+  const watermark = resolveWatermark({ exempt, shareMode: share.watermark, videoMode, globalDefault });
+
   return {
     props: {
       embedUrl: getEmbedUrl(share.videoId, 3600),
       title: share.title || '',
       shareId: params.shareId,
+      watermarkText: watermark ? email : null,
     },
   };
 }
 
-export default function Watch({ embedUrl, title, shareId, error }) {
+export default function Watch({ embedUrl, title, shareId, watermarkText, error }) {
   return (
     <AppShell>
       <div className="watch-back">
@@ -71,7 +81,7 @@ export default function Watch({ embedUrl, title, shareId, error }) {
       ) : (
         <>
           <h1 className="watch-title">{title}</h1>
-          <SharePlayer embedUrl={embedUrl} title={title} shareId={shareId} />
+          <SharePlayer embedUrl={embedUrl} title={title} shareId={shareId} watermarkText={watermarkText} />
         </>
       )}
     </AppShell>
