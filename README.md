@@ -51,12 +51,17 @@ pages/
   _document.js            No-flash palette script (applies cached theme pre-paint)
   index.js                Homepage — thumbnail grid/list, search, collections, continue-watching
   admin.js                Tabbed admin panel (server-gated) — Videos/Viewers/Shares/Settings/Activity/Analytics
+  watch/
+    [shareId].js          Individual private-link watch page (view + playback tracking)
+    bundle/[bundleId].js  Consolidated listing of everything currently shared with one recipient
+    video/[id].js         Watch page for approved viewers (by video GUID)
   api/
     auth/[auth0].js       Auth0 login/logout/callback
     videos.js             Page of videos for approved viewers (search + collection filter, rate-limited)
     collections.js        Collection list for the homepage filter (approved viewers)
     progress.js           Per-viewer playback progress / watch history
     theme.js              Public GET palette; admin POST to update it
+    share/[shareId]/track.js  Records player.js playback events (play/progress/completed) for a share link
     push/
       subscribe.js        Store a viewer's Web Push subscription
       unsubscribe.js      Remove a Web Push subscription
@@ -65,8 +70,8 @@ pages/
       viewers.js          List (with last-seen) / add (single or bulk) / remove
       settings.js         Homepage video count
       order.js            Custom homepage video order
-      share.js            Create a private share link (rate-limited)
-      shares.js           List / revoke active share links (with viewed status)
+      share.js            Bulk share creation — N videos × M recipients (rate-limited)
+      shares.js           List / bulk resend / bulk revoke / extend expiry (single or bulk)
       upload.js           Create Bunny video + signed TUS auth (rate-limited)
       collections.js      Create / list / delete collections
       audit.js            Recent admin actions
@@ -76,6 +81,7 @@ components/
   AppShell.js             Header/layout shell
   IdleTimeout.js          30-minute inactivity auto sign-out
   ResumablePlayer.js      Wraps the Bunny embed via player.js for resume + progress
+  SharePlayer.js          Wraps the Bunny embed on share-link pages, reports play/progress/completed
   NotifyButton.js         Per-device push opt-in/out toggle
   icons.js                Inline SVG icons
 lib/
@@ -87,9 +93,10 @@ lib/
   theme.js                Palette presets, validation, CSS-variable mapping
   audit.js                Append-only admin action log (capped)
   push.js                 Web Push helpers (VAPID send, announce-once guard, self-pruning)
-  mail.js                 Resend email helper for share links (inert without RESEND_API_KEY)
+  mail.js                 Resend email helper for share/bundle emails (inert without RESEND_API_KEY)
+  shareBundle.js          Share-record helpers, grace-period TTL/expiry, and per-recipient bundling
   ratelimit.js            Sliding-window limiter (fails open)
-  __tests__/              Vitest smoke tests (auth, order, theme, push)
+  __tests__/              Vitest smoke tests (auth, order, theme, push, shareBundle)
 public/
   manifest.webmanifest    PWA manifest
   sw.js                   Service worker (caches only icons + manifest)
@@ -171,9 +178,9 @@ Every push / PR to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci
 
 Tabbed layout, gated server-side to `ADMIN_EMAILS`:
 
-- **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, and per-video private share-link creation (with an optional **"email the link to the recipient"** checkbox when email is configured). Also a Collections manager (create/delete).
+- **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, and a per-video quick private share-link (with an optional **"email the link to the recipient"** checkbox when email is configured). Also a Collections manager (create/delete).
 - **Viewers** — add/remove approved emails, **bulk add** (paste a list), and each viewer's **last-seen** time.
-- **Shares** — every active private link with recipient, expiry, and **viewed/not-viewed** status; **resend** the email (when email is configured) or revoke instantly.
+- **Shares** — a **bulk-share** form (pick any number of videos × any number of recipients — every pair gets its own link, one email per recipient); every active private link with recipient, expiry, **view count/last-viewed**, and **playback status** (plays, furthest % watched, completed); multi-select checkboxes for **bulk resend / bulk revoke / bulk extend**; and per-link **extend** to push out an expiry in place without a new link.
 - **Settings** — homepage video count, the site **color palette** (7 presets + custom, applied to all visitors), a **push broadcast** composer, and a content-protection info panel.
 - **Activity** — the most recent admin actions (add/remove viewer, share create/revoke, video rename/delete/reorder, settings, palette, collections).
 - **Analytics** — total views, 30-day views, watch time, video count, a 30-day views chart, and a most-watched list.
@@ -206,13 +213,23 @@ Generate a keypair with `npx web-push generate-vapid-keys`.
 
 ## Emailing share links (opt-in)
 
-Share links can be delivered to their recipient by email through [Resend](https://resend.com), and re-sent later from the Shares tab. Like push, the feature is **inert unless `RESEND_API_KEY` is set** — with no key, the "Email the link to the recipient" checkbox and the "Resend email" button never appear and nothing is ever sent, so the admin simply copies the link by hand as before.
+Share links can be delivered to their recipient by email through [Resend](https://resend.com), and re-sent later from the Shares tab. Like push, the feature is **inert unless `RESEND_API_KEY` is set** — with no key, the "Email" checkboxes and "Resend email" buttons never appear and nothing is ever sent, so the admin simply copies links by hand as before.
 
-- **On create** — tick the checkbox in a video's share form and the link is emailed to the recipient as it's created.
-- **Resend** — each active link in the Shares tab has a "Resend email" button that re-delivers it to the original recipient (rate-limited, like link creation).
+- **On create** — the bulk-share form (or a video's quick-share form) emails each recipient once, listing only their own links.
+- **Resend** — every active link in the Shares tab has a "Resend email" button that re-delivers it to the original recipient (rate-limited, like link creation); it can also be done in bulk for several selected links at once.
 - **Best-effort** — a mail failure never blocks link creation; the link is stored either way and can be copied or resent.
 
 Set `RESEND_API_KEY` and (recommended) `MAIL_FROM` to a Resend-verified sender. Emails are sent server-side via Resend's REST API — no extra dependency, nothing built into the client bundle.
+
+---
+
+## Bulk sharing, bundles, and expiry extension
+
+- **Bulk share** — the Shares tab's bulk-share form takes any number of selected videos and any number of recipient emails. Every (video, recipient) pair gets its own **independently revocable** private link. Each recipient is emailed **once** listing only their own links, never anyone else's.
+- **Bundles ("same email, same place")** — once a recipient has 2 or more active links (from one bulk action, or accumulated one at a time over separate actions), they're grouped into one **bundle**: a single listing page (`/watch/bundle/[id]`) showing everything currently shared with that email, gated by the exact same Auth0-login + email-match check as an individual link. A bundle is a pure grouping of link IDs — it never caches a link's title or status, so revoking, expiring, or extending one member shows up on the bundle page instantly. A brand-new recipient's first-ever link still gets a simple standalone email; from their second link onward, every notification becomes one consolidated "here's everything currently active for you" email instead of a new standalone one. Pre-existing (pre-bundling) links for the same email are swept into the bundle automatically the first time it forms.
+- **View and playback tracking, per link** — every link tracks its own **view count and last-viewed time** (server-recorded on each page load), plus real playback signal reported by the Bunny embed's player.js events: **plays**, **furthest % watched**, and **completed**. A page view alone (opening the link) is tracked separately from actually pressing play, so you can tell who opened a link versus who watched it.
+- **Extend** — push a link's expiry out in place (same URL, no new link, no re-notification) instead of revoking and re-sharing. Works even on a link that's already lapsed but wasn't revoked (it extends from now, not from the stale old expiry); a genuinely revoked link can't be "extended" back to life, since revoking deletes it outright. Extending a bundled link also extends the bundle's own expiry so the bundle page doesn't lapse before its members do. Extend is available per-link or in bulk across several selected links.
+- **Grace period, not instant deletion** — a link's Redis record now outlives its logical expiry by 30 days before it's actually purged, specifically so an admin can still notice and extend an expired-but-not-revoked link. Viewer-facing pages and APIs still treat it as expired the moment its `expiresAt` passes; only the underlying record sticks around a while longer.
 
 ---
 
@@ -221,7 +238,8 @@ Set `RESEND_API_KEY` and (recommended) `MAIL_FROM` to a Resend-verified sender. 
 - **Access is by email identity.** Admin, approved-viewer, and share-recipient checks all compare `session.user.email`. Because of this, keep Auth0 **sign-ups disabled** so nobody can self-register as an approved/admin address. Centralized admin logic lives in `lib/auth.js` — update it there only.
 - **`/admin` is gated server-side** via `getServerSideProps` (redirects non-admins), and every `/api/admin/*` route independently returns `403`.
 - **Playback is always tokenized** — signed, time-limited embed URLs generated per request; no permanent public URL is used or exposed.
-- **Share-link mismatches don't reveal** the intended recipient's email.
+- **Share-link mismatches don't reveal** the intended recipient's email — the bundle page and the playback-tracking endpoint use the exact same generic mismatch message.
+- **No middleware, by design.** The bundle page and the share-tracking API each carry their own `getSession` + email-match check via `getServerSideProps` / handler code, the same pattern every other page/route in this app uses. There is deliberately no `middleware.js` gating routes centrally; adding one would expand the app's Next.js attack surface (Pages Router only, no App Router/middleware — see "Architecture at a glance" above).
 - **Thumbnails** are served from the CDN and, when a token key is present, are **signed** so they keep working with "Block Direct URL File Access" enabled. Requests from the app carry the site's `Referer`, so hotlink protection still blocks direct/off-site access.
 - **Rate limiting** guards the video list, upload, and share-creation endpoints (fails open if the limiter backend is unavailable).
 - **Idle sign-out** logs users out after 30 minutes of inactivity.

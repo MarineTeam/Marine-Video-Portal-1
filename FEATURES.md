@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.7.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.9.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
@@ -39,16 +39,20 @@ Current as of **v1.7.0**. Grouped by area; items marked _(admin)_ live in the `/
 - **Collections** — create/delete collections and assign each video to one.
 
 ## Private share links (per-recipient sharing) _(admin)_
-- Generate a one-off private link for any video, tied to a specific recipient email.
-- **Forced login** — opening the link requires an Auth0 login and only plays if the logged-in email matches the one specified.
+- Generate a one-off private link for any video, tied to a specific recipient email — singly, or in **bulk**.
+- **Bulk share** — select any number of videos and any number of recipients at once; every (video, recipient) pair gets its own **independently revocable** link. Each recipient is emailed **once**, listing only their own links, never anyone else's.
+- **Forced login** — opening a link requires an Auth0 login and only plays if the logged-in email matches the one specified.
 - Wrong-account attempts show a generic mismatch message — **the intended recipient's email is never revealed**.
 - **Adjustable expiry** per link (default 72 hours, capped at 720 / 30 days).
-- **Email delivery** _(opt-in)_ — a checkbox on the share form emails the link straight to the recipient via [Resend](https://resend.com), so the admin no longer has to copy-and-send by hand. Best-effort: a mail failure never blocks link creation.
-- **Resend** — each active link has a "Resend email" button that re-delivers it to the original recipient (rate-limited, like link creation).
-- **Inert until configured** — the email checkbox and Resend button stay hidden unless `RESEND_API_KEY` is set; without it, sharing works exactly as before (copy the link manually).
-- **Viewed status** — each active link shows whether the recipient has opened it yet (stamped on first play, preserving remaining TTL).
-- **Active link visibility** — every live link with recipient and exact expiry.
-- **Instant revocation** — kill any active link immediately, one click.
+- **Extend** — push a link's expiry out in place (same link, no re-share, no re-notification), singly or in bulk across selected links. Works even on a link that's lapsed but wasn't revoked (extends from now); a revoked link can't be resurrected this way. Extending a bundled link also extends its bundle's expiry.
+- **Bundles ("same email, same place")** — once a recipient has 2+ active links (from one action or accumulated over several), they're grouped into one **bundle**: a single listing page gated by the same login + email-match check, showing everything currently shared with them. The bundle is a pure grouping of link IDs — never a cached copy of a link's title or status — so revoking, expiring, or extending one member is reflected on the bundle page instantly. A recipient's first-ever link still gets a simple email; every notification after that is one consolidated bundle email instead of a new standalone one. Links shared before bundling existed are swept into a recipient's first bundle automatically.
+- **Email delivery** _(opt-in)_ — the share form emails links straight to recipients via [Resend](https://resend.com) (single-link or the consolidated bundle email, as applicable), so the admin no longer has to copy-and-send by hand. Best-effort: a mail failure never blocks link creation.
+- **Resend** — each active link has a "Resend email" button that re-delivers its current notification (single link or bundle) to the original recipient; also available in **bulk** across selected links, rate-limited like link creation.
+- **Inert until configured** — email-related buttons/checkboxes stay hidden unless `RESEND_API_KEY` is set; without it, sharing works exactly as before (copy the link manually).
+- **View tracking** — each active link records a **view count and last-viewed time**, updated on every page load (not just the first).
+- **Real playback tracking** — the Bunny embed's player.js events report **plays**, **furthest % watched**, and **completion** back to the link, so you can tell who actually watched versus who just opened the page.
+- **Active link visibility** — every live link with recipient, exact expiry, view/playback stats, and bundle membership.
+- **Instant revocation** — kill any active link immediately, one click, or in **bulk** across selected links.
 - Expired/revoked links show a clean "expired or doesn't exist" message.
 
 ## People & oversight _(admin)_

@@ -1,5 +1,5 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { redis, k } from '../../../../lib/redis';
+import { getShare, saveShare, isExpired } from '../../../../lib/shareBundle';
 
 // Records real playback signal from the Bunny player (player.js events) on a
 // share link, as opposed to a mere page view: play count, furthest progress
@@ -13,15 +13,15 @@ export default async function handler(req, res) {
   if (!session) return res.status(401).json({ error: 'Not logged in' });
 
   const { shareId } = req.query;
-  const key = k(`share:${shareId}`);
-  const share = await redis.get(key);
-  if (!share) return res.status(404).json({ error: 'Link has expired or does not exist.' });
+  const share = await getShare(shareId);
+  if (!share || isExpired(share)) {
+    return res.status(404).json({ error: 'Link has expired or does not exist.' });
+  }
   if (share.email !== session.user.email.toLowerCase()) {
     return res.status(403).json({ error: "This link isn't valid for your account." });
   }
 
   const { type, pct } = req.body || {};
-  const remaining = Math.max(1, Math.ceil((share.expiresAt - Date.now()) / 1000));
   const updated = { ...share };
 
   if (type === 'play') {
@@ -40,6 +40,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Unknown event type' });
   }
 
-  await redis.set(key, updated, { ex: remaining });
+  await saveShare(shareId, updated);
   res.json({ ok: true });
 }
