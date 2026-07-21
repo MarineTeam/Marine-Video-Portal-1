@@ -80,5 +80,5 @@ Extend a link's expiry in place, including an already-lapsed-but-not-revoked lin
 Bundles: a recipient with 2+ active links gets one consolidated listing page and one consolidated email instead of separate ones per link
 v1.10.0
 Watermark playback with the viewer's email — layered control: an exemption always wins, otherwise a share's own setting beats a video's, which beats a global default in Settings
-Per-video analytics in the Videos tab: shares, unique recipients, views, started, completed and completion rate, and average watched progress
+Per-video analytics in the Videos and Analytics tabs: shares, unique recipients, views, started, completed and completion rate, and average watched progress
 Bulk video operations: select multiple videos to delete or assign to a collection at once

@@ -131,10 +131,10 @@ export default function Admin() {
       .catch(() => {});
   }, [user]);
 
-  // Load the per-video analytics rollup the first time the Videos tab is opened
-  // (and refresh on revisit) — same lazy pattern as Activity/Analytics.
+  // Load the per-video analytics rollup the first time the Videos or Analytics
+  // tab is opened (and refresh on revisit) — same lazy pattern as Activity/Analytics.
   useEffect(() => {
-    if (!user || tab !== 'videos') return;
+    if (!user || (tab !== 'videos' && tab !== 'analytics')) return;
     fetch('/api/admin/video-analytics').then((r) => (r.ok ? r.json() : {})).then(setVideoAnalytics).catch(() => {});
   }, [user, tab]);
 
@@ -1756,6 +1756,28 @@ export default function Admin() {
                   ))}
                 </ul>
               )}
+
+              <h3 className="analytics-subhead">Per-video analytics</h3>
+              {(() => {
+                const rows = Object.entries(videoAnalytics)
+                  .map(([videoId, a]) => ({ videoId, title: videos.find((v) => v.id === videoId)?.title || 'Untitled', ...a }))
+                  .sort((a, b) => b.shares - a.shares);
+                if (rows.length === 0) {
+                  return <p className="text-muted">No active shares yet — rolls up per-video sharing once links are created.</p>;
+                }
+                return (
+                  <ul className="analytics-list">
+                    {rows.map((r) => (
+                      <li key={r.videoId} className="analytics-row">
+                        <span className="analytics-title">{r.title}</span>
+                        <span className="analytics-stats">
+                          {formatNumber(r.shares)} share{r.shares === 1 ? '' : 's'} · {formatNumber(r.uniqueRecipients)} recipient{r.uniqueRecipients === 1 ? '' : 's'} · {formatNumber(r.views)} view{r.views === 1 ? '' : 's'} · {formatNumber(r.started)} started · {formatNumber(r.completed)} completed ({r.completionRate}%) · {r.avgProgress}% avg progress
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
             </>
           )}
         </div>

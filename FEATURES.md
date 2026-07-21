@@ -62,7 +62,7 @@ Current as of **v1.10.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Viewer last-seen** — each viewer's most recent activity time.
 - **Activity / audit log** — the most recent admin actions (viewer add/remove, share create/revoke, video rename/delete, collection create/delete, settings, palette), each with actor and time. Logging is best-effort so it never breaks the underlying action.
 - **Analytics dashboard** — total views, 30-day views, watch time, video count, a 30-day views bar chart, and a most-watched list (from bunny.net video stats + the statistics API).
-- **Per-video analytics** — a collapsible panel per video (Videos tab) rolling up its existing share data: shares created, unique recipients, views, started, completed and completion rate, and average furthest progress. Reads only fields already tracked per share — adds no new tracking.
+- **Per-video analytics** — rolls up each video's existing share data: shares created, unique recipients, views, started, completed and completion rate, and average furthest progress. Reads only fields already tracked per share — adds no new tracking. Shown both as a collapsible panel per video (Videos tab) and as one combined list, sorted by shares, in the Analytics tab.
 - **Content-protection panel** — explains the tokenized-playback model and the bunny.net "Block Direct URL File Access" setting.
 
 ## Admin panel structure _(admin)_
