@@ -3,7 +3,64 @@ import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
-import { mailEnabled, sendShareLinksEmail } from '../../../lib/mail';
+import { mailEnabled, sendShareLinksEmail, sendBundleEmail } from '../../../lib/mail';
+import { getBundle, listActiveSharesForEmail, extendShare } from '../../../lib/shareBundle';
+
+// Every mutating action here (resend, revoke, extend) accepts either a single
+// `shareId` or a `shareIds` array. Bulk requests never fail the whole batch
+// on one bad item — each id is processed independently and reported back
+// with its own ok/error, and the single-id shape keeps its original
+// response format for backward compatibility with existing callers.
+function idsFrom(body) {
+  return Array.isArray(body.shareIds) ? body.shareIds : body.shareId ? [body.shareId] : [];
+}
+
+async function resendOne(shareId, actor) {
+  const share = await redis.get(k(`share:${shareId}`));
+  if (!share) return { shareId, ok: false, error: 'Link has expired or does not exist.' };
+
+  const baseUrl = process.env.AUTH0_BASE_URL;
+  let ok;
+
+  // A bundled link is resent as the recipient's current consolidated bundle
+  // email (live-read, not whatever was true when the bundle formed).
+  if (share.bundleId) {
+    const bundle = await getBundle(share.bundleId);
+    if (bundle) {
+      const allItems = await listActiveSharesForEmail(share.email);
+      const items = allItems
+        .filter((s) => bundle.itemIds.includes(s.shareId))
+        .map((s) => ({ title: s.title, watchUrl: `${baseUrl}/watch/${s.shareId}` }));
+      const hoursLeft = Math.max(1, Math.round((bundle.expiresAt - Date.now()) / 3600000));
+      ok = await sendBundleEmail({
+        to: share.email,
+        bundleUrl: `${baseUrl}/watch/bundle/${share.bundleId}`,
+        items,
+        expiresInHours: hoursLeft,
+      });
+    }
+  }
+
+  if (ok === undefined) {
+    const watchUrl = `${baseUrl}/watch/${shareId}`;
+    const hoursLeft = Math.max(1, Math.round((share.expiresAt - Date.now()) / 3600000));
+    ok = await sendShareLinksEmail({
+      to: share.email,
+      items: [{ title: share.title, watchUrl }],
+      expiresInHours: hoursLeft,
+    });
+  }
+
+  if (ok) await logAudit(actor, 'share.resend', `${share.title || share.videoId} → ${share.email}`);
+  return { shareId, ok: Boolean(ok), error: ok ? undefined : 'Email failed to send.' };
+}
+
+async function revokeOne(shareId, actor) {
+  await redis.del(k(`share:${shareId}`));
+  await redis.srem(k('active_shares'), shareId);
+  await logAudit(actor, 'share.revoke', shareId);
+  return { shareId, ok: true };
+}
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
@@ -17,7 +74,7 @@ export default async function handler(req, res) {
     for (const id of ids) {
       const data = await redis.get(k(`share:${id}`));
       if (!data) {
-        // Already expired naturally — clean up the stale reference.
+        // Already reaped by Redis (well past its grace period) — clean up the stale reference.
         await redis.srem(k('active_shares'), id);
         continue;
       }
@@ -28,38 +85,65 @@ export default async function handler(req, res) {
     return res.json(shares);
   }
 
-  // Resend the email for an existing active link to its original recipient.
+  const body = req.body || {};
+  const ids = idsFrom(body);
+
+  // Resend the email for one or more active links to their original recipients.
   if (req.method === 'POST') {
     if (!(await allow(callerId(req, session, 'share')))) {
       return res.status(429).json({ error: 'Too many requests — slow down.' });
     }
     if (!mailEnabled()) return res.status(503).json({ error: 'Email is not configured.' });
+    if (!ids.length) return res.status(400).json({ error: 'shareId(s) required' });
 
-    const { shareId } = req.body || {};
-    if (!shareId) return res.status(400).json({ error: 'shareId required' });
+    const results = [];
+    for (const id of ids) results.push(await resendOne(id, actor));
 
-    const share = await redis.get(k(`share:${shareId}`));
-    if (!share) return res.status(404).json({ error: 'Link has expired or does not exist.' });
-
-    const watchUrl = `${process.env.AUTH0_BASE_URL}/watch/${shareId}`;
-    const hoursLeft = Math.max(1, Math.round((share.expiresAt - Date.now()) / 3600000));
-    const emailed = await sendShareLinksEmail({
-      to: share.email,
-      items: [{ title: share.title, watchUrl }],
-      expiresInHours: hoursLeft,
-    });
-    if (emailed) await logAudit(actor, 'share.resend', `${share.title || share.videoId} → ${share.email}`);
-    if (!emailed) return res.status(502).json({ error: 'Email failed to send.' });
-    return res.json({ emailed: true });
+    if (ids.length === 1) {
+      const r = results[0];
+      if (!r.ok) {
+        const status = r.error === 'Link has expired or does not exist.' ? 404 : 502;
+        return res.status(status).json({ error: r.error });
+      }
+      return res.json({ emailed: true });
+    }
+    return res.json({ results });
   }
 
   if (req.method === 'DELETE') {
-    const { shareId } = req.body || {};
-    if (!shareId) return res.status(400).json({ error: 'shareId required' });
-    await redis.del(k(`share:${shareId}`));
-    await redis.srem(k('active_shares'), shareId);
-    await logAudit(actor, 'share.revoke', shareId);
-    return res.json({ ok: true });
+    if (!ids.length) return res.status(400).json({ error: 'shareId(s) required' });
+    const results = [];
+    for (const id of ids) results.push(await revokeOne(id, actor));
+    if (ids.length === 1) return res.json({ ok: true });
+    return res.json({ results });
+  }
+
+  // Extend a link's (or several links') expiry in place — same token/URL, no
+  // re-notification needed. Works on an already-expired-but-not-revoked link
+  // (extends from now); refuses a revoked one automatically, since revoke
+  // deletes the record and extendShare() treats a missing record as an error.
+  if (req.method === 'PUT') {
+    if (!(await allow(callerId(req, session, 'share')))) {
+      return res.status(429).json({ error: 'Too many requests — slow down.' });
+    }
+    const addHours = Math.min(Number(body.addHours) || 0, 720);
+    if (!ids.length || addHours <= 0) {
+      return res.status(400).json({ error: 'shareId(s) and a positive addHours are required' });
+    }
+
+    const results = [];
+    for (const id of ids) {
+      const r = await extendShare(id, addHours);
+      if (r.ok) await logAudit(actor, 'share.extend', `${id} +${addHours}h`);
+      results.push({ shareId: id, ...r });
+    }
+
+    if (ids.length === 1) {
+      const r = results[0];
+      if (!r.ok) return res.status(404).json({ error: r.error });
+      return res.json({ ok: true, expiresAt: r.expiresAt });
+    }
+    return res.json({ results });
   }
 
   res.status(405).end();

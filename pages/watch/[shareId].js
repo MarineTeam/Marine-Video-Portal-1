@@ -1,6 +1,6 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { redis, k } from '../../lib/redis';
 import { getEmbedUrl } from '../../lib/bunny';
+import { getShare, saveShare, isExpired } from '../../lib/shareBundle';
 import AppShell from '../../components/AppShell';
 import SharePlayer from '../../components/SharePlayer';
 import { IconChevronLeft } from '../../components/icons';
@@ -17,9 +17,11 @@ export async function getServerSideProps({ req, res, params }) {
     };
   }
 
-  const share = await redis.get(k(`share:${params.shareId}`));
+  const share = await getShare(params.shareId);
 
-  if (!share) {
+  // A record surviving past its logical expiry (grace period, so it can
+  // still be extended) is not a valid watch — same generic message either way.
+  if (!share || isExpired(share)) {
     return { props: { error: 'This link has expired or does not exist.' } };
   }
 
@@ -31,14 +33,14 @@ export async function getServerSideProps({ req, res, params }) {
     };
   }
 
-  // Record every view (count + last-viewed), preserving the link's remaining TTL.
-  const remaining = Math.max(1, Math.ceil((share.expiresAt - Date.now()) / 1000));
+  // Record every view (count + last-viewed).
   const now = Date.now();
-  await redis.set(
-    k(`share:${params.shareId}`),
-    { ...share, viewedAt: share.viewedAt || now, views: (share.views || 0) + 1, lastViewedAt: now },
-    { ex: remaining }
-  );
+  await saveShare(params.shareId, {
+    ...share,
+    viewedAt: share.viewedAt || now,
+    views: (share.views || 0) + 1,
+    lastViewedAt: now,
+  });
 
   return {
     props: {

@@ -91,6 +91,10 @@ export default function Admin() {
   const [bulkSharing, setBulkSharing] = useState(false);
   const [bulkShareResult, setBulkShareResult] = useState(null);
   const [bulkVideoQuery, setBulkVideoQuery] = useState('');
+  const [shareSelected, setShareSelected] = useState({});
+  const [bulkActionMsg, setBulkActionMsg] = useState('');
+  const [bulkActing, setBulkActing] = useState(false);
+  const [extendHours, setExtendHours] = useState('72');
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
@@ -428,6 +432,53 @@ export default function Admin() {
       setResendMsg((prev) => ({ ...prev, [shareId]: 'Send failed' }));
     }
     setTimeout(() => setResendMsg((prev) => ({ ...prev, [shareId]: '' })), 4000);
+  }
+
+  function selectedShareIds() {
+    return Object.keys(shareSelected).filter((id) => shareSelected[id]);
+  }
+
+  // Bulk actions never fail the whole batch on one bad item — each is
+  // processed independently server-side; here we just summarize the results.
+  async function bulkAction(method, extra, successLabel) {
+    const shareIds = selectedShareIds();
+    if (shareIds.length === 0) return;
+    setBulkActing(true);
+    setBulkActionMsg('');
+    try {
+      const res = await fetch('/api/admin/shares', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shareIds, ...extra }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setBulkActionMsg(data.error || 'Action failed');
+        return;
+      }
+      const results = data.results || shareIds.map((id) => ({ shareId: id, ok: true }));
+      const okCount = results.filter((r) => r.ok).length;
+      const failed = results.filter((r) => !r.ok);
+      setBulkActionMsg(
+        failed.length === 0
+          ? `${successLabel}: ${okCount}/${shareIds.length}.`
+          : `${successLabel}: ${okCount}/${shareIds.length} (failed: ${failed.map((f) => f.error || 'error').join('; ')}).`
+      );
+      setShareSelected({});
+      refreshShares();
+    } catch (e) {
+      setBulkActionMsg('Action failed');
+    } finally {
+      setBulkActing(false);
+    }
+  }
+
+  function bulkResendSelected() { bulkAction('POST', {}, 'Resent'); }
+  function bulkRevokeSelected() { bulkAction('DELETE', {}, 'Revoked'); }
+  function bulkExtendSelected() {
+    const hours = parseInt(extendHours) || 0;
+    if (hours <= 0) return alert('Enter a positive number of hours');
+    bulkAction('PUT', { addHours: hours }, `Extended by ${hours}h`);
   }
 
   async function handleShare(video) {
@@ -946,9 +997,55 @@ export default function Admin() {
           {activeShares.length === 0 ? (
             <p className="text-muted">No active links.</p>
           ) : (
+            <>
+            <div className="bulk-action-bar">
+              <span className="text-muted">
+                {selectedShareIds().length > 0 ? `${selectedShareIds().length} selected` : 'Select links for bulk actions'}
+              </span>
+              {mailEnabled && (
+                <button
+                  onClick={bulkResendSelected}
+                  className="btn btn-outline btn-sm"
+                  disabled={bulkActing || selectedShareIds().length === 0}
+                >
+                  Resend {selectedShareIds().length || ''}
+                </button>
+              )}
+              <input
+                type="number"
+                min="1"
+                max="720"
+                value={extendHours}
+                onChange={(e) => setExtendHours(e.target.value)}
+                className="input input-sm"
+                style={{ width: '4.5rem', flex: 'none' }}
+                title="Hours to add"
+              />
+              <button
+                onClick={bulkExtendSelected}
+                className="btn btn-outline btn-sm"
+                disabled={bulkActing || selectedShareIds().length === 0}
+              >
+                Extend {selectedShareIds().length || ''}
+              </button>
+              <button
+                onClick={bulkRevokeSelected}
+                className="btn btn-destructive btn-sm"
+                disabled={bulkActing || selectedShareIds().length === 0}
+              >
+                Revoke {selectedShareIds().length || ''}
+              </button>
+              {bulkActionMsg && <span className="share-resend-msg text-muted">{bulkActionMsg}</span>}
+            </div>
             <ul className="shares-list">
               {activeShares.map((s) => (
                 <li key={s.shareId} className="share-item">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(shareSelected[s.shareId])}
+                    onChange={(e) => setShareSelected((prev) => ({ ...prev, [s.shareId]: e.target.checked }))}
+                    style={{ marginTop: '4px' }}
+                  />
                   <div className="share-info">
                     <span className="share-title">
                       {s.title}
@@ -956,6 +1053,8 @@ export default function Admin() {
                         ? <span className="badge badge-ok">Viewed</span>
                         : <span className="badge badge-muted">Not viewed</span>}
                       {s.completed && <span className="badge badge-ok">Completed</span>}
+                      {s.bundleId && <span className="badge badge-muted">Bundled</span>}
+                      {s.expiresAt < Date.now() && <span className="badge badge-muted">Expired</span>}
                     </span>
                     <span className="share-meta">
                       {s.email} &mdash; expires {new Date(s.expiresAt).toLocaleString()}
@@ -994,6 +1093,7 @@ export default function Admin() {
                 </li>
               ))}
             </ul>
+            </>
           )}
         </div>
 

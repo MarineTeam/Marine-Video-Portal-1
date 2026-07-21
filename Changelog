@@ -72,3 +72,9 @@ v1.8.0
 Email a share link to its recipient (opt-in on the share form) and resend it from the Shares tab
 Off by default — inert until a Resend API key is configured
 The installed app now shows Admin for admin accounts (previously hidden in the installed app)
+v1.9.0
+Bulk share: pick multiple videos and multiple recipients at once, each pair gets its own private link, one email per recipient
+Per-link view count and last-viewed time, plus real playback tracking (plays, furthest % watched, completed) from the video player
+Bulk resend, bulk revoke, and bulk extend for selected links, each reporting per-item success/failure
+Extend a link's expiry in place, including an already-lapsed-but-not-revoked link, without creating a new link
+Bundles: a recipient with 2+ active links gets one consolidated listing page and one consolidated email instead of separate ones per link
