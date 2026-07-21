@@ -560,6 +560,21 @@ export default function Admin() {
     );
   }
 
+  async function deleteShareForever(shareId) {
+    if (!confirm('Permanently delete this link? This cannot be undone or un-revoked.')) return;
+    const res = await fetch('/api/admin/shares', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shareId, permanent: true }),
+    });
+    if (res.ok) {
+      setActiveShares((prev) => prev.filter((s) => s.shareId !== shareId));
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'Failed to delete');
+    }
+  }
+
   async function resendShare(shareId) {
     setResendMsg((prev) => ({ ...prev, [shareId]: 'Sending…' }));
     try {
@@ -618,6 +633,10 @@ export default function Admin() {
   function bulkResendSelected() { bulkAction('POST', {}, 'Resent'); }
   function bulkRevokeSelected() { bulkAction('DELETE', {}, 'Revoked'); }
   function bulkUnrevokeSelected() { bulkAction('PATCH', {}, 'Un-revoked'); }
+  function bulkDeleteForeverSelected() {
+    if (!confirm('Permanently delete the selected links? This cannot be undone. Only already-revoked links will be deleted.')) return;
+    bulkAction('DELETE', { permanent: true }, 'Deleted');
+  }
   function bulkExtendSelected() {
     const hours = parseInt(extendHours) || 0;
     if (hours <= 0) return alert('Enter a positive number of hours');
@@ -1247,6 +1266,14 @@ export default function Admin() {
               >
                 Un-revoke {selectedShareIds().length || ''}
               </button>
+              <button
+                onClick={bulkDeleteForeverSelected}
+                className="btn btn-destructive btn-sm"
+                disabled={bulkActing || selectedShareIds().length === 0}
+                title="Only already-revoked links in the selection will be deleted"
+              >
+                Delete forever {selectedShareIds().length || ''}
+              </button>
               {bulkActionMsg && <span className="share-resend-msg text-muted">{bulkActionMsg}</span>}
             </div>
             <ul className="shares-list">
@@ -1306,12 +1333,21 @@ export default function Admin() {
                       </button>
                     )}
                     {s.revoked ? (
-                      <button
-                        onClick={() => unrevokeShare(s.shareId)}
-                        className="btn btn-outline btn-sm"
-                      >
-                        Un-revoke
-                      </button>
+                      <>
+                        <button
+                          onClick={() => unrevokeShare(s.shareId)}
+                          className="btn btn-outline btn-sm"
+                        >
+                          Un-revoke
+                        </button>
+                        <button
+                          onClick={() => deleteShareForever(s.shareId)}
+                          className="btn btn-destructive btn-sm"
+                          title="Permanently delete — cannot be undone"
+                        >
+                          Delete permanently
+                        </button>
+                      </>
                     ) : (
                       <button
                         onClick={() => revokeShare(s.shareId)}
