@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
+import Watermark from './Watermark';
 
 // Wraps the Bunny embed iframe and uses the player.js protocol to (a) resume
 // from the viewer's last position and (b) periodically save progress.
 // Degrades gracefully: if player.js can't attach, the video still plays.
-export default function ResumablePlayer({ embedUrl, title, videoId }) {
+export default function ResumablePlayer({ embedUrl, title, videoId, watermarkText }) {
   const iframeRef = useRef(null);
 
   useEffect(() => {
@@ -93,6 +94,7 @@ export default function ResumablePlayer({ embedUrl, title, videoId }) {
   return (
     <div className="watch-player">
       <iframe ref={iframeRef} src={embedUrl} allow="fullscreen" title={title} />
+      <Watermark text={watermarkText} />
     </div>
   );
 }

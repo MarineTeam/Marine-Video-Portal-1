@@ -66,22 +66,25 @@ pages/
       subscribe.js        Store a viewer's Web Push subscription
       unsubscribe.js      Remove a Web Push subscription
     admin/
-      videos.js           List (ordered) / rename / set-collection / delete
+      videos.js           List (ordered, with watermark mode) / rename / set-collection / set-watermark-mode / delete (single or bulk)
       viewers.js          List (with last-seen) / add (single or bulk) / remove
       settings.js         Homepage video count
+      watermark.js        Global watermark default + exemption list (add/remove)
       order.js            Custom homepage video order
-      share.js            Bulk share creation — N videos × M recipients (rate-limited)
+      share.js            Bulk share creation — N videos × M recipients, optional watermark override (rate-limited)
       shares.js           List / bulk resend / bulk revoke / extend expiry (single or bulk)
       upload.js           Create Bunny video + signed TUS auth (rate-limited)
       collections.js      Create / list / delete collections
       audit.js            Recent admin actions
       analytics.js        Views, watch time, 30-day chart, most-watched
+      video-analytics.js  Per-video rollup of existing share tracking (shares, recipients, views, completion)
       broadcast.js        Send a manual push broadcast to viewers + admins
 components/
   AppShell.js             Header/layout shell
   IdleTimeout.js          30-minute inactivity auto sign-out
   ResumablePlayer.js      Wraps the Bunny embed via player.js for resume + progress
   SharePlayer.js          Wraps the Bunny embed on share-link pages, reports play/progress/completed
+  Watermark.js            Tiled, non-interactive viewer-email overlay shown when the layered setting resolves "on"
   NotifyButton.js         Per-device push opt-in/out toggle
   icons.js                Inline SVG icons
 lib/
@@ -96,7 +99,8 @@ lib/
   mail.js                 Resend email helper for share/bundle emails (inert without RESEND_API_KEY)
   shareBundle.js          Share-record helpers, grace-period TTL/expiry, and per-recipient bundling
   ratelimit.js            Sliding-window limiter (fails open)
-  __tests__/              Vitest smoke tests (auth, order, theme, push, shareBundle)
+  watermark.js            Layered watermark resolution (exemption > share > video > global default)
+  __tests__/              Vitest smoke tests (auth, order, theme, push, shareBundle, watermark)
 public/
   manifest.webmanifest    PWA manifest
   sw.js                   Service worker (caches only icons + manifest)
@@ -178,12 +182,12 @@ Every push / PR to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci
 
 Tabbed layout, gated server-side to `ADMIN_EMAILS`:
 
-- **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, and a per-video quick private share-link (with an optional **"email the link to the recipient"** checkbox when email is configured). Also a Collections manager (create/delete).
+- **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, a per-video **watermark override** (Default/Always/Never), a collapsible **per-video analytics** panel, and a per-video quick private share-link (with its own watermark selector, and an optional **"email the link to the recipient"** checkbox when email is configured). Multi-select checkboxes for **bulk delete** and **bulk collection assignment**. Also a Collections manager (create/delete).
 - **Viewers** — add/remove approved emails, **bulk add** (paste a list), and each viewer's **last-seen** time.
-- **Shares** — a **bulk-share** form (pick any number of videos × any number of recipients — every pair gets its own link, one email per recipient); every active private link with recipient, expiry, **view count/last-viewed**, and **playback status** (plays, furthest % watched, completed); multi-select checkboxes for **bulk resend / bulk revoke / bulk extend**; and per-link **extend** to push out an expiry in place without a new link.
-- **Settings** — homepage video count, the site **color palette** (7 presets + custom, applied to all visitors), a **push broadcast** composer, and a content-protection info panel.
+- **Shares** — a **bulk-share** form (pick any number of videos × any number of recipients — every pair gets its own link, one email per recipient, with its own watermark selector); every active private link with recipient, expiry, **view count/last-viewed**, and **playback status** (plays, furthest % watched, completed); multi-select checkboxes for **bulk resend / bulk revoke / bulk extend**; and per-link **extend** to push out an expiry in place without a new link.
+- **Settings** — homepage video count, the site **color palette** (7 presets + custom, applied to all visitors), the **watermark global default** and its exemption list, a **push broadcast** composer, and a content-protection info panel.
 - **Activity** — the most recent admin actions (add/remove viewer, share create/revoke, video rename/delete/reorder, settings, palette, collections).
-- **Analytics** — total views, 30-day views, watch time, video count, a 30-day views chart, and a most-watched list.
+- **Analytics** — total views, 30-day views, watch time, video count, a 30-day views chart, a most-watched list, and a **per-video analytics** list (shares, recipients, views, started, completed + rate, avg progress) rolled up from existing share data.
 
 ---
 
@@ -230,6 +234,21 @@ Set `RESEND_API_KEY` and (recommended) `MAIL_FROM` to a Resend-verified sender. 
 - **View and playback tracking, per link** — every link tracks its own **view count and last-viewed time** (server-recorded on each page load), plus real playback signal reported by the Bunny embed's player.js events: **plays**, **furthest % watched**, and **completed**. A page view alone (opening the link) is tracked separately from actually pressing play, so you can tell who opened a link versus who watched it.
 - **Extend** — push a link's expiry out in place (same URL, no new link, no re-notification) instead of revoking and re-sharing. Works even on a link that's already lapsed but wasn't revoked (it extends from now, not from the stale old expiry); a genuinely revoked link can't be "extended" back to life, since revoking deletes it outright. Extending a bundled link also extends the bundle's own expiry so the bundle page doesn't lapse before its members do. Extend is available per-link or in bulk across several selected links.
 - **Grace period, not instant deletion** — a link's Redis record now outlives its logical expiry by 30 days before it's actually purged, specifically so an admin can still notice and extend an expired-but-not-revoked link. Viewer-facing pages and APIs still treat it as expired the moment its `expiresAt` passes; only the underlying record sticks around a while longer.
+
+---
+
+## Watermarking
+
+Playback can overlay the logged-in viewer's own email as a faint, tiled, non-interactive overlay — a deterrent against screen-recording or redistribution, not an access control. It's purely CSS on top of the player (there's no change to the Bunny embed itself, and none of the signing formulas are touched): if nothing resolves "on," the overlay simply isn't rendered, so playback is never at risk from this feature.
+
+The setting is **layered**, most specific wins, and an exemption always overrides everything:
+
+1. **Exemption** _(Settings tab)_ — an admin-managed list of emails (viewer or admin) who are never watermarked, full stop.
+2. **Per-share** _(Shares tab, both the single- and bulk-share forms)_ — Default / Always / Never, set when the link is created.
+3. **Per-video** _(Videos tab)_ — Default / Always / Never, per video.
+4. **Global default** _(Settings tab)_ — the fallback when nothing more specific is set.
+
+"Default" at the share or video layer means *not explicitly set* — only `Always`/`Never` are ever stored, so most shares and videos simply inherit whatever the layer below them resolves to.
 
 ---
 

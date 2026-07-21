@@ -427,7 +427,8 @@ a { color: inherit; text-decoration: none; }
 .analytics-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   padding: 11px 16px;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -437,6 +438,7 @@ a { color: inherit; text-decoration: none; }
 .analytics-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .analytics-dur { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .analytics-views { color: var(--accent-1); font-weight: 600; font-size: 13px; white-space: nowrap; }
+.analytics-stats { flex: 1 1 320px; color: var(--muted); font-size: 12.5px; text-align: right; white-space: normal; }
 
 /* ── Pagination ──────────────────────────────────── */
 
@@ -460,6 +462,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 .watch-player {
+  position: relative;
   border-radius: var(--radius);
   overflow: hidden;
   background: #000;
@@ -470,6 +473,14 @@ a { color: inherit; text-decoration: none; }
   box-shadow: var(--shadow);
 }
 .watch-player iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+.video-watermark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-repeat: repeat;
+  z-index: 2;
+}
 
 .watch-error { padding: 22px 24px; max-width: 640px; }
 .watch-error p { font-size: 14.5px; }
