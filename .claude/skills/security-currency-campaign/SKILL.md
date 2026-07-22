@@ -32,7 +32,11 @@ These are not style preferences. Each fence exists because the path is known-des
 
 ## Campaign state (as of 2026-07-10, verified in-session)
 
-**CodeQL:** 6 findings fixed across commits 40f4feb and eb4bcdd — inline GUID validation in `lib/bunny.js` (must stay inline, see fence 3), ReDoS-prone email regex replaced with string operations (`indexOf`/`lastIndexOf`) in `pages/api/admin/viewers.js`, and `permissions: contents: read` scoped in `.github/workflows/ci.yml`. **3 alerts remain open intentionally** — #7, #8, #9, rule ~"insufficient hash effort" — false positives on the three vendor-mandated SHA256 signing formulas. They are pending **manual dismissal in the GitHub UI** (maintainer declined automated dismissal). Dismissal text to use, verbatim: reason **"False positive"**, note **"HMAC-style API signing token required by bunny.net, not a password hash."**
+**CodeQL:** 6 findings fixed across commits 40f4feb and eb4bcdd — inline GUID validation in `lib/bunny.js` (must stay inline, see fence 3), ReDoS-prone email regex replaced with string operations (`indexOf`/`lastIndexOf`) in `pages/api/admin/viewers.js`, and `permissions: contents: read` scoped in `.github/workflows/ci.yml`. **4 alerts remain open intentionally** — #7, #8, #9 (rule ~"insufficient hash effort", false positives on the three vendor-mandated SHA256 signing formulas), plus **#10** (rule ~SSRF, `components/SharePlayer.js:22`, added ~2026-07-20, triaged 2026-07-22). All four are pending **manual dismissal in the GitHub UI** (maintainer declined automated dismissal).
+
+Dismissal text for #7/#8/#9, verbatim: reason **"False positive"**, note **"HMAC-style API signing token required by bunny.net, not a password hash."**
+
+Dismissal text for #10, verbatim: reason **"False positive"**, note **"Client-side fetch() to a fixed-prefix same-origin relative path (`/api/share/` + shareId); shareId cannot redirect the request to another host, and server-side it's only ever used as a Redis lookup key, never to construct an outbound request."** Rationale: the flagged `fetch()` runs in the browser (a `useEffect` in a React component), not on the server, so "server-side request forgery" doesn't apply by definition; and even read as a generic untrusted-URL check, the literal `/api/share/` prefix means `shareId` is confined to a path segment and can never turn the string into a protocol-relative or cross-origin URL. Checked the server counterpart (`pages/api/share/[shareId]/track.js`) too — `shareId` is only ever used as a Redis lookup key (`getShare(shareId)`), never to build an outbound request. No code changed; this is the same class of scanner noise as #7-#9, just a different rule.
 
 **Dependabot:** 6 alerts fixed via commit 739c54f (next ^14.2.35, eslint-config-next ^14.2.35, vitest ^3.2.6 — all confirmed in `package.json`). **14 alerts deferred**: patched only in Next 15.x, and verified unreachable because every vulnerable feature is absent from this codebase — no `middleware.js`, no `app/` directory, no `i18n` config, no `next/image`, no `next/script`, no WebSocket usage, no `rewrites()`. The Phase 1 greps re-verify this on demand.
 
@@ -60,10 +64,11 @@ Get the current alert picture before touching anything.
 & "C:\Program Files\GitHub CLI\gh.exe" api "repos/MarineTeam/Marine-Video-Portal-1/code-scanning/alerts?state=open&per_page=100" --paginate --jq '.[] | [.number, .rule.id, .rule.severity, .most_recent_instance.location.path] | @tsv'
 ```
 
-**EXPECTED (as of 2026-07-10):** exactly **3 rows** — alerts #7, #8, #9, rule ~insufficient hash effort, all in `lib/bunny.js` — **or 0 rows** if the maintainer has completed the manual dismissal. Either is healthy.
+**EXPECTED (as of 2026-07-22):** exactly **4 rows** — alerts #7, #8, #9 (rule ~insufficient hash effort, all in `lib/bunny.js`) and #10 (rule ~SSRF, `components/SharePlayer.js:22`) — **or fewer** as the maintainer completes manual dismissals. Any subset of these four is healthy; anything else is new.
 
-- **If the 3 are still open** → remind the maintainer of the pending UI dismissal (reason "False positive", note "HMAC-style API signing token required by bunny.net, not a password hash."). Do NOT dismiss via API — maintainer declined automation here.
-- **If you see a NEW rule id or a new file path** → stop; triage via Phase 1 before anything else.
+- **If #7-#9 are still open** → remind the maintainer of the pending UI dismissal (reason "False positive", note "HMAC-style API signing token required by bunny.net, not a password hash."). Do NOT dismiss via API — maintainer declined automation here.
+- **If #10 is still open** → same treatment, dismissal text in Campaign state above (reason "False positive", note re: client-side same-origin fetch).
+- **If you see a NEW rule id or a new file path beyond these four** → stop; triage via Phase 1 before anything else.
 
 **Gate P0:** you can state the exact open counts and account for every line. Anything unexplained → Phase 1 now.
 
@@ -189,7 +194,7 @@ None of these are commitments; each needs its own change-control approval. Ranke
 1. **Activate Sentry** — code already shipped and inert (`next.config.js` wraps `withSentryConfig`; runtime reporting waits on `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`, verified 2026-07-10). Set the DSN pair in the env mirrors and redeploy. Cheapest observability win available.
 2. **Rate-limit `/api/progress`** — the only unlimited write path (`@upstash/ratelimit` ^2.0.5 is already a dependency; reuse the existing limiter pattern).
 3. **Redis backup/export routine** — Upstash backup features or a scheduled export. **VERIFY Upstash's current backup offering for this plan tier before promising anything** (as of 2026-07-10, unverified).
-4. **Dismiss-the-3-FPs housekeeping** — the pending manual CodeQL dismissals from Phase 0.2; pure hygiene, maintainer-driven.
+4. **Dismiss-the-4-FPs housekeeping** — the pending manual CodeQL dismissals from Phase 0.2 (#7-#9 hash, #10 SSRF); pure hygiene, maintainer-driven.
 5. **Branch protection requiring the CI check on `main`** — closes the "Vercel deploy races CI" gap (Vercel deploys on push; CI green is currently advisory). Needs maintainer approval — it changes the maintainer's own push workflow.
 
 ---
@@ -199,4 +204,5 @@ None of these are commitments; each needs its own change-control approval. Ranke
 - **Verified against the repo on 2026-07-11** (campaign facts dated 2026-07-10 per the session record): `package.json` versions (next ^14.2.35, react 18.3.1, @auth0/nextjs-auth0 ^3.5.0, @sentry/nextjs ^7.120.3, @upstash/redis ^1.34.0, @upstash/ratelimit ^2.0.5, eslint-config-next ^14.2.35, vitest ^3.2.6); `.github/workflows/ci.yml` (`permissions: contents: read`, Node 20, dummy build env); `lib/bunny.js` (three SHA256 signing formulas + inline GUID guards); `pages/api/admin/viewers.js` (string-op email validation); `next.config.js` (withSentryConfig wrap, no i18n, no rewrites); all seven feature-absence greps clean in `pages components lib`; commits 739c54f, eb4bcdd, 40f4feb present in history.
 - **Session-record facts** (maintainer statements, alert counts, the near-lockout, the declined automated dismissal) are attributed "(session record, 2026-07-10, maintainer-confirmed)" and cannot be re-derived from the repo — treat them as authoritative until the maintainer says otherwise.
 - **Update triggers:** re-stamp the expected numbers in Phase 0 whenever alerts are fixed/dismissed/added; record the G1 research answers (React requirement, Sentry compatibility) in Phase 3 the moment they are learned; mark Phase 3 complete and rewrite the Campaign state block when Next 15 ships; strike Phase 4 options once one is chosen.
+- **2026-07-22 update:** CodeQL alert #10 (SSRF, `components/SharePlayer.js:22`) triaged as a false positive — see Campaign state and Phase 0.2 for the reasoning and dismissal text. No code changed. Expected CodeQL row count in Phase 0.2 moved from 3 to 4 accordingly.
 - **Siblings:** change-control (approval gates referenced throughout), validation-and-qa (the G3/Phase-4 E2E checklists), diagnostics-and-tooling (alert commands and scripts), config-and-data (the three env mirrors), failure-archaeology (the full stories behind the fence box), architecture-contract (the invariants the fences protect).
