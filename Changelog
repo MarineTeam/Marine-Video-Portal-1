@@ -82,7 +82,7 @@ v1.10.0
 Watermark playback with the viewer's email — layered control: an exemption always wins, otherwise a share's own setting beats a video's, which beats a global default in Settings
 Per-video analytics in the Videos and Analytics tabs: shares, unique recipients, views, started, completed and completion rate, and average watched progress
 Bulk video operations: select multiple videos to delete or assign to a collection at once
-v1.11.0
+v1.12.0
 Un-revoke a revoked private link in place, plus a separate "delete permanently" action once a link is already revoked
 Persistent "Copy bundle link" button on every bundled share, not just the bulk-share success toast
 Activity page: a viewer's own watch history, with an admin lookup by viewer email
