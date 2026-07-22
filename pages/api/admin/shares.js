@@ -4,7 +4,7 @@ import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
 import { mailEnabled, sendShareLinksEmail, sendBundleEmail } from '../../../lib/mail';
-import { getBundle, listActiveSharesForEmail, extendShare } from '../../../lib/shareBundle';
+import { getShare, saveShare, getBundle, listActiveSharesForEmail, extendShare } from '../../../lib/shareBundle';
 
 // Every mutating action here (resend, revoke, extend) accepts either a single
 // `shareId` or a `shareIds` array. Bulk requests never fail the whole batch
@@ -55,10 +55,46 @@ async function resendOne(shareId, actor) {
   return { shareId, ok: Boolean(ok), error: ok ? undefined : 'Email failed to send.' };
 }
 
+// Soft delete: flip `revoked` on the record rather than deleting it, so an
+// admin can un-revoke later without minting a new shareId/token. The record
+// stays in `active_shares` (that set means "not yet reaped", not "usable")
+// but every access/bundling check treats a revoked share as unusable.
 async function revokeOne(shareId, actor) {
+  const share = await getShare(shareId);
+  if (!share) return { shareId, ok: false, error: 'Link has expired or does not exist.' };
+  if (!share.revoked) {
+    await saveShare(shareId, { ...share, revoked: true, revokedAt: Date.now() });
+    await logAudit(actor, 'share.revoke', shareId);
+  }
+  return { shareId, ok: true };
+}
+
+// Restores a revoked-but-not-deleted share in place — same shareId/token,
+// no re-share, no re-notification. A no-op (still ok:true) if it wasn't
+// revoked to begin with; refuses only if the record is genuinely gone.
+async function unrevokeOne(shareId, actor) {
+  const share = await getShare(shareId);
+  if (!share) return { shareId, ok: false, error: 'Link has expired or does not exist.' };
+  if (share.revoked) {
+    await saveShare(shareId, { ...share, revoked: false, revokedAt: null });
+    await logAudit(actor, 'share.unrevoke', shareId);
+  }
+  return { shareId, ok: true };
+}
+
+// Actually removes the record — the un-revokable option is gone for good
+// after this. Only allowed on a share that's already (soft-)revoked, so
+// permanent deletion is always a deliberate second step after revoke, never
+// a way to skip straight past it on a link that's still live.
+async function hardDeleteOne(shareId, actor) {
+  const share = await getShare(shareId);
+  if (!share) return { shareId, ok: false, error: 'Link has expired or does not exist.' };
+  if (!share.revoked) {
+    return { shareId, ok: false, error: 'Revoke the link before deleting it permanently.' };
+  }
   await redis.del(k(`share:${shareId}`));
   await redis.srem(k('active_shares'), shareId);
-  await logAudit(actor, 'share.revoke', shareId);
+  await logAudit(actor, 'share.delete', shareId);
   return { shareId, ok: true };
 }
 
@@ -110,18 +146,39 @@ export default async function handler(req, res) {
     return res.json({ results });
   }
 
+  // Revoke (soft) by default; `permanent: true` hard-deletes instead — only
+  // honored on shares that are already revoked (see hardDeleteOne).
   if (req.method === 'DELETE') {
     if (!ids.length) return res.status(400).json({ error: 'shareId(s) required' });
+    const permanent = Boolean(body.permanent);
     const results = [];
-    for (const id of ids) results.push(await revokeOne(id, actor));
-    if (ids.length === 1) return res.json({ ok: true });
+    for (const id of ids) results.push(await (permanent ? hardDeleteOne(id, actor) : revokeOne(id, actor)));
+    if (ids.length === 1) {
+      const r = results[0];
+      if (!r.ok) return res.status(r.error === 'Link has expired or does not exist.' ? 404 : 400).json({ error: r.error });
+      return res.json({ ok: true });
+    }
+    return res.json({ results });
+  }
+
+  // Un-revoke: restore one or more revoked-but-not-deleted links in place.
+  if (req.method === 'PATCH') {
+    if (!ids.length) return res.status(400).json({ error: 'shareId(s) required' });
+    const results = [];
+    for (const id of ids) results.push(await unrevokeOne(id, actor));
+    if (ids.length === 1) {
+      const r = results[0];
+      if (!r.ok) return res.status(404).json({ error: r.error });
+      return res.json({ ok: true });
+    }
     return res.json({ results });
   }
 
   // Extend a link's (or several links') expiry in place — same token/URL, no
   // re-notification needed. Works on an already-expired-but-not-revoked link
-  // (extends from now); refuses a revoked one automatically, since revoke
-  // deletes the record and extendShare() treats a missing record as an error.
+  // (extends from now); extendShare() only refuses a share that's been
+  // permanently deleted (missing record) — a merely-revoked one still has
+  // its expiry pushed out, so it resumes wherever it left off if un-revoked.
   if (req.method === 'PUT') {
     if (!(await allow(callerId(req, session, 'share')))) {
       return res.status(429).json({ error: 'Too many requests — slow down.' });

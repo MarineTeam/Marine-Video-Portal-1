@@ -15,12 +15,21 @@ export default async function handler(req, res) {
   const key = k(`progress:${email}`);
 
   if (req.method === 'GET') {
-    const { videoId } = req.query;
+    const { videoId, email: targetEmail } = req.query;
     if (videoId) {
       const entry = await redis.hget(key, videoId);
       return res.json(entry || null);
     }
-    const all = (await redis.hgetall(key)) || {};
+
+    // Admins can look up any viewer's watch history by email (e.g. from the
+    // admin panel); everyone else only ever sees their own.
+    let lookupKey = key;
+    if (targetEmail && targetEmail.toLowerCase() !== email) {
+      if (!isAdmin(email)) return res.status(403).json({ error: 'Forbidden' });
+      lookupKey = k(`progress:${targetEmail.toLowerCase()}`);
+    }
+
+    const all = (await redis.hgetall(lookupKey)) || {};
     const list = Object.entries(all).map(([id, v]) => ({ id, ...v }));
     list.sort((a, b) => (b.at || 0) - (a.at || 0));
     return res.json(list);

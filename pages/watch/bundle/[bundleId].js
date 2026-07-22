@@ -36,7 +36,7 @@ export async function getServerSideProps({ req, res, params }) {
   const items = [];
   for (const shareId of bundle.itemIds) {
     const share = await getShare(shareId);
-    if (!share || isExpired(share)) continue; // revoked or lapsed — drop silently, bundle record untouched
+    if (!share || isExpired(share) || share.revoked) continue; // revoked or lapsed — drop silently, bundle record untouched
     items.push({
       shareId,
       title: share.title || 'Untitled',
