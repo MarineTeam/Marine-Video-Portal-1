@@ -4,7 +4,7 @@ import { redis, k } from '../../lib/redis';
 import { getOrder, applyOrder } from '../../lib/order';
 import { isAdmin } from '../../lib/auth';
 import { allow, callerId } from '../../lib/ratelimit';
-import { getGeoWhitelist, getCountry, isCountryAllowed } from '../../lib/geo';
+import { isGeoAllowed } from '../../lib/geo';
 
 export default async function handler(req, res) {
   const session = await getSession(req, res);
@@ -21,13 +21,10 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'not_approved' });
   }
 
-  // Geo whitelist gates viewers only — admins always bypass it, so a
-  // misconfigured or overly-narrow list can never lock an admin out.
-  if (!isAdmin(email)) {
-    const whitelist = await getGeoWhitelist();
-    if (!isCountryAllowed(getCountry(req), whitelist)) {
-      return res.status(403).json({ error: 'geo_blocked' });
-    }
+  // Admins have their own separate whitelist/toggle (plus a bypass-email
+  // safety net) — see lib/geo.js. Both are off by default.
+  if (!(await isGeoAllowed(req, email, isAdmin(email)))) {
+    return res.status(403).json({ error: 'geo_blocked' });
   }
 
   // Track viewer activity for the admin "last seen" column.
