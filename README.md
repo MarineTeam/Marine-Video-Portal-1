@@ -19,6 +19,7 @@ Videos are never public: every play uses a **signed, time-limited bunny.net toke
 - Only **approved viewers** (managed live by an admin) see the video library. Everyone else sees a clear "not approved" message after logging in.
 - The homepage shows the library — as a **thumbnail grid** when thumbnails are configured, otherwise a title list — with **search**, **collection filters**, and a **Continue watching** strip that resumes videos where the viewer left off. It's paginated and capped at an admin-controlled count.
 - Clicking a video opens a watch page that plays it in a tokenized bunny.net embed and remembers playback position.
+- An **Activity** page shows a viewer their own watch history; admins can also look up any approved viewer's history there.
 - Admins manage everything from a tabbed **`/admin`** panel: upload videos, organize the library, manage viewers and share links, adjust the site's color palette, and view analytics and an activity log.
 - `/admin` is gated **server-side** (redirects non-admins before any UI is sent) and every `/api/admin/*` route independently returns `403` for non-admins.
 - The portal is an **installable PWA** — it can be installed as a standalone app on Windows, Mac, Android, and iOS off the same deployment. Admins get the full admin panel in the installed app too (the Admin button is shown for admin accounts everywhere, standalone or browser tab).
@@ -144,6 +145,9 @@ vitest.config.js          Test config (node env + dummy env)
 | `VAPID_SUBJECT` | Contact URI for push (a `mailto:` address or https URL). Defaults to `mailto:<first ADMIN_EMAILS entry>`. |
 | `RESEND_API_KEY` | Enable **emailing share links** to their recipient (via [Resend](https://resend.com)). Unset → the "Email the link" checkbox and "Resend email" button stay hidden and nothing is ever sent. |
 | `MAIL_FROM` | From address for share-link emails, e.g. `Marine Video Portal <share@yourdomain.com>` (must be a Resend-verified sender). Defaults to `onboarding@resend.dev` for testing. |
+| `GEO_WHITELIST` | Comma-separated ISO country codes (e.g. `US,CA,GB`) allowed for **viewers**, when the viewer geo toggle is switched on in the Settings tab (that toggle defaults to off). Read-only in the admin panel; edit here and redeploy to change the list. |
+| `ADMIN_GEO_WHITELIST` | Same, but for **admins** — a separate list, separate toggle (also off by default). Gates both video watch pages and the `/admin` panel itself for admin accounts. |
+| `ADMIN_GEO_BYPASS_EMAILS` | Comma-separated admin emails that always skip the admin geo check, regardless of country or the toggle. Arm this **before** traveling — it's a standing safety net, not an in-the-moment fix, since env var changes need a redeploy. |
 
 After adding or changing any variable, **redeploy** — changes only apply to new deployments.
 
@@ -184,9 +188,9 @@ Tabbed layout, gated server-side to `ADMIN_EMAILS`:
 
 - **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, a per-video **watermark override** (Default/Always/Never), a collapsible **per-video analytics** panel, and a per-video quick private share-link (with its own watermark selector, and an optional **"email the link to the recipient"** checkbox when email is configured). Multi-select checkboxes for **bulk delete** and **bulk collection assignment**. Also a Collections manager (create/delete).
 - **Viewers** — add/remove approved emails, **bulk add** (paste a list), and each viewer's **last-seen** time.
-- **Shares** — a **bulk-share** form (pick any number of videos × any number of recipients — every pair gets its own link, one email per recipient, with its own watermark selector); every active private link with recipient, expiry, **view count/last-viewed**, and **playback status** (plays, furthest % watched, completed); multi-select checkboxes for **bulk resend / bulk revoke / bulk extend**; and per-link **extend** to push out an expiry in place without a new link.
-- **Settings** — homepage video count, the site **color palette** (7 presets + custom, applied to all visitors), the **watermark global default** and its exemption list, a **push broadcast** composer, and a content-protection info panel.
-- **Activity** — the most recent admin actions (add/remove viewer, share create/revoke, video rename/delete/reorder, settings, palette, collections).
+- **Shares** — a **bulk-share** form (pick any number of videos × any number of recipients — every pair gets its own link, one email per recipient, with its own watermark selector); every active private link with recipient, expiry, **view count/last-viewed**, **playback status** (plays, furthest % watched, completed), and a durable **"Copy bundle link"** button when the link is part of a bundle; multi-select checkboxes for **bulk resend / bulk revoke / bulk un-revoke / bulk extend / bulk delete permanently**; and per-link **extend**, **un-revoke** (restore a revoked link in place), and **delete permanently** (only allowed once a link is already revoked).
+- **Settings** — homepage video count, the site **color palette** (7 presets + custom, applied to all visitors), the **watermark global default** and its exemption list, the **geo location whitelist** on/off toggles (viewer and admin, each off by default, country lists shown read-only), a **push broadcast** composer, and a content-protection info panel.
+- **Activity** — the most recent admin actions (add/remove viewer, share create/revoke/un-revoke/delete, video rename/delete/reorder, settings, palette, collections).
 - **Analytics** — total views, 30-day views, watch time, video count, a 30-day views chart, a most-watched list, and a **per-video analytics** list (shares, recipients, views, started, completed + rate, avg progress) rolled up from existing share data.
 
 ---
@@ -252,6 +256,21 @@ The setting is **layered**, most specific wins, and an exemption always override
 
 ---
 
+## Geo location whitelist
+
+Restricts video access by country, detected from Vercel's `x-vercel-ip-country` header (populated on every serverless function invocation on Vercel's network — no external geolocation API, no middleware). There are **two independent whitelists**:
+
+- **Viewers** — `GEO_WHITELIST` (comma-separated ISO country codes), gated by its own on/off toggle in the Settings tab. Covers the video list, direct watch pages, and private share links.
+- **Admins** — `ADMIN_GEO_WHITELIST`, a *separate* list with its own toggle. Covers the same video pages **and** the `/admin` panel itself for admin accounts.
+
+Both toggles default to **off**, so a fresh deployment behaves exactly as before until an admin opts in. The country lists themselves are env-configured (deploy-time) and shown **read-only** in the panel — only the toggles are live-editable.
+
+A country that can't be determined (local development, a non-Vercel host, a missing header) always **fails open** — it's never blocked, the same fail-open philosophy the rate limiter already uses.
+
+**`ADMIN_GEO_BYPASS_EMAILS`** lets specific admin emails skip the admin geo check entirely, regardless of country or the toggle. This is a standing safety net an admin arms *before* traveling, not an in-the-moment fix — changing it (or `ADMIN_GEO_WHITELIST`, or the toggle, since all env var changes need a redeploy to take effect) is slower than the Redis-backed toggle alone. If an admin is ever locked out of `/admin` by their own whitelist, recovery is: edit the relevant env var (or disable the toggle) in Vercel, then redeploy.
+
+---
+
 ## Security notes
 
 - **Access is by email identity.** Admin, approved-viewer, and share-recipient checks all compare `session.user.email`. Because of this, keep Auth0 **sign-ups disabled** so nobody can self-register as an approved/admin address. Centralized admin logic lives in `lib/auth.js` — update it there only.
@@ -262,6 +281,7 @@ The setting is **layered**, most specific wins, and an exemption always override
 - **Thumbnails** are served from the CDN and, when a token key is present, are **signed** so they keep working with "Block Direct URL File Access" enabled. Requests from the app carry the site's `Referer`, so hotlink protection still blocks direct/off-site access.
 - **Rate limiting** guards the video list, upload, and share-creation endpoints (fails open if the limiter backend is unavailable).
 - **Idle sign-out** logs users out after 30 minutes of inactivity.
+- **Geo location whitelist is optional and off by default.** When an admin turns it on, it's an additional gate on top of email identity, not a replacement for it — and admins are gated by their *own* separate whitelist/toggle (`ADMIN_GEO_WHITELIST`), not an automatic bypass. See "Geo location whitelist" above for the lockout-recovery path.
 - Direct bunny.net CDN file URLs (`*.b-cdn.net/.../playlist.m3u8`, `play_720p.mp4`) are never used by the app; if you want them fully locked down, enable **Block Direct URL File Access** on the library's Security tab.
 
 ---

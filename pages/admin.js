@@ -6,6 +6,7 @@ import NotifyButton from '../components/NotifyButton';
 import { IconTrash, IconCopy, IconGrip, IconPencil, IconSearch, IconCheck, IconX } from '../components/icons';
 import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
 import { isAdmin as isAdminEmail } from '../lib/auth';
+import { isGeoAllowed } from '../lib/geo';
 
 // Server-side gate: only admins can load the admin page at all. The client-side
 // checks and per-route 403s remain as defense in depth, but this stops a
@@ -16,6 +17,11 @@ export async function getServerSideProps({ req, res }) {
     return { redirect: { destination: '/api/auth/login?returnTo=/admin', permanent: false } };
   }
   if (!isAdminEmail(session.user?.email)) {
+    return { redirect: { destination: '/', permanent: false } };
+  }
+  // Admin geo whitelist (off by default) — a bypass-listed admin (see
+  // ADMIN_GEO_BYPASS_EMAILS in lib/geo.js) always passes this regardless.
+  if (!(await isGeoAllowed(req, session.user.email.toLowerCase(), true))) {
     return { redirect: { destination: '/', permanent: false } };
   }
   return { props: {} };
@@ -105,6 +111,11 @@ export default function Admin() {
   const [videoOpsCollection, setVideoOpsCollection] = useState('');
   const [videoOpsMsg, setVideoOpsMsg] = useState('');
   const [videoOpsActing, setVideoOpsActing] = useState(false);
+  const [geoViewerEnabled, setGeoViewerEnabled] = useState(false);
+  const [geoViewerCountries, setGeoViewerCountries] = useState([]);
+  const [geoAdminEnabled, setGeoAdminEnabled] = useState(false);
+  const [geoAdminCountries, setGeoAdminCountries] = useState([]);
+  const [geoSaved, setGeoSaved] = useState(false);
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
@@ -128,6 +139,16 @@ export default function Admin() {
     fetch('/api/admin/watermark')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) { setWatermarkGlobal(Boolean(d.global)); setWatermarkExempt(d.exempt || []); } })
+      .catch(() => {});
+    fetch('/api/admin/geo')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        setGeoViewerEnabled(Boolean(d.viewer?.enabled));
+        setGeoViewerCountries(d.viewer?.countries || []);
+        setGeoAdminEnabled(Boolean(d.admin?.enabled));
+        setGeoAdminCountries(d.admin?.countries || []);
+      })
       .catch(() => {});
   }, [user]);
 
@@ -750,6 +771,21 @@ export default function Admin() {
     setTimeout(() => setSaved(false), 2000);
   }
 
+  async function saveGeoToggles(next) {
+    const res = await fetch('/api/admin/geo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || `Failed to save (status ${res.status})`);
+      return;
+    }
+    setGeoSaved(true);
+    setTimeout(() => setGeoSaved(false), 2000);
+  }
+
   async function saveOrder(idList) {
     await fetch('/api/admin/order', {
       method: 'POST',
@@ -931,6 +967,48 @@ export default function Admin() {
               {saved ? 'Saved!' : 'Save'}
             </button>
           </div>
+        </div>
+
+        {/* Geo location whitelist */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Geo Location Whitelist</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Restricts video access by country, detected from Vercel&rsquo;s edge network
+            (so this only takes effect on a Vercel deployment). The country lists are set
+            via environment variables and shown here read-only; each list has its own
+            live on/off toggle, both off by default. A country that can&rsquo;t be
+            determined is never blocked.
+          </p>
+
+          <h3 className="analytics-subhead" style={{ marginTop: 0 }}>Viewers</h3>
+          <label className="share-notify" style={{ marginBottom: '0.5rem' }}>
+            <input
+              type="checkbox"
+              checked={geoViewerEnabled}
+              onChange={(e) => { setGeoViewerEnabled(e.target.checked); saveGeoToggles({ viewerEnabled: e.target.checked }); }}
+            />
+            Restrict viewer access to <code>GEO_WHITELIST</code>
+          </label>
+          <p className="text-muted" style={{ marginBottom: '1.25rem' }}>
+            {geoViewerCountries.length > 0 ? geoViewerCountries.join(', ') : 'No countries configured.'}
+          </p>
+
+          <h3 className="analytics-subhead">Admins</h3>
+          <label className="share-notify" style={{ marginBottom: '0.5rem' }}>
+            <input
+              type="checkbox"
+              checked={geoAdminEnabled}
+              onChange={(e) => { setGeoAdminEnabled(e.target.checked); saveGeoToggles({ adminEnabled: e.target.checked }); }}
+            />
+            Restrict admin access to <code>ADMIN_GEO_WHITELIST</code>
+          </label>
+          <p className="text-muted" style={{ marginBottom: 0 }}>
+            {geoAdminCountries.length > 0 ? geoAdminCountries.join(', ') : 'No countries configured.'}
+            {' '}Admins listed in <code>ADMIN_GEO_BYPASS_EMAILS</code> always bypass this check,
+            regardless of country — set that up in advance for any admin who travels, since
+            env var changes need a redeploy to take effect.
+          </p>
+          {geoSaved && <p className="text-muted" style={{ marginTop: '0.75rem' }}>Saved!</p>}
         </div>
 
         {/* Watermark */}

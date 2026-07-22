@@ -8,6 +8,7 @@ export default function Home() {
   const { user, isLoading } = useUser();
   const [data, setData] = useState({ videos: [], page: 1, totalPages: 1 });
   const [notApproved, setNotApproved] = useState(false);
+  const [geoBlocked, setGeoBlocked] = useState(false);
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
   const [collection, setCollection] = useState('');
@@ -18,9 +19,16 @@ export default function Home() {
   useEffect(() => {
     if (!user) return;
     setNotApproved(false);
+    setGeoBlocked(false);
     const t = setTimeout(() => {
       fetch(`/api/videos?page=${page}&q=${encodeURIComponent(query)}&collection=${encodeURIComponent(collection)}`).then((r) => {
-        if (r.status === 403) { setNotApproved(true); return; }
+        if (r.status === 403) {
+          r.json().then((d) => {
+            if (d.error === 'geo_blocked') setGeoBlocked(true);
+            else setNotApproved(true);
+          }).catch(() => setNotApproved(true));
+          return;
+        }
         r.json().then(setData);
       });
     }, query ? 300 : 0);
@@ -64,6 +72,18 @@ export default function Home() {
             <span className="font-medium">{user.email}</span> isn&rsquo;t on the approved viewer list yet.
             Please ask the admin to add you.
           </p>
+          <a href="/api/auth/logout" className="btn btn-outline">Sign out</a>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (geoBlocked) {
+    return (
+      <AppShell isAdmin={isAdmin}>
+        <div className="card hero">
+          <h1>Not available in your region</h1>
+          <p>This video library isn&rsquo;t available from your current location.</p>
           <a href="/api/auth/logout" className="btn btn-outline">Sign out</a>
         </div>
       </AppShell>

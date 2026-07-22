@@ -2,6 +2,7 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../../lib/redis';
 import { listVideos, getEmbedUrl } from '../../../lib/bunny';
 import { isAdmin } from '../../../lib/auth';
+import { isGeoAllowed } from '../../../lib/geo';
 import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWatermark } from '../../../lib/watermark';
 import AppShell from '../../../components/AppShell';
 import ResumablePlayer from '../../../components/ResumablePlayer';
@@ -24,6 +25,12 @@ export async function getServerSideProps({ req, res, params }) {
 
   if (!approved && !isAdmin(email)) {
     return { props: { error: 'Your account is not approved to view this content.', adminUser: false } };
+  }
+
+  // Admins have their own separate whitelist/toggle (plus a bypass-email
+  // safety net) — see lib/geo.js. Both are off by default.
+  if (!(await isGeoAllowed(req, email, isAdmin(email)))) {
+    return { props: { error: 'This video is not available in your region.', adminUser: false } };
   }
 
   if (approved) await redis.hset(k('viewer_last_seen'), { [email]: Date.now() });

@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.10.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.11.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
@@ -19,6 +19,7 @@ Current as of **v1.10.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Search** — viewers can search the whole library by title (debounced).
 - **Collections / categories** — filter the homepage by collection via chips.
 - **Resume playback & Continue-watching** — videos remember where each viewer left off (via player.js); the homepage shows a Continue-watching strip with progress bars. Degrades gracefully if the player protocol is unavailable.
+- **Watch history ("Activity" page)** — a viewer can see their own full watch history (title, furthest position, last-watched time), reusing the same progress data behind Continue-watching — no new tracking added. Admins get an extra lookup dropdown to view any approved viewer's history by email.
 - **Admin-adjustable video count** _(admin)_ — hard cap enforced in code (bunny.net's API doesn't honor it as a strict limit).
 - **Custom ordering** _(admin)_ — drag-to-reorder; newly uploaded videos float to the top (newest first) until placed.
 - **Pagination** — 10 per page with Previous/Next.
@@ -29,6 +30,7 @@ Current as of **v1.10.0**. Grouped by area; items marked _(admin)_ live in the `
 - Direct bunny.net CDN file URLs are never used or exposed by the app.
 - Thumbnail requests carry the site's `Referer`, so hotlink protection blocks direct/off-site access while the app still works.
 - **Watermark overlay** — playback can show the viewer's own email as a faint, tiled overlay on the player, a deterrent against screen-recording/redistribution. Layered control: an **exemption** (per-viewer) always wins; below that, a **per-share** setting beats a **per-video** setting, which beats a **global default** _(admin, Settings tab)_. Purely visual — never blocks playback, and it's simply absent wherever nothing applies.
+- **Geo location whitelist** — restricts video access by country, detected from Vercel's edge network (no external API, no middleware). Two independent lists: `GEO_WHITELIST` for viewers, `ADMIN_GEO_WHITELIST` for admins — each has its own live on/off toggle _(admin, Settings tab)_, both **off by default**. The country lists themselves are env-configured (deploy-time) and shown read-only in the panel. `ADMIN_GEO_BYPASS_EMAILS` lets specific admins skip the admin check entirely regardless of country — a standing safety net an admin arms before traveling, since env var changes need a redeploy to take effect. A country that can't be determined (local dev, non-Vercel hosts) is never blocked.
 
 ## Video management _(admin)_
 - **Upload directly from the browser to bunny.net** — TUS resumable upload with a progress bar, **drag-and-drop**, and **cancel/retry** for in-progress uploads (a cancelled upload cleans up its half-created video). The Bunny API key never reaches the client.
@@ -54,7 +56,10 @@ Current as of **v1.10.0**. Grouped by area; items marked _(admin)_ live in the `
 - **View tracking** — each active link records a **view count and last-viewed time**, updated on every page load (not just the first).
 - **Real playback tracking** — the Bunny embed's player.js events report **plays**, **furthest % watched**, and **completion** back to the link, so you can tell who actually watched versus who just opened the page.
 - **Active link visibility** — every live link with recipient, exact expiry, view/playback stats, and bundle membership.
-- **Instant revocation** — kill any active link immediately, one click, or in **bulk** across selected links.
+- **Persistent bundle-link button** — any share row that's part of a bundle shows a durable "Copy bundle link" button, not just a one-time link surfaced in the bulk-share success toast.
+- **Revocation is soft by default** — revoking a link sets it aside (same shareId/token) rather than deleting it outright, one click or in **bulk** across selected links.
+- **Un-revoke** — restore a revoked link in place, singly or in bulk, with no new link and no re-notification needed.
+- **Delete permanently** — a separate, deliberate action (singly or in bulk) that actually removes a link's record for good. Only allowed on a link that's already revoked, so it's always a second step, never a shortcut around revoke on a link that's still live.
 - Expired/revoked links show a clean "expired or doesn't exist" message.
 
 ## People & oversight _(admin)_
@@ -96,6 +101,9 @@ Current as of **v1.10.0**. Grouped by area; items marked _(admin)_ live in the `
 - `SENTRY_*` — enable error monitoring and source-map upload.
 - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — enable push notifications (both required; generate with `npx web-push generate-vapid-keys`). `VAPID_SUBJECT` optionally overrides the contact URI.
 - `RESEND_API_KEY` — enable emailing/resending share links via Resend. `MAIL_FROM` optionally sets the from address (a Resend-verified sender; defaults to `onboarding@resend.dev`).
+- `GEO_WHITELIST` — comma-separated ISO country codes allowed for viewers when the viewer geo toggle is on _(admin, Settings tab)_; the toggle itself defaults to off.
+- `ADMIN_GEO_WHITELIST` — same, but for admins, with its own separate toggle (also off by default).
+- `ADMIN_GEO_BYPASS_EMAILS` — comma-separated admin emails that always skip the admin geo check regardless of country; arm this before travel, since env var changes need a redeploy.
 
 ## Known gaps / not yet implemented
 - **Access-request flow** — no self-serve way for unapproved users to request access; admins must know who to add.

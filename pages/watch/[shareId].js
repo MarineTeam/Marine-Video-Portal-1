@@ -1,5 +1,7 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { getEmbedUrl } from '../../lib/bunny';
+import { isAdmin } from '../../lib/auth';
+import { isGeoAllowed } from '../../lib/geo';
 import { getShare, saveShare, isExpired } from '../../lib/shareBundle';
 import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWatermark } from '../../lib/watermark';
 import AppShell from '../../components/AppShell';
@@ -33,6 +35,12 @@ export async function getServerSideProps({ req, res, params }) {
         error: "This link isn't valid for your account. If you believe this is a mistake, contact the person who shared it with you.",
       },
     };
+  }
+
+  // Admins have their own separate whitelist/toggle (plus a bypass-email
+  // safety net) — see lib/geo.js. Both are off by default.
+  if (!(await isGeoAllowed(req, session.user.email.toLowerCase(), isAdmin(session.user.email)))) {
+    return { props: { error: 'This video is not available in your region.' } };
   }
 
   // Record every view (count + last-viewed).
