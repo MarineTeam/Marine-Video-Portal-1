@@ -1,5 +1,7 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { getEmbedUrl } from '../../lib/bunny';
+import { isAdmin } from '../../lib/auth';
+import { getGeoWhitelist, getCountry, isCountryAllowed } from '../../lib/geo';
 import { getShare, saveShare, isExpired } from '../../lib/shareBundle';
 import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWatermark } from '../../lib/watermark';
 import AppShell from '../../components/AppShell';
@@ -33,6 +35,14 @@ export async function getServerSideProps({ req, res, params }) {
         error: "This link isn't valid for your account. If you believe this is a mistake, contact the person who shared it with you.",
       },
     };
+  }
+
+  // Geo whitelist gates viewers only — admins always bypass it.
+  if (!isAdmin(session.user.email)) {
+    const whitelist = await getGeoWhitelist();
+    if (!isCountryAllowed(getCountry(req), whitelist)) {
+      return { props: { error: 'This video is not available in your region.' } };
+    }
   }
 
   // Record every view (count + last-viewed).

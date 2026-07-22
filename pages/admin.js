@@ -105,6 +105,9 @@ export default function Admin() {
   const [videoOpsCollection, setVideoOpsCollection] = useState('');
   const [videoOpsMsg, setVideoOpsMsg] = useState('');
   const [videoOpsActing, setVideoOpsActing] = useState(false);
+  const [geoEnabled, setGeoEnabled] = useState(false);
+  const [geoCountries, setGeoCountries] = useState('');
+  const [geoSaved, setGeoSaved] = useState(false);
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
@@ -128,6 +131,10 @@ export default function Admin() {
     fetch('/api/admin/watermark')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) { setWatermarkGlobal(Boolean(d.global)); setWatermarkExempt(d.exempt || []); } })
+      .catch(() => {});
+    fetch('/api/admin/geo')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { setGeoEnabled(Boolean(d.enabled)); setGeoCountries((d.countries || []).join(', ')); } })
       .catch(() => {});
   }, [user]);
 
@@ -750,6 +757,20 @@ export default function Admin() {
     setTimeout(() => setSaved(false), 2000);
   }
 
+  async function saveGeoWhitelist() {
+    const countries = geoCountries.split(/[\s,;]+/).map((c) => c.trim()).filter(Boolean);
+    const res = await fetch('/api/admin/geo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: geoEnabled, countries }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || `Failed to save (status ${res.status})`); return; }
+    setGeoCountries(data.countries.join(', '));
+    setGeoSaved(true);
+    setTimeout(() => setGeoSaved(false), 2000);
+  }
+
   async function saveOrder(idList) {
     await fetch('/api/admin/order', {
       method: 'POST',
@@ -929,6 +950,38 @@ export default function Admin() {
             />
             <button onClick={saveVideoCount} className="btn btn-primary btn-sm">
               {saved ? 'Saved!' : 'Save'}
+            </button>
+          </div>
+        </div>
+
+        {/* Geo location whitelist */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Geo Location Whitelist</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Restricts video playback to viewers in the listed countries. Detected from
+            Vercel&rsquo;s edge network, so this only takes effect on a Vercel deployment.
+            Admins always bypass this, and a viewer whose country can&rsquo;t be determined
+            is never blocked.
+          </p>
+          <label className="share-notify" style={{ marginBottom: '1rem' }}>
+            <input
+              type="checkbox"
+              checked={geoEnabled}
+              onChange={(e) => setGeoEnabled(e.target.checked)}
+            />
+            Restrict playback to specific countries
+          </label>
+          <div className="admin-row">
+            <input
+              type="text"
+              placeholder="Country codes, e.g. US, CA, GB"
+              value={geoCountries}
+              onChange={(e) => setGeoCountries(e.target.value)}
+              className="input input-sm"
+              style={{ flex: 1 }}
+            />
+            <button onClick={saveGeoWhitelist} className="btn btn-primary btn-sm">
+              {geoSaved ? 'Saved!' : 'Save'}
             </button>
           </div>
         </div>
