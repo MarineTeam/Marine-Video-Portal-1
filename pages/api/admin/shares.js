@@ -10,6 +10,7 @@ import {
   getBundle,
   listActiveSharesForEmail,
   extendShares,
+  pruneFromBundles,
 } from '../../../lib/shareBundle';
 
 // Every mutating action here (resend, revoke, extend) accepts either a single
@@ -159,6 +160,7 @@ async function hardDeleteMany(ids, actor) {
   if (eligible.length) {
     await redis.del(...eligible.map((id) => k(`share:${id}`)));
     await redis.srem(k('active_shares'), ...eligible);
+    await pruneFromBundles(eligible, shareMap);
     await logAudit(actor, 'share.delete', `${eligible.length} link(s)`);
   }
   return results;
