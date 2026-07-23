@@ -1301,6 +1301,25 @@ export default function Admin() {
           ) : (
             <>
             <div className="bulk-action-bar">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <input
+                  type="checkbox"
+                  checked={activeShares.length > 0 && selectedShareIds().length === activeShares.length}
+                  ref={(el) => {
+                    if (el) {
+                      el.indeterminate = selectedShareIds().length > 0 && selectedShareIds().length < activeShares.length;
+                    }
+                  }}
+                  onChange={(e) =>
+                    setShareSelected(
+                      e.target.checked
+                        ? Object.fromEntries(activeShares.map((s) => [s.shareId, true]))
+                        : {}
+                    )
+                  }
+                />
+                Select all
+              </label>
               <span className="text-muted">
                 {selectedShareIds().length > 0 ? `${selectedShareIds().length} selected` : 'Select links for bulk actions'}
               </span>
