@@ -1,12 +1,17 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../lib/redis';
 import { isAdmin } from '../../lib/auth';
+import { allow, callerId } from '../../lib/ratelimit';
 
 // Per-viewer playback progress / watch history.
 // Stored as a Redis hash per user: field = videoId, value = { seconds, duration, title, at }.
 export default async function handler(req, res) {
   const session = await getSession(req, res);
   if (!session) return res.status(401).json({ error: 'Not logged in' });
+
+  if (!(await allow(callerId(req, session, 'progress')))) {
+    return res.status(429).json({ error: 'Too many requests — slow down.' });
+  }
 
   const email = session.user.email.toLowerCase();
   const approved = await redis.sismember(k('approved_viewers'), email);
