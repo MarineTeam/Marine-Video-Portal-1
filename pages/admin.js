@@ -98,6 +98,8 @@ export default function Admin() {
   const [bulkShareResult, setBulkShareResult] = useState(null);
   const [bulkVideoQuery, setBulkVideoQuery] = useState('');
   const [shareSelected, setShareSelected] = useState({});
+  const [lastShareClickIndex, setLastShareClickIndex] = useState(null);
+  const shareShiftKeyRef = useRef(false);
   const [bulkActionMsg, setBulkActionMsg] = useState('');
   const [bulkActing, setBulkActing] = useState(false);
   const [extendHours, setExtendHours] = useState('72');
@@ -614,6 +616,29 @@ export default function Admin() {
 
   function selectedShareIds() {
     return Object.keys(shareSelected).filter((id) => shareSelected[id]);
+  }
+
+  // Shift-click range select, same convention as Gmail/file explorers: the
+  // checkbox's onClick (fires before onChange) stashes whether shift was
+  // held, then onChange applies the just-toggled state to every item
+  // between the last-clicked checkbox and this one instead of just this one.
+  function handleShareCheckboxChange(index, shareId, checked) {
+    const shift = shareShiftKeyRef.current;
+    shareShiftKeyRef.current = false;
+    if (shift && lastShareClickIndex !== null) {
+      const start = Math.min(lastShareClickIndex, index);
+      const end = Math.max(lastShareClickIndex, index);
+      setShareSelected((prev) => {
+        const next = { ...prev };
+        for (let i = start; i <= end; i++) {
+          next[activeShares[i].shareId] = checked;
+        }
+        return next;
+      });
+    } else {
+      setShareSelected((prev) => ({ ...prev, [shareId]: checked }));
+    }
+    setLastShareClickIndex(index);
   }
 
   // Bulk actions never fail the whole batch on one bad item — each is
@@ -1374,12 +1399,13 @@ export default function Admin() {
               {bulkActionMsg && <span className="share-resend-msg text-muted">{bulkActionMsg}</span>}
             </div>
             <ul className="shares-list">
-              {activeShares.map((s) => (
+              {activeShares.map((s, i) => (
                 <li key={s.shareId} className="share-item">
                   <input
                     type="checkbox"
                     checked={Boolean(shareSelected[s.shareId])}
-                    onChange={(e) => setShareSelected((prev) => ({ ...prev, [s.shareId]: e.target.checked }))}
+                    onClick={(e) => { shareShiftKeyRef.current = e.shiftKey; }}
+                    onChange={(e) => handleShareCheckboxChange(i, s.shareId, e.target.checked)}
                     style={{ marginTop: '4px' }}
                   />
                   <div className="share-info">
