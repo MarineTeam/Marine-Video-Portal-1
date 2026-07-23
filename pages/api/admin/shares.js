@@ -4,7 +4,7 @@ import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
 import { mailEnabled, sendShareLinksEmail, sendBundleEmail } from '../../../lib/mail';
-import { getShare, saveShare, getBundle, listActiveSharesForEmail, extendShare } from '../../../lib/shareBundle';
+import { getShare, saveShare, getBundle, getShares, listActiveSharesForEmail, extendShare } from '../../../lib/shareBundle';
 
 // Every mutating action here (resend, revoke, extend) accepts either a single
 // `shareId` or a `shareIds` array. Bulk requests never fail the whole batch
@@ -105,18 +105,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     const ids = await redis.smembers(k('active_shares'));
-    const shares = [];
-
-    for (const id of ids) {
-      const data = await redis.get(k(`share:${id}`));
-      if (!data) {
-        // Already reaped by Redis (well past its grace period) — clean up the stale reference.
-        await redis.srem(k('active_shares'), id);
-        continue;
-      }
-      shares.push({ shareId: id, ...data });
-    }
-
+    const shares = await getShares(ids);
     shares.sort((a, b) => a.expiresAt - b.expiresAt);
     return res.json(shares);
   }
