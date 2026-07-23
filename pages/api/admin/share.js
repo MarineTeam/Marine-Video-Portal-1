@@ -5,8 +5,8 @@ import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
 import { mailEnabled, sendShareLinksEmail, sendBundleEmail } from '../../../lib/mail';
 import {
-  ttlSecondsFor,
-  syncBundleForEmail,
+  saveShares,
+  syncBundlesForEmails,
   getBundle,
   listActiveSharesForEmail,
 } from '../../../lib/shareBundle';
@@ -64,6 +64,7 @@ export default async function handler(req, res) {
 
   // recipient email -> [{ shareId, videoId, title, watchUrl }]
   const byRecipient = new Map(cleanEmails.map((e) => [e, []]));
+  const newShares = []; // { shareId, data } — built up first, written in one batch below
 
   for (const video of cleanVideos) {
     for (const recipient of cleanEmails) {
@@ -85,8 +86,7 @@ export default async function handler(req, res) {
         completedAt: null,
         ...(watermarkMode ? { watermark: watermarkMode } : {}),
       };
-      await redis.set(k(`share:${shareId}`), share, { ex: ttlSecondsFor(expiresAt) });
-      await redis.sadd(k('active_shares'), shareId);
+      newShares.push({ shareId, data: share });
       byRecipient.get(recipient).push({
         shareId,
         videoId: video.id,
@@ -96,19 +96,24 @@ export default async function handler(req, res) {
     }
   }
 
+  // One pipelined batch of SETs instead of one round trip per share, and one
+  // SADD carrying every new shareId instead of one SADD per share — SADD
+  // takes multiple members in a single command.
+  await saveShares(newShares);
+  await redis.sadd(k('active_shares'), ...newShares.map((s) => s.shareId));
+
   await logAudit(
     actor,
     'share.create',
     `${cleanVideos.length} video(s) → ${cleanEmails.length} recipient(s)`
   );
 
-  // Sync each recipient's bundle (bookkeeping only, independent of `notify`) —
-  // "same email, same place": extend an existing bundle, form a new one once
-  // they cross 2 active links total, or leave a lone first link unbundled.
-  const bundleByRecipient = new Map();
-  for (const recipient of cleanEmails) {
-    bundleByRecipient.set(recipient, await syncBundleForEmail(recipient));
-  }
+  // Sync every recipient's bundle in one batched call (bookkeeping only,
+  // independent of `notify`) — "same email, same place": extend an existing
+  // bundle, form a new one once they cross 2 active links total, or leave a
+  // lone first link unbundled. See syncBundlesForEmails for why this is one
+  // call for the whole recipient list rather than one call per recipient.
+  const bundleByRecipient = await syncBundlesForEmails(cleanEmails);
 
   // Optionally email each recipient once. Best-effort: a mail failure never
   // fails share creation — links are already stored and can be resent.

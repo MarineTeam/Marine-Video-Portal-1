@@ -1,6 +1,7 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
+import { getShares } from '../../../lib/shareBundle';
 
 // Rolls up existing per-share tracking fields (share.js/shares.js already
 // write views/plays/furthestPct/completed) into a per-video summary. Reads
@@ -11,15 +12,10 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).end();
 
   const ids = await redis.smembers(k('active_shares'));
+  const shares = await getShares(ids);
   const byVideo = {};
 
-  for (const id of ids) {
-    const share = await redis.get(k(`share:${id}`));
-    if (!share) {
-      await redis.srem(k('active_shares'), id);
-      continue;
-    }
-
+  for (const share of shares) {
     const bucket = (byVideo[share.videoId] ||= {
       shares: 0,
       recipients: new Set(),
