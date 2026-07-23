@@ -87,3 +87,5 @@ Un-revoke a revoked private link in place, plus a separate "delete permanently" 
 Persistent "Copy bundle link" button on every bundled share, not just the bulk-share success toast
 Activity page: a viewer's own watch history, with an admin lookup by viewer email
 Geo location whitelist for video access and the admin panel, via GEO_WHITELIST/ADMIN_GEO_WHITELIST, off by default
+v1.13.0
+Admin Settings tab: "Clean up stale data" — removes stale share bundles, stale share references, and orphaned watch-history records left behind by removed viewers

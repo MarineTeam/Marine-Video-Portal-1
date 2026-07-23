@@ -118,6 +118,8 @@ export default function Admin() {
   const [geoAdminEnabled, setGeoAdminEnabled] = useState(false);
   const [geoAdminCountries, setGeoAdminCountries] = useState([]);
   const [geoSaved, setGeoSaved] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanupMsg, setCleanupMsg] = useState('');
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
   const uploadVideoIdRef = useRef(null);
@@ -811,6 +813,32 @@ export default function Admin() {
     setTimeout(() => setGeoSaved(false), 2000);
   }
 
+  async function runCleanup() {
+    setCleaning(true);
+    setCleanupMsg('');
+    try {
+      const res = await fetch('/api/admin/maintenance', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCleanupMsg(data.error || `Failed (status ${res.status})`);
+        return;
+      }
+      const { bundles, shares, progress } = data;
+      const total = bundles.removed + shares.removed + progress.removed;
+      setCleanupMsg(
+        total === 0
+          ? 'Nothing stale found — all clean.'
+          : `Removed ${bundles.removed} stale bundle(s), ${shares.removed} stale share reference(s), ` +
+            `${progress.removed} orphaned progress record(s).`
+      );
+      if (shares.removed) refreshShares();
+    } catch (e) {
+      setCleanupMsg('Cleanup failed.');
+    } finally {
+      setCleaning(false);
+    }
+  }
+
   async function saveOrder(idList) {
     await fetch('/api/admin/order', {
       method: 'POST',
@@ -1157,6 +1185,26 @@ export default function Admin() {
           >
             Open bunny.net dashboard
           </a>
+        </div>
+
+        {/* Maintenance */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Maintenance</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Clears data left behind after normal use — share bundles whose links have all
+            expired or been revoked, stale share references, and watch-history records for
+            viewers who were removed. Nothing currently in use is touched.
+          </p>
+          <div className="admin-row">
+            <button
+              onClick={runCleanup}
+              className="btn btn-outline btn-sm"
+              disabled={cleaning}
+            >
+              {cleaning ? 'Cleaning up…' : 'Clean up stale data'}
+            </button>
+            {cleanupMsg && <span className="text-muted">{cleanupMsg}</span>}
+          </div>
         </div>
         </>
         )}
