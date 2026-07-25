@@ -89,3 +89,8 @@ Activity page: a viewer's own watch history, with an admin lookup by viewer emai
 Geo location whitelist for video access and the admin panel, via GEO_WHITELIST/ADMIN_GEO_WHITELIST, off by default
 v1.13.0
 Admin Settings tab: "Clean up stale data" — removes stale share bundles, stale share references, and orphaned watch-history records left behind by removed viewers
+v1.14.0
+Private list per video: a persistent, editable list of people with standing access, add or remove anyone any time
+Adding only invites people not already on that video's list — no duplicate share, no re-sent email for people already listed
+Removing someone revokes only their access to that one video, immediately; re-adding them later is a fresh invite
+"Notify new people by email" checkbox on by default when adding, matching Drive/YouTube's own sharing dialogs
