@@ -74,6 +74,7 @@ pages/
       order.js            Custom homepage video order
       share.js            Bulk share creation — N videos × M recipients, optional watermark override (rate-limited)
       shares.js           List / bulk resend / bulk revoke / extend expiry (single or bulk)
+      private-list.js     Per-video private access list — list / diff-add (share + optional email) / remove (revoke)
       upload.js           Create Bunny video + signed TUS auth (rate-limited)
       collections.js      Create / list / delete collections
       audit.js            Recent admin actions
@@ -186,7 +187,7 @@ Every push / PR to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci
 
 Tabbed layout, gated server-side to `ADMIN_EMAILS`:
 
-- **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, a per-video **watermark override** (Default/Always/Never), a collapsible **per-video analytics** panel, and a per-video quick private share-link (with its own watermark selector, and an optional **"email the link to the recipient"** checkbox when email is configured). Multi-select checkboxes for **bulk delete** and **bulk collection assignment**. Also a Collections manager (create/delete).
+- **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, a per-video **watermark override** (Default/Always/Never), a collapsible **per-video analytics** panel, a per-video quick private share-link (with its own watermark selector, and an optional **"email the link to the recipient"** checkbox when email is configured), and a collapsible **Private list** panel per video (a persistent, editable access list — see below). Multi-select checkboxes for **bulk delete** and **bulk collection assignment**. Also a Collections manager (create/delete).
 - **Viewers** — add/remove approved emails, **bulk add** (paste a list), and each viewer's **last-seen** time.
 - **Shares** — a **bulk-share** form (pick any number of videos × any number of recipients — every pair gets its own link, one email per recipient, with its own watermark selector); every active private link with recipient, expiry, **view count/last-viewed**, **playback status** (plays, furthest % watched, completed), and a durable **"Copy bundle link"** button when the link is part of a bundle; multi-select checkboxes for **bulk resend / bulk revoke / bulk un-revoke / bulk extend / bulk delete permanently**; and per-link **extend**, **un-revoke** (restore a revoked link in place), and **delete permanently** (only allowed once a link is already revoked).
 - **Settings** — homepage video count, the site **color palette** (7 presets + custom, applied to all visitors), the **watermark global default** and its exemption list, the **geo location whitelist** on/off toggles (viewer and admin, each off by default, country lists shown read-only), a **push broadcast** composer, and a content-protection info panel.
@@ -238,6 +239,19 @@ Set `RESEND_API_KEY` and (recommended) `MAIL_FROM` to a Resend-verified sender. 
 - **View and playback tracking, per link** — every link tracks its own **view count and last-viewed time** (server-recorded on each page load), plus real playback signal reported by the Bunny embed's player.js events: **plays**, **furthest % watched**, and **completed**. A page view alone (opening the link) is tracked separately from actually pressing play, so you can tell who opened a link versus who watched it.
 - **Extend** — push a link's expiry out in place (same URL, no new link, no re-notification) instead of revoking and re-sharing. Works even on a link that's already lapsed but wasn't revoked (it extends from now, not from the stale old expiry); a genuinely revoked link can't be "extended" back to life, since revoking deletes it outright. Extending a bundled link also extends the bundle's own expiry so the bundle page doesn't lapse before its members do. Extend is available per-link or in bulk across several selected links.
 - **Grace period, not instant deletion** — a link's Redis record now outlives its logical expiry by 30 days before it's actually purged, specifically so an admin can still notice and extend an expired-but-not-revoked link. Viewer-facing pages and APIs still treat it as expired the moment its `expiresAt` passes; only the underlying record sticks around a while longer.
+
+---
+
+## Private access list per video
+
+Every video's **Videos** tab row has a collapsible **Private list** panel — a YouTube/Drive-style "share with specific people" list, layered on top of the Share/Bulk Share machinery above rather than a separate system. It shows everyone currently listed for that video and a form to add more:
+
+- **Persistent and editable** — the panel stays put on the row; open it any time to see or change who has access, instead of generating a one-off link you have to go find again.
+- **"On the list" = an active share** — under the hood a list member is exactly the same kind of record as any other share (`lib/shareBundle.js`), so extending, resending, or revoking it from the Shares tab works exactly as it would for a link created via Create Link or Bulk Share.
+- **Adding only affects new people** — paste in any number of emails (comma/space/newline-separated); only the ones *not already active* for this video get a new share (and a notification, if enabled). Emails already on the list are left completely alone: no duplicate share, no re-sent email.
+- **"Notify new people by email" checkbox** — on by default, matching Google Drive/YouTube's own sharing dialogs. Unchecking it still creates a fully live share for every newly added email — they just aren't emailed about it; the admin can share the link by hand or resend the notification later from the Shares tab.
+- **Removing revokes immediately** — taking an email off the list soft-revokes its share right away, the same as revoking any other link. Adding that email back later is a **fresh invite**: a brand-new share and (if notifications are on) a new email, since the old, revoked share no longer counts as "on the list."
+- **Expiry** — list shares use the same 30-day expiry cap as every other share (`private-list.js`'s `MAX_HOURS`); extend one in place from the Shares tab if it's about to lapse, same as any other link.
 
 ---
 

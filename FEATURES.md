@@ -43,6 +43,7 @@ Current as of **v1.13.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Bulk operations** — select multiple videos to **delete** or **assign to a collection** at once, mirroring the bulk-share UX, with per-item success/failure reporting.
 
 ## Private share links (per-recipient sharing) _(admin)_
+- **Private list** — a persistent, editable per-video access list (YouTube/Drive-style "share with specific people"), layered on the same share records as Create Link/Bulk Share rather than a separate system. Adding emails only creates a share (and, unless the on-by-default **"Notify new people by email"** checkbox is unchecked, sends the notification) for the ones not already active on that video's list; emails already listed are left untouched — no duplicate share, no re-sent email. Removing an email revokes its underlying share immediately; re-adding that email later is a fresh invite.
 - Generate a one-off private link for any video, tied to a specific recipient email — singly, or in **bulk**.
 - **Bulk share** — select any number of videos and any number of recipients at once; every (video, recipient) pair gets its own **independently revocable** link. Each recipient is emailed **once**, listing only their own links, never anyone else's.
 - **Forced login** — opening a link requires an Auth0 login and only plays if the logged-in email matches the one specified.
