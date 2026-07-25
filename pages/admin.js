@@ -109,6 +109,11 @@ export default function Admin() {
   const [shareWatermark, setShareWatermark] = useState({});
   const [bulkWatermark, setBulkWatermark] = useState('default');
   const [videoAnalytics, setVideoAnalytics] = useState({});
+  const [privateLists, setPrivateLists] = useState({});
+  const [privateListInput, setPrivateListInput] = useState({});
+  const [privateListNotify, setPrivateListNotify] = useState({});
+  const [privateListMsg, setPrivateListMsg] = useState({});
+  const [privateListBusy, setPrivateListBusy] = useState({});
   const [videoOpsSelected, setVideoOpsSelected] = useState({});
   const [videoOpsCollection, setVideoOpsCollection] = useState('');
   const [videoOpsMsg, setVideoOpsMsg] = useState('');
@@ -161,6 +166,12 @@ export default function Admin() {
   useEffect(() => {
     if (!user || (tab !== 'videos' && tab !== 'analytics')) return;
     fetch('/api/admin/video-analytics').then((r) => (r.ok ? r.json() : {})).then(setVideoAnalytics).catch(() => {});
+  }, [user, tab]);
+
+  // Same lazy load for every video's private list, keyed on the Videos tab.
+  useEffect(() => {
+    if (!user || tab !== 'videos') return;
+    fetch('/api/admin/private-list').then((r) => (r.ok ? r.json() : {})).then(setPrivateLists).catch(() => {});
   }, [user, tab]);
 
   // While any video is still encoding (status 0–3), re-poll so progress updates.
@@ -715,6 +726,69 @@ export default function Admin() {
       [video.id]: notify ? (data.emailedTo?.includes(email) ? `Link emailed to ${email}` : 'Link created — email failed to send') : '',
     }));
     refreshShares();
+  }
+
+  async function refreshPrivateList() {
+    const r = await fetch('/api/admin/private-list');
+    setPrivateLists(r.ok ? await r.json() : {});
+  }
+
+  // Private list add: diffs against who's already active for this video —
+  // the API only creates shares (and emails) for the genuinely new ones.
+  async function addToPrivateList(video) {
+    const emails = [...new Set(
+      (privateListInput[video.id] || '').split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean)
+    )];
+    if (!emails.length) return alert('Enter at least one email');
+    const notify = mailEnabled && privateListNotify[video.id] !== false;
+
+    setPrivateListBusy((prev) => ({ ...prev, [video.id]: true }));
+    try {
+      const res = await fetch('/api/admin/private-list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: video.id, title: video.title, emails, notify }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.error || 'Failed to add to private list'); return; }
+
+      const parts = [];
+      if (data.added?.length) {
+        parts.push(
+          `Added ${data.added.length}${notify ? ` — emailed ${data.emailedTo.length}/${data.added.length}` : ''}`
+        );
+      }
+      if (data.alreadyListed?.length) parts.push(`${data.alreadyListed.length} already had access`);
+      setPrivateListMsg((prev) => ({ ...prev, [video.id]: parts.join('; ') || 'No new recipients' }));
+      setPrivateListInput((prev) => ({ ...prev, [video.id]: '' }));
+      refreshPrivateList();
+    } finally {
+      setPrivateListBusy((prev) => ({ ...prev, [video.id]: false }));
+    }
+  }
+
+  // Removing revokes the underlying share immediately; re-adding this email
+  // later is a fresh invite (a new share, new notification).
+  async function removeFromPrivateList(video, email) {
+    setPrivateListBusy((prev) => ({ ...prev, [video.id]: true }));
+    try {
+      const res = await fetch('/api/admin/private-list', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: video.id, email }),
+      });
+      if (res.ok) {
+        setPrivateLists((prev) => ({
+          ...prev,
+          [video.id]: (prev[video.id] || []).filter((m) => m.email !== email),
+        }));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to remove');
+      }
+    } finally {
+      setPrivateListBusy((prev) => ({ ...prev, [video.id]: false }));
+    }
   }
 
   // Bulk share: any number of selected videos × any number of recipients.
@@ -1873,6 +1947,70 @@ export default function Admin() {
                 {shareMsg[v.id] && (
                   <p className="share-sent-msg text-muted">{shareMsg[v.id]}</p>
                 )}
+
+                <details className="bulk-add">
+                  <summary>
+                    Private list{privateLists[v.id]?.length > 0 ? ` (${privateLists[v.id].length})` : ''}
+                  </summary>
+                  <p className="text-muted mt-4">
+                    A standing list of people with access to this video. Adding an email creates a
+                    live share (and, unless unchecked, emails them) only if they aren't already on
+                    the list — no duplicate share, no re-sent email for people already listed.
+                    Removing someone revokes their access immediately; inviting them again later is
+                    a fresh invite.
+                  </p>
+
+                  {privateLists[v.id]?.length > 0 && (
+                    <ul className="analytics-list">
+                      {privateLists[v.id].map((m) => (
+                        <li key={m.shareId} className="analytics-row">
+                          <span className="analytics-title">{m.email}</span>
+                          <button
+                            onClick={() => removeFromPrivateList(v, m.email)}
+                            className="btn btn-icon"
+                            title="Remove from private list"
+                            disabled={Boolean(privateListBusy[v.id])}
+                          >
+                            <IconX />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <textarea
+                    className="input"
+                    placeholder="Emails to add — separate with commas, spaces, or new lines"
+                    value={privateListInput[v.id] || ''}
+                    onChange={(e) => setPrivateListInput((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                    rows={2}
+                    style={{ width: '100%', marginTop: '10px', resize: 'vertical' }}
+                  />
+
+                  <div className="admin-video-share" style={{ marginTop: '0.5rem' }}>
+                    {mailEnabled && (
+                      <label className="share-notify">
+                        <input
+                          type="checkbox"
+                          checked={privateListNotify[v.id] !== false}
+                          onChange={(e) => setPrivateListNotify((prev) => ({ ...prev, [v.id]: e.target.checked }))}
+                        />
+                        Notify new people by email
+                      </label>
+                    )}
+                    <button
+                      onClick={() => addToPrivateList(v)}
+                      className="btn btn-outline btn-sm"
+                      disabled={Boolean(privateListBusy[v.id])}
+                    >
+                      Add to list
+                    </button>
+                  </div>
+
+                  {privateListMsg[v.id] && (
+                    <p className="share-sent-msg text-muted">{privateListMsg[v.id]}</p>
+                  )}
+                </details>
 
                 <details className="bulk-add">
                   <summary>Analytics</summary>
