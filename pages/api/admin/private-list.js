@@ -19,16 +19,31 @@ import crypto from 'crypto';
 // standing access to one video — YouTube/Drive-style "share with specific
 // people", layered on top of the existing Share / Bulk Share machinery
 // rather than a parallel data model. Under the hood a list member IS a
-// share record (lib/shareBundle.js): "on the list" means having an active
-// (not revoked, not expired) share for that video, however it was created,
-// so extend/resend/revoke from the Shares tab and bundle notifications all
-// keep working on these exactly as on any other share.
+// share record (lib/shareBundle.js), so extend/resend from the Shares tab
+// and bundle notifications keep working on it exactly like any other share.
 //
-// Adding an email already active for this video is a no-op — no duplicate
-// share, no re-sent notification. Removing revokes every active share that
-// email holds for the video, immediately. Re-adding the same email later
-// creates a brand new share, since the revoked one no longer counts as "on
-// the list".
+// The list is scoped to the tokens IT created, and only those: every share
+// this route creates is tagged `privateList: true`, and every membership
+// check (who's "on the list", what add diffs against, what remove revokes)
+// filters on that tag. Two consequences fall out of that on purpose:
+//   - If the same video/email pair already has a share from Create Link or
+//     Bulk Share (no tag), adding them here still creates a brand-new,
+//     independently-revocable share — the list has no way to see, and
+//     therefore no way to skip or clobber, a token it didn't create.
+//   - Removing someone here revokes only the list's own token. Any other
+//     active share to that same video/email (created via Create Link/Bulk
+//     Share, or a stray earlier one) is completely unaffected — "remove"
+//     is never a global "wipe this person's access to this video" action.
+// A different video's list is a fully separate set of tagged shares, so
+// removing someone from video A's list never touches video B's. And since
+// revoke never touches bundle membership (see shareBundle.js), removing a
+// bundled list share just makes the bundle page quietly stop listing that
+// one video next load — every other bundle member is untouched.
+//
+// Adding an email already active on this list is a no-op — no duplicate
+// share, no re-sent notification. Re-adding a since-removed email creates a
+// brand new (untagged-history) share, since the revoked one no longer
+// counts as "on the list".
 const MAX_HOURS = 720; // 30 days — same cap as /api/admin/share; list shares
 // are just shares, so they ride the same expiry ceiling as everything else.
 
@@ -45,7 +60,7 @@ export default async function handler(req, res) {
     const shares = await getShares(ids);
     const byVideo = {};
     for (const s of shares) {
-      if (s.revoked || isExpired(s)) continue;
+      if (!s.privateList || s.revoked || isExpired(s)) continue;
       (byVideo[s.videoId] ||= new Map());
       const existing = byVideo[s.videoId].get(s.email);
       if (!existing || s.expiresAt > existing.expiresAt) byVideo[s.videoId].set(s.email, s);
@@ -77,7 +92,9 @@ export default async function handler(req, res) {
     if (!videoId) return res.status(400).json({ error: 'videoId is required' });
     if (!emails.length) return res.status(400).json({ error: 'At least one recipient email is required' });
 
-    const existingEmails = new Set((await listActiveSharesForVideo(videoId)).map((s) => s.email));
+    const existingEmails = new Set(
+      (await listActiveSharesForVideo(videoId)).filter((s) => s.privateList).map((s) => s.email)
+    );
     const newEmails = emails.filter((e) => !existingEmails.has(e));
 
     if (!newEmails.length) {
@@ -95,6 +112,7 @@ export default async function handler(req, res) {
         expiresAt,
         createdAt: Date.now(),
         batchId: crypto.randomUUID(),
+        privateList: true, // tags this share as owned by the list, not Create Link/Bulk Share
         views: 0,
         lastViewedAt: null,
         plays: 0,
@@ -159,7 +177,9 @@ export default async function handler(req, res) {
     const email = (body.email || '').toLowerCase().trim();
     if (!videoId || !email) return res.status(400).json({ error: 'videoId and email are required' });
 
-    const toRevoke = (await listActiveSharesForVideo(videoId)).filter((s) => s.email === email);
+    const toRevoke = (await listActiveSharesForVideo(videoId)).filter(
+      (s) => s.email === email && s.privateList
+    );
     if (!toRevoke.length) return res.status(404).json({ error: "That email is not on this video's list." });
 
     await saveShares(toRevoke.map((s) => ({ shareId: s.shareId, data: { ...s, revoked: true, revokedAt: Date.now() } })));
