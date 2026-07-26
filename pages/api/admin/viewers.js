@@ -10,7 +10,9 @@ const MAX_TAG_LENGTH = 40;
 function parseStoredTags(raw) {
   if (!raw) return [];
   try {
-    return cleanTags(JSON.parse(raw));
+    // Upstash auto-deserializes JSON-looking strings on read, so `raw` may
+    // already be the parsed array rather than the JSON string we stored.
+    return cleanTags(typeof raw === 'string' ? JSON.parse(raw) : raw);
   } catch {
     return [];
   }
