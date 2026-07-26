@@ -59,6 +59,9 @@ export default function Admin() {
   const [activeShares, setActiveShares] = useState([]);
   const [viewers, setViewers] = useState([]);
   const [newViewerEmail, setNewViewerEmail] = useState('');
+  const [tagDrafts, setTagDrafts] = useState({});
+  const [tagBusy, setTagBusy] = useState({});
+  const [bulkTagPick, setBulkTagPick] = useState('');
   const [videoCount, setVideoCount] = useState(2);
   const [expiresHours, setExpiresHours] = useState({});
   const [error, setError] = useState(null);
@@ -383,6 +386,38 @@ export default function Admin() {
     setBulkEmails('');
     const r = await fetch('/api/admin/viewers');
     setViewers(await r.json());
+  }
+
+  async function saveViewerTags(email) {
+    const tags = (tagDrafts[email] ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+    setTagBusy((prev) => ({ ...prev, [email]: true }));
+    try {
+      const res = await fetch('/api/admin/viewers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, tags }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.error || 'Failed to save tags'); return; }
+      setViewers((prev) => prev.map((v) => (v.email === email ? { ...v, tags: data.tags } : v)));
+    } finally {
+      setTagBusy((prev) => ({ ...prev, [email]: false }));
+    }
+  }
+
+  // Append every viewer carrying the picked tag into the bulk-share recipient
+  // textarea (skipping ones already present), so a group can be targeted in
+  // one click instead of pasting each address.
+  function addTagToBulkRecipients() {
+    if (!bulkTagPick) return;
+    const already = new Set(
+      bulkRecipients.split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean)
+    );
+    const toAdd = viewers
+      .filter((v) => (v.tags || []).includes(bulkTagPick) && !already.has(v.email))
+      .map((v) => v.email);
+    if (toAdd.length === 0) return;
+    setBulkRecipients((prev) => (prev.trim() ? `${prev.trim()}\n${toAdd.join('\n')}` : toAdd.join('\n')));
   }
 
   function startRename(v) { setEditingId(v.id); setEditTitle(v.title || ''); }
@@ -970,6 +1005,7 @@ export default function Admin() {
   const bulkQ = bulkVideoQuery.trim().toLowerCase();
   const bulkShownVideos = bulkQ ? videos.filter((v) => (v.title || '').toLowerCase().includes(bulkQ)) : videos;
   const bulkSelectedCount = Object.values(bulkSelected).filter(Boolean).length;
+  const allViewerTags = [...new Set(viewers.flatMap((v) => v.tags || []))].sort();
 
   return (
     <AppShell isAdmin>
@@ -1317,16 +1353,33 @@ export default function Admin() {
           {viewers.length > 0 ? (
             <ul className="viewer-list">
               {viewers.map((v) => (
-                <li key={v.email} className="viewer-item">
-                  <span className="viewer-email">{v.email}</span>
-                  <span className="viewer-seen">{v.lastSeen ? `seen ${timeAgo(v.lastSeen)}` : 'never seen'}</span>
-                  <button
-                    onClick={() => removeViewer(v.email)}
-                    className="btn btn-icon"
-                    title="Remove viewer"
-                  >
-                    <IconTrash />
-                  </button>
+                <li key={v.email} className="viewer-item viewer-item--tagged">
+                  <div className="viewer-item-main">
+                    <span className="viewer-email">{v.email}</span>
+                    <span className="viewer-seen">{v.lastSeen ? `seen ${timeAgo(v.lastSeen)}` : 'never seen'}</span>
+                    <button
+                      onClick={() => removeViewer(v.email)}
+                      className="btn btn-icon"
+                      title="Remove viewer"
+                    >
+                      <IconTrash />
+                    </button>
+                  </div>
+                  <div className="viewer-tags-row">
+                    {(v.tags || []).map((t) => (
+                      <span key={t} className="tag-chip">{t}</span>
+                    ))}
+                    <input
+                      type="text"
+                      className="input input-sm tag-edit-input"
+                      placeholder="Tags — comma separated (e.g. Team A, Beta)"
+                      value={tagDrafts[v.email] ?? (v.tags || []).join(', ')}
+                      onChange={(e) => setTagDrafts((prev) => ({ ...prev, [v.email]: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && saveViewerTags(v.email)}
+                      onBlur={() => saveViewerTags(v.email)}
+                      disabled={Boolean(tagBusy[v.email])}
+                    />
+                  </div>
                 </li>
               ))}
             </ul>
@@ -1376,6 +1429,29 @@ export default function Admin() {
               {bulkShownVideos.length === 0 && <p className="text-muted">No videos match.</p>}
             </ul>
           </div>
+
+          {allViewerTags.length > 0 && (
+            <div className="admin-row" style={{ marginTop: '0.75rem' }}>
+              <select
+                className="input input-sm"
+                value={bulkTagPick}
+                onChange={(e) => setBulkTagPick(e.target.value)}
+                style={{ flex: 'none', width: '10rem' }}
+              >
+                <option value="">Add viewers tagged…</option>
+                {allViewerTags.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <button
+                onClick={addTagToBulkRecipients}
+                className="btn btn-outline btn-sm"
+                disabled={!bulkTagPick}
+              >
+                Add group
+              </button>
+            </div>
+          )}
 
           <textarea
             className="input"
