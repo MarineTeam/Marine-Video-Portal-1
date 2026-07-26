@@ -1542,9 +1542,11 @@ export default function Admin() {
                       {s.revoked && <span className="badge badge-error">Revoked</span>}
                     </span>
                     <span className="share-meta">
-                      {s.email} &mdash; expires {new Date(s.expiresAt).toLocaleString()}
+                      For {s.email} &middot; created {new Date(s.createdAt).toLocaleString()} &middot; expires {new Date(s.expiresAt).toLocaleString()}
                       {s.views ? ` · ${s.views} view${s.views === 1 ? '' : 's'}` : ''}
                       {s.lastViewedAt ? ` (last ${timeAgo(s.lastViewedAt)})` : ''}
+                      {s.bundleId ? ' · part of a bundle' : ''}
+                      {s.privateList ? ' · via Private list' : ''}
                     </span>
                     <span className="share-meta">
                       {s.plays ? `${s.plays} play${s.plays === 1 ? '' : 's'}` : 'not played'}
