@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.13.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.16.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
@@ -45,7 +45,7 @@ Current as of **v1.13.0**. Grouped by area; items marked _(admin)_ live in the `
 ## Private share links (per-recipient sharing) _(admin)_
 - **Private list** — a persistent, editable per-video access list (YouTube/Drive-style "share with specific people"), layered on the same share records as Create Link/Bulk Share rather than a separate system. Every share the list creates is tagged as its own, so the list only ever knows about and acts on tokens it created itself — a separate Create Link/Bulk Share to the same video/email is invisible to it. Adding emails only creates a share (and, unless the on-by-default **"Notify new people by email"** checkbox is unchecked, sends the notification) for the ones not already active *on that list*; emails already listed are left untouched — no duplicate share, no re-sent email. Removing an email revokes only the list's own share for that video, immediately — any other active share to that video/email (from another flow) is unaffected, and other videos' lists are untouched too; re-adding that email later is a fresh invite.
 - Generate a one-off private link for any video, tied to a specific recipient email — singly, or in **bulk**.
-- **Bulk share** — select any number of videos and any number of recipients at once; every (video, recipient) pair gets its own **independently revocable** link. Each recipient is emailed **once**, listing only their own links, never anyone else's.
+- **Bulk share** — select any number of videos and any number of recipients at once; every (video, recipient) pair gets its own **independently revocable** link. Each recipient is emailed **once**, listing only their own links, never anyone else's. A **"Share collection…"** picker checks every video in a chosen collection into the picklist in one click; a viewer-**tag** picker does the same for the recipient list. Both only pre-populate the existing picklists — link creation runs exactly the same either way.
 - **Forced login** — opening a link requires an Auth0 login and only plays if the logged-in email matches the one specified.
 - Wrong-account attempts show a generic mismatch message — **the intended recipient's email is never revealed**.
 - **Adjustable expiry** per link (default 72 hours, capped at 720 / 30 days).
@@ -56,7 +56,7 @@ Current as of **v1.13.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Inert until configured** — email-related buttons/checkboxes stay hidden unless `RESEND_API_KEY` is set; without it, sharing works exactly as before (copy the link manually).
 - **View tracking** — each active link records a **view count and last-viewed time**, updated on every page load (not just the first).
 - **Real playback tracking** — the Bunny embed's player.js events report **plays**, **furthest % watched**, and **completion** back to the link, so you can tell who actually watched versus who just opened the page.
-- **Active link visibility** — every live link with recipient, exact expiry, view/playback stats, and bundle membership.
+- **Active link visibility** — every live link with recipient, **creation date**, exact expiry, view/playback stats, and whether it's **part of a bundle** or came in **via Private list**.
 - **Persistent bundle-link button** — any share row that's part of a bundle shows a durable "Copy bundle link" button, not just a one-time link surfaced in the bulk-share success toast.
 - **Revocation is soft by default** — revoking a link sets it aside (same shareId/token) rather than deleting it outright, one click or in **bulk** across selected links.
 - **Un-revoke** — restore a revoked link in place, singly or in bulk, with no new link and no re-notification needed.
@@ -65,6 +65,7 @@ Current as of **v1.13.0**. Grouped by area; items marked _(admin)_ live in the `
 
 ## People & oversight _(admin)_
 - **Approved viewer management** — add/remove emails, with **bulk add** (paste comma/space/newline-separated lists; validated + deduped).
+- **Viewer tags** — label approved viewers (e.g. "Team A") from the Viewers tab; Bulk Share can add everyone carrying a given tag to the recipient list in one click instead of pasting emails. Tags are capped at 20 per viewer / 40 characters each and are cleaned up when a viewer is removed.
 - **Viewer last-seen** — each viewer's most recent activity time.
 - **Activity / audit log** — the most recent admin actions (viewer add/remove, share create/revoke, video rename/delete, collection create/delete, settings, palette), each with actor and time. Logging is best-effort so it never breaks the underlying action.
 - **Analytics dashboard** — total views, 30-day views, watch time, video count, a 30-day views bar chart, and a most-watched list (from bunny.net video stats + the statistics API).

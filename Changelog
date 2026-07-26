@@ -97,3 +97,7 @@ Removing someone revokes only their access to that one video, immediately; re-ad
 v1.15.0
 Viewer tags: label approved viewers (e.g. "Team A") from the Viewers tab
 Bulk Share: add every viewer with a given tag to the recipient list in one click, instead of pasting emails
+v1.16.0
+Shares list shows each link's creation date, and flags links that are part of a bundle or came in via a video's Private list
+Bulk Share: "Share collection…" picker checks every video in a collection into the picklist in one click
+Fix: viewer tags weren't persisting past a page refresh
