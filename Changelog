@@ -101,3 +101,6 @@ v1.16.0
 Shares list shows each link's creation date, and flags links that are part of a bundle or came in via a video's Private list
 Bulk Share: "Share collection…" picker checks every video in a collection into the picklist in one click
 Fix: viewer tags weren't persisting past a page refresh
+v1.17.0
+Private list: "Add viewers tagged…" picker adds every viewer with a given tag to the list in one click, mirroring Bulk Share's tag picker
+Picture-in-Picture is now available on video playback (watch pages), via the embed player's own PiP control

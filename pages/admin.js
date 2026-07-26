@@ -118,6 +118,7 @@ export default function Admin() {
   const [privateListNotify, setPrivateListNotify] = useState({});
   const [privateListMsg, setPrivateListMsg] = useState({});
   const [privateListBusy, setPrivateListBusy] = useState({});
+  const [privateListTagPick, setPrivateListTagPick] = useState({});
   const [videoOpsSelected, setVideoOpsSelected] = useState({});
   const [videoOpsCollection, setVideoOpsCollection] = useState('');
   const [videoOpsMsg, setVideoOpsMsg] = useState('');
@@ -419,6 +420,25 @@ export default function Admin() {
       .map((v) => v.email);
     if (toAdd.length === 0) return;
     setBulkRecipients((prev) => (prev.trim() ? `${prev.trim()}\n${toAdd.join('\n')}` : toAdd.join('\n')));
+  }
+
+  // Append every viewer carrying the picked tag into a video's private-list
+  // textarea (skipping ones already present), mirroring addTagToBulkRecipients
+  // so a group can be added to the standing list in one click.
+  function addTagToPrivateList(video) {
+    const tag = privateListTagPick[video.id];
+    if (!tag) return;
+    const already = new Set(
+      (privateListInput[video.id] || '').split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean)
+    );
+    const toAdd = viewers
+      .filter((v) => (v.tags || []).includes(tag) && !already.has(v.email))
+      .map((v) => v.email);
+    if (toAdd.length === 0) return;
+    setPrivateListInput((prev) => {
+      const existing = (prev[video.id] || '').trim();
+      return { ...prev, [video.id]: existing ? `${existing}\n${toAdd.join('\n')}` : toAdd.join('\n') };
+    });
   }
 
   // Check every video belonging to the picked collection into the bulk-share
@@ -2094,6 +2114,29 @@ export default function Admin() {
                         </li>
                       ))}
                     </ul>
+                  )}
+
+                  {allViewerTags.length > 0 && (
+                    <div className="admin-row" style={{ marginTop: '0.75rem' }}>
+                      <select
+                        className="input input-sm"
+                        value={privateListTagPick[v.id] || ''}
+                        onChange={(e) => setPrivateListTagPick((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                        style={{ flex: 'none', width: '10rem' }}
+                      >
+                        <option value="">Add viewers tagged…</option>
+                        {allViewerTags.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => addTagToPrivateList(v)}
+                        className="btn btn-outline btn-sm"
+                        disabled={!privateListTagPick[v.id]}
+                      >
+                        Add group
+                      </button>
+                    </div>
                   )}
 
                   <textarea
