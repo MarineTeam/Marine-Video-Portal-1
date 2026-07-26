@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.16.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.17.1**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
@@ -24,6 +24,7 @@ Current as of **v1.16.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Custom ordering** _(admin)_ — drag-to-reorder; newly uploaded videos float to the top (newest first) until placed.
 - **Pagination** — 10 per page with Previous/Next.
 - Autoplay disabled on all embedded players.
+- **Picture-in-Picture** — the embed player's own PiP control is enabled on every watch page (video-watch, share-link, and bundle-member pages), so a viewer can pop the video into a floating window and keep it playing while using other tabs/apps.
 
 ## Video playback & security
 - Every play uses a **signed, time-limited bunny.net embed token**, generated fresh per request — never a permanent or public URL.
@@ -43,8 +44,8 @@ Current as of **v1.16.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Bulk operations** — select multiple videos to **delete** or **assign to a collection** at once, mirroring the bulk-share UX, with per-item success/failure reporting.
 
 ## Private share links (per-recipient sharing) _(admin)_
-- **Private list** — a persistent, editable per-video access list (YouTube/Drive-style "share with specific people"), layered on the same share records as Create Link/Bulk Share rather than a separate system. Every share the list creates is tagged as its own, so the list only ever knows about and acts on tokens it created itself — a separate Create Link/Bulk Share to the same video/email is invisible to it. Adding emails only creates a share (and, unless the on-by-default **"Notify new people by email"** checkbox is unchecked, sends the notification) for the ones not already active *on that list*; emails already listed are left untouched — no duplicate share, no re-sent email. Removing an email revokes only the list's own share for that video, immediately — any other active share to that video/email (from another flow) is unaffected, and other videos' lists are untouched too; re-adding that email later is a fresh invite.
-- Generate a one-off private link for any video, tied to a specific recipient email — singly, or in **bulk**.
+- **Private list** — a persistent, editable per-video access list (YouTube/Drive-style "share with specific people"), layered on the same share records as Create Link/Bulk Share rather than a separate system. Every share the list creates is tagged as its own, so the list only ever knows about and acts on tokens it created itself — a separate Create Link/Bulk Share to the same video/email is invisible to it. Adding emails only creates a share (and, unless the on-by-default **"Notify new people by email"** checkbox is unchecked, sends the notification) for the ones not already active *on that list*; emails already listed are left untouched — no duplicate share, no re-sent email. Removing an email revokes only the list's own share for that video, immediately — any other active share to that video/email (from another flow) is unaffected, and other videos' lists are untouched too; re-adding that email later is a fresh invite. A viewer-**tag** picker ("Add viewers tagged…") adds everyone carrying a given tag to the list in one click, same as Bulk Share.
+- **Create link** — generate a private link for any video, targeting **any number of recipient emails at once** (comma/space/newline-separated), each getting their own **independently revocable** link. A viewer-**tag** picker adds everyone carrying a given tag to the recipient list in one click.
 - **Bulk share** — select any number of videos and any number of recipients at once; every (video, recipient) pair gets its own **independently revocable** link. Each recipient is emailed **once**, listing only their own links, never anyone else's. A **"Share collection…"** picker checks every video in a chosen collection into the picklist in one click; a viewer-**tag** picker does the same for the recipient list. Both only pre-populate the existing picklists — link creation runs exactly the same either way.
 - **Forced login** — opening a link requires an Auth0 login and only plays if the logged-in email matches the one specified.
 - Wrong-account attempts show a generic mismatch message — **the intended recipient's email is never revealed**.

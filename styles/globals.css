@@ -850,6 +850,7 @@ select.input { cursor: pointer; appearance: none; -webkit-appearance: none; }
 .admin-video-share { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .admin-video-share .input { flex: 1; min-width: 220px; }
 
+.share-result-list { display: flex; flex-direction: column; gap: 6px; }
 .share-result { display: flex; gap: 8px; align-items: center; }
 .share-result .input { flex: 1; font-size: 13px; color: var(--muted); }
 
