@@ -93,7 +93,12 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
 
   return (
     <div className="watch-player">
-      <iframe ref={iframeRef} src={embedUrl} allow="fullscreen; picture-in-picture" title={title} />
+      <iframe
+        ref={iframeRef}
+        src={embedUrl}
+        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+        title={title}
+      />
       <Watermark text={watermarkText} />
     </div>
   );
