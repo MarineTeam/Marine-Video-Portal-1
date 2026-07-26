@@ -62,6 +62,7 @@ export default function Admin() {
   const [tagDrafts, setTagDrafts] = useState({});
   const [tagBusy, setTagBusy] = useState({});
   const [bulkTagPick, setBulkTagPick] = useState('');
+  const [bulkCollectionPick, setBulkCollectionPick] = useState('');
   const [videoCount, setVideoCount] = useState(2);
   const [expiresHours, setExpiresHours] = useState({});
   const [error, setError] = useState(null);
@@ -418,6 +419,21 @@ export default function Admin() {
       .map((v) => v.email);
     if (toAdd.length === 0) return;
     setBulkRecipients((prev) => (prev.trim() ? `${prev.trim()}\n${toAdd.join('\n')}` : toAdd.join('\n')));
+  }
+
+  // Check every video belonging to the picked collection into the bulk-share
+  // video picklist (leaving existing selections and the rest of the flow
+  // untouched — Create Links still runs the same per-video/recipient share
+  // creation as manual picks).
+  function addCollectionToBulkVideos() {
+    if (!bulkCollectionPick) return;
+    const toAdd = videos.filter((v) => v.collectionId === bulkCollectionPick).map((v) => v.id);
+    if (toAdd.length === 0) return;
+    setBulkSelected((prev) => {
+      const next = { ...prev };
+      for (const id of toAdd) next[id] = true;
+      return next;
+    });
   }
 
   function startRename(v) { setEditingId(v.id); setEditTitle(v.title || ''); }
@@ -859,6 +875,7 @@ export default function Admin() {
       });
       setBulkSelected({});
       setBulkRecipients('');
+      setBulkCollectionPick('');
       refreshShares();
     } finally {
       setBulkSharing(false);
@@ -1429,6 +1446,29 @@ export default function Admin() {
               {bulkShownVideos.length === 0 && <p className="text-muted">No videos match.</p>}
             </ul>
           </div>
+
+          {collections.length > 0 && (
+            <div className="admin-row" style={{ marginTop: '0.75rem' }}>
+              <select
+                className="input input-sm"
+                value={bulkCollectionPick}
+                onChange={(e) => setBulkCollectionPick(e.target.value)}
+                style={{ flex: 'none', width: '10rem' }}
+              >
+                <option value="">Share collection…</option>
+                {collections.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <button
+                onClick={addCollectionToBulkVideos}
+                className="btn btn-outline btn-sm"
+                disabled={!bulkCollectionPick}
+              >
+                Select videos
+              </button>
+            </div>
+          )}
 
           {allViewerTags.length > 0 && (
             <div className="admin-row" style={{ marginTop: '0.75rem' }}>
