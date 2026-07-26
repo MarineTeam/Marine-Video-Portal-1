@@ -94,3 +94,6 @@ Private list per video: a persistent, editable list of people with standing acce
 Adding only invites people not already on that video's list — no duplicate share, no re-sent email for people already listed
 Removing someone revokes only their access to that one video, immediately; re-adding them later is a fresh invite
 "Notify new people by email" checkbox on by default when adding, matching Drive/YouTube's own sharing dialogs
+v1.15.0
+Viewer tags: label approved viewers (e.g. "Team A") from the Viewers tab
+Bulk Share: add every viewer with a given tag to the recipient list in one click, instead of pasting emails
