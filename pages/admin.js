@@ -119,6 +119,7 @@ export default function Admin() {
   const [privateListMsg, setPrivateListMsg] = useState({});
   const [privateListBusy, setPrivateListBusy] = useState({});
   const [privateListTagPick, setPrivateListTagPick] = useState({});
+  const [shareTagPick, setShareTagPick] = useState({});
   const [videoOpsSelected, setVideoOpsSelected] = useState({});
   const [videoOpsCollection, setVideoOpsCollection] = useState('');
   const [videoOpsMsg, setVideoOpsMsg] = useState('');
@@ -436,6 +437,24 @@ export default function Admin() {
       .map((v) => v.email);
     if (toAdd.length === 0) return;
     setPrivateListInput((prev) => {
+      const existing = (prev[video.id] || '').trim();
+      return { ...prev, [video.id]: existing ? `${existing}\n${toAdd.join('\n')}` : toAdd.join('\n') };
+    });
+  }
+
+  // Same tag-picker pattern as Bulk Share and Private list, but for the
+  // per-video "Create link" recipient field.
+  function addTagToShare(video) {
+    const tag = shareTagPick[video.id];
+    if (!tag) return;
+    const already = new Set(
+      (emails[video.id] || '').split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean)
+    );
+    const toAdd = viewers
+      .filter((v) => (v.tags || []).includes(tag) && !already.has(v.email))
+      .map((v) => v.email);
+    if (toAdd.length === 0) return;
+    setEmails((prev) => {
       const existing = (prev[video.id] || '').trim();
       return { ...prev, [video.id]: existing ? `${existing}\n${toAdd.join('\n')}` : toAdd.join('\n') };
     });
@@ -774,8 +793,10 @@ export default function Admin() {
   }
 
   async function handleShare(video) {
-    const email = (emails[video.id] || '').trim();
-    if (!email) return alert("Enter the recipient's email first");
+    const emailList = [...new Set(
+      (emails[video.id] || '').split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean)
+    )];
+    if (!emailList.length) return alert('Enter at least one recipient email');
     const hours = parseInt(expiresHours[video.id]) || 72;
     const notify = mailEnabled && Boolean(notifyShare[video.id]);
     const res = await fetch('/api/admin/share', {
@@ -783,18 +804,23 @@ export default function Admin() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         videos: [{ id: video.id, title: video.title }],
-        emails: [email],
+        emails: emailList,
         expiresInHours: hours,
         notify,
         watermarkMode: shareWatermark[video.id] || 'default',
       }),
     });
     const data = await res.json();
-    const watchUrl = data.links?.[0]?.watchUrl;
-    setShareLinks((prev) => ({ ...prev, [video.id]: watchUrl }));
+    const watchUrls = (data.links || []).map((l) => l.watchUrl).filter(Boolean);
+    setShareLinks((prev) => ({ ...prev, [video.id]: watchUrls }));
+    const emailedCount = data.emailedTo?.length || 0;
     setShareMsg((prev) => ({
       ...prev,
-      [video.id]: notify ? (data.emailedTo?.includes(email) ? `Link emailed to ${email}` : 'Link created — email failed to send') : '',
+      [video.id]: notify
+        ? (emailedCount === emailList.length
+            ? `Link${emailList.length > 1 ? 's' : ''} emailed to ${emailList.length} recipient${emailList.length > 1 ? 's' : ''}`
+            : `Link${emailList.length > 1 ? 's' : ''} created — emailed ${emailedCount}/${emailList.length}`)
+        : '',
     }));
     refreshShares();
   }
@@ -2019,14 +2045,39 @@ export default function Admin() {
                   </select>
                 </div>
 
-                <div className="admin-video-share">
-                  <input
-                    type="email"
-                    placeholder="recipient@example.com"
-                    value={emails[v.id] || ''}
-                    onChange={(e) => setEmails((prev) => ({ ...prev, [v.id]: e.target.value }))}
-                    className="input input-sm"
-                  />
+                <textarea
+                  className="input input-sm"
+                  placeholder="Recipient emails — separate with commas, spaces, or new lines"
+                  value={emails[v.id] || ''}
+                  onChange={(e) => setEmails((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                  rows={1}
+                  style={{ width: '100%', resize: 'vertical' }}
+                />
+
+                {allViewerTags.length > 0 && (
+                  <div className="admin-row" style={{ marginTop: '0.5rem' }}>
+                    <select
+                      className="input input-sm"
+                      value={shareTagPick[v.id] || ''}
+                      onChange={(e) => setShareTagPick((prev) => ({ ...prev, [v.id]: e.target.value }))}
+                      style={{ flex: 'none', width: '10rem' }}
+                    >
+                      <option value="">Add viewers tagged…</option>
+                      {allViewerTags.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => addTagToShare(v)}
+                      className="btn btn-outline btn-sm"
+                      disabled={!shareTagPick[v.id]}
+                    >
+                      Add group
+                    </button>
+                  </div>
+                )}
+
+                <div className="admin-video-share" style={{ marginTop: '0.5rem' }}>
                   <input
                     type="number"
                     placeholder="72h"
@@ -2050,7 +2101,7 @@ export default function Admin() {
                     <option value="never">Watermark: Never</option>
                   </select>
                   <button onClick={() => handleShare(v)} className="btn btn-outline btn-sm">
-                    Create link
+                    Create link{(emails[v.id] || '').split(/[\s,;]+/).filter(Boolean).length > 1 ? 's' : ''}
                   </button>
                 </div>
 
@@ -2061,24 +2112,28 @@ export default function Admin() {
                       checked={Boolean(notifyShare[v.id])}
                       onChange={(e) => setNotifyShare((prev) => ({ ...prev, [v.id]: e.target.checked }))}
                     />
-                    Email the link to the recipient
+                    Email the link{(emails[v.id] || '').split(/[\s,;]+/).filter(Boolean).length > 1 ? 's' : ''} to the recipient{(emails[v.id] || '').split(/[\s,;]+/).filter(Boolean).length > 1 ? 's' : ''}
                   </label>
                 )}
 
-                {shareLinks[v.id] && (
-                  <div className="share-result">
-                    <input
-                      className="input input-sm"
-                      readOnly
-                      value={shareLinks[v.id]}
-                    />
-                    <button
-                      onClick={() => copyLink(shareLinks[v.id])}
-                      className="btn btn-icon"
-                      title="Copy link"
-                    >
-                      <IconCopy />
-                    </button>
+                {shareLinks[v.id]?.length > 0 && (
+                  <div className="share-result-list">
+                    {shareLinks[v.id].map((url) => (
+                      <div className="share-result" key={url}>
+                        <input
+                          className="input input-sm"
+                          readOnly
+                          value={url}
+                        />
+                        <button
+                          onClick={() => copyLink(url)}
+                          className="btn btn-icon"
+                          title="Copy link"
+                        >
+                          <IconCopy />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
 

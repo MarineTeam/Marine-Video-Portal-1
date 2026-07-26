@@ -104,3 +104,6 @@ Fix: viewer tags weren't persisting past a page refresh
 v1.17.0
 Private list: "Add viewers tagged…" picker adds every viewer with a given tag to the list in one click, mirroring Bulk Share's tag picker
 Picture-in-Picture is now available on video playback (watch pages), via the embed player's own PiP control
+v1.17.1
+Regular per-video "Create link" share now accepts multiple recipient emails at once (comma/space/newline separated), each getting their own independently revocable link
+Create link also gets the "Add viewers tagged…" group picker, same as Bulk Share and Private list
