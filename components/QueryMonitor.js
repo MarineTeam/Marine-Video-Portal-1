@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   getMonitorCalls,
+  getSinceLoad,
   subscribeMonitorCalls,
   resetMonitorCalls,
   setMonitorRecording,
@@ -21,12 +22,15 @@ function formatBytes(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-// Query Monitor / performance panel — a small floating widget that surfaces,
-// for the current view: SSR query count/time (from `pageProps._monitor`,
-// attached server-side by lib/monitor.js's withMonitorPage), API calls made
-// since the view began (via the `X-Query-Monitor` response header, attached by
-// withMonitorApi and collected by lib/monitorClient.js), render time, and
-// server memory/uptime.
+// Query Monitor / performance panel — a floating widget that reports, for the
+// current view: Redis query count/time, outbound Bunny API count/time, the
+// page's server-render cost, client render time, and process stats.
+//
+// Two totals are shown on purpose. "This view" resets whenever the user moves
+// to a new screen (route change, or an admin tab — see resetMonitorCalls),
+// which means the first visit to a screen includes that page's one-time
+// bootstrap fetches and a later revisit does not. "Since page load" is
+// cumulative, so that legitimate drop is visibly arithmetic.
 //
 // Enablement comes from the server (/api/monitor, driven by the single
 // QUERY_MONITOR_ENABLED env var), never from a build-time flag — otherwise the
@@ -38,12 +42,20 @@ export default function QueryMonitor({ ssrStats }) {
   const [enabled, setEnabled] = useState(enabledCache);
   const [open, setOpen] = useState(false);
   const [calls, setCalls] = useState(getMonitorCalls);
+  const [sinceLoad, setSinceLoad] = useState(getSinceLoad);
   const [server, setServer] = useState(null);
   const [renderMs, setRenderMs] = useState(null);
 
-  useEffect(() => subscribeMonitorCalls(setCalls), []);
+  useEffect(
+    () =>
+      subscribeMonitorCalls((nextCalls, nextTotals) => {
+        setCalls(nextCalls);
+        setSinceLoad(nextTotals);
+      }),
+    []
+  );
 
-  // Ask the server whether the monitor is on, and keep memory/uptime fresh
+  // Ask the server whether the monitor is on, and keep process stats fresh
   // while it is. A 404 (feature off) or 401 (not logged in) hides the panel and
   // stops both the polling and the client-side recording.
   useEffect(() => {
@@ -110,62 +122,104 @@ export default function QueryMonitor({ ssrStats }) {
 
   if (!enabled) return null;
 
-  // /api/monitor is the panel's own heartbeat — counting it would make the
-  // numbers climb on their own even on an idle page.
-  const shown = calls.filter((c) => !(c.url || '').startsWith('/api/monitor'));
-  const apiQueryCount = shown.reduce((s, c) => s + (c.queryCount || 0), 0);
-  const apiQueryMs = shown.reduce((s, c) => s + (c.queryMs || 0), 0);
-  const totalQueryCount = (ssrStats?.queryCount || 0) + apiQueryCount;
-  const totalQueryMs = (ssrStats?.queryMs || 0) + apiQueryMs;
+  const viewQueries = calls.reduce((s, c) => s + (c.queryCount || 0), 0);
+  const viewQueryMs = calls.reduce((s, c) => s + (c.queryMs || 0), 0);
+  const viewExt = calls.reduce((s, c) => s + (c.externalCount || 0), 0);
+  const viewExtMs = calls.reduce((s, c) => s + (c.externalMs || 0), 0);
 
   return (
     <div className="query-monitor" role="complementary" aria-label="Performance monitor">
       <button className="query-monitor-toggle" onClick={() => setOpen((o) => !o)}>
         <span className="badge badge-ok">QM</span>
-        {totalQueryCount} queries · {formatMs(totalQueryMs)}
-        {ssrStats ? ` · SSR ${formatMs(ssrStats.wallMs)}` : ''}
+        {viewQueries} q · {formatMs(viewQueryMs)}
+        {viewExt > 0 ? ` · ${viewExt} api · ${formatMs(viewExtMs)}` : ''}
       </button>
       {open && (
         <div className="query-monitor-panel">
           <div className="query-monitor-row">
-            <strong>Queries</strong>
-            <span>{totalQueryCount} ({formatMs(totalQueryMs)})</span>
+            <strong>This view</strong>
+            <span>{calls.length} request{calls.length === 1 ? '' : 's'}</span>
           </div>
-          {ssrStats && (
-            <div className="query-monitor-row">
-              <span>Initial page load (SSR)</span>
-              <span>{ssrStats.queryCount} queries · {formatMs(ssrStats.wallMs)} wall</span>
-            </div>
-          )}
           <div className="query-monitor-row">
-            <strong>API calls this view</strong>
-            <span>{shown.length}</span>
+            <span>Redis queries</span>
+            <span>{viewQueries} · {formatMs(viewQueryMs)}</span>
           </div>
-          {shown.length === 0 && (
+          <div className="query-monitor-row">
+            <span>Bunny API calls</span>
+            <span>{viewExt} · {formatMs(viewExtMs)}</span>
+          </div>
+          {calls.length === 0 && (
             <div className="query-monitor-row">
-              <span>No API queries in this view</span>
+              <span>No requests in this view</span>
               <span>—</span>
             </div>
           )}
-          {shown.map((c, i) => (
+          {calls.map((c, i) => (
             <div className="query-monitor-row" key={i}>
               <span title={c.url}>{(c.url || '').replace(/^https?:\/\/[^/]+/, '')}</span>
-              <span>{c.queryCount} · {formatMs(c.wallMs)}</span>
+              <span>
+                {c.queryCount || 0}q
+                {c.externalCount ? ` · ${c.externalCount}api` : ''} · {formatMs(c.wallMs)}
+              </span>
             </div>
           ))}
+
           <div className="query-monitor-row">
-            <span>Render</span>
+            <strong>Since page load</strong>
+            <span>{sinceLoad.calls} request{sinceLoad.calls === 1 ? '' : 's'}</span>
+          </div>
+          <div className="query-monitor-row">
+            <span>Redis / Bunny</span>
+            <span>
+              {sinceLoad.queryCount} · {formatMs(sinceLoad.queryMs)} / {sinceLoad.externalCount} ·{' '}
+              {formatMs(sinceLoad.externalMs)}
+            </span>
+          </div>
+
+          {ssrStats && (
+            <>
+              <div className="query-monitor-row">
+                <strong>Server render (this page)</strong>
+                <span>{formatMs(ssrStats.wallMs)} wall</span>
+              </div>
+              <div className="query-monitor-row">
+                <span>Redis / Bunny</span>
+                <span>
+                  {ssrStats.queryCount} · {formatMs(ssrStats.queryMs)} /{' '}
+                  {ssrStats.externalCount || 0} · {formatMs(ssrStats.externalMs || 0)}
+                </span>
+              </div>
+              {(ssrStats.queries || []).map((q, i) => (
+                <div className="query-monitor-row" key={`q${i}`}>
+                  <span>{q.command}</span>
+                  <span>{formatMs(q.ms)}</span>
+                </div>
+              ))}
+            </>
+          )}
+
+          <div className="query-monitor-row">
+            <span>Client render</span>
             <span>{formatMs(renderMs)}</span>
           </div>
           {server && (
             <>
+              {/* Labelled "instance", not "server": on Vercel each API route is
+                  its own serverless function, so these describe whichever
+                  instance answered /api/monitor — not the one that rendered the
+                  page — and uptime resets on every cold start. */}
               <div className="query-monitor-row">
-                <span>Server memory (RSS)</span>
+                <span>Instance memory (RSS)</span>
                 <span>{formatBytes(server.memory?.rss)}</span>
               </div>
               <div className="query-monitor-row">
-                <span>Server uptime</span>
-                <span>{Math.round(server.uptime / 60)}m</span>
+                <span>Instance uptime</span>
+                <span>
+                  {server.uptime < 60
+                    ? `${Math.round(server.uptime)}s`
+                    : `${Math.round(server.uptime / 60)}m`}
+                  {server.serverless ? ' (per-instance)' : ''}
+                </span>
               </div>
             </>
           )}

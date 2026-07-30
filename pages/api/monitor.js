@@ -18,7 +18,12 @@ export default async function handler(req, res) {
       heapUsed: mem.heapUsed,
       heapTotal: mem.heapTotal,
     },
+    // NB: on a serverless platform these describe the single function instance
+    // that happened to serve THIS request, not "the server" — each API route is
+    // its own function, and uptime restarts on every cold start. The client
+    // labels them per-instance so the numbers aren't read as fleet-wide.
     uptime: process.uptime(),
+    serverless: Boolean(process.env.VERCEL),
     node: process.version,
   });
 }
