@@ -1,12 +1,13 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { getShare, saveShare, isExpired } from '../../../../lib/shareBundle';
+import { withMonitorApi } from '../../../../lib/monitor';
 
 // Records real playback signal from the Bunny player (player.js events) on a
 // share link, as opposed to a mere page view: play count, furthest progress
 // reached, and whether the video was watched to completion. Gated exactly
 // like the watch page itself — only the recipient the link was issued to may
 // report progress on it.
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const session = await getSession(req, res);
@@ -43,3 +44,5 @@ export default async function handler(req, res) {
   await saveShare(shareId, updated);
   res.json({ ok: true });
 }
+
+export default withMonitorApi(handler);

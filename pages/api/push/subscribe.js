@@ -3,10 +3,11 @@ import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
 import { allow, callerId } from '../../../lib/ratelimit';
 import { pushEnabled } from '../../../lib/push';
+import { withMonitorApi } from '../../../lib/monitor';
 
 // Store a browser's Web Push subscription for the logged-in viewer. Keyed by the
 // subscription endpoint so re-subscribing the same device is idempotent.
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const session = await getSession(req, res);
@@ -37,3 +38,5 @@ export default async function handler(req, res) {
   await redis.hset(k(`push_subs:${email}`), { [sub.endpoint]: JSON.stringify(sub) });
   return res.json({ ok: true });
 }
+
+export default withMonitorApi(handler);

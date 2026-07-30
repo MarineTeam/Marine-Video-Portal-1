@@ -1,8 +1,9 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { isAdmin } from '../../../lib/auth';
 import { listVideos, getLibraryStatistics } from '../../../lib/bunny';
+import { withMonitorApi } from '../../../lib/monitor';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   if (!session || !isAdmin(session?.user?.email)) return res.status(403).json({ error: 'Forbidden' });
   if (req.method !== 'GET') return res.status(405).end();
@@ -42,3 +43,5 @@ export default async function handler(req, res) {
 
   res.json({ totalViews, totalWatchHours, videoCount: rows.length, topVideos, chart, last30Views });
 }
+
+export default withMonitorApi(handler);

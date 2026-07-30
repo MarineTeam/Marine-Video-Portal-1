@@ -2,10 +2,11 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { pushEnabled, targetEmails, sendToEmails } from '../../../lib/push';
+import { withMonitorApi } from '../../../lib/monitor';
 
 // Manual push broadcast from the admin Settings tab. Reaches only currently
 // approved viewers + admins; dead subscriptions are pruned by sendToEmails.
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const session = await getSession(req, res);
@@ -29,3 +30,5 @@ export default async function handler(req, res) {
   await logAudit(actor, 'push.broadcast', `${result.sent} sent · "${title}"`);
   return res.json({ ok: true, ...result });
 }
+
+export default withMonitorApi(handler);

@@ -3,13 +3,14 @@ import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { sweepStaleBundles, reapActiveShares } from '../../../lib/shareBundle';
 import { sweepOrphanedProgress } from '../../../lib/maintenance';
+import { withMonitorApi } from '../../../lib/monitor';
 
 // One admin-triggered sweep for stale data that nothing else ever cleans up:
 // bundles whose members have all expired/been revoked, active_shares entries
 // whose records already fell out of Redis, and orphaned per-viewer progress
 // hashes left behind by removed viewers. Each sub-sweep is independent, so
 // one failing never blocks the others.
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   const actor = session?.user?.email;
   if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
@@ -32,3 +33,5 @@ export default async function handler(req, res) {
 
   res.json({ bundles, shares, progress });
 }
+
+export default withMonitorApi(handler);

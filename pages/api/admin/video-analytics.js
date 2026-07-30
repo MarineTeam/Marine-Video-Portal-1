@@ -2,11 +2,12 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
 import { getShares } from '../../../lib/shareBundle';
+import { withMonitorApi } from '../../../lib/monitor';
 
 // Rolls up existing per-share tracking fields (share.js/shares.js already
 // write views/plays/furthestPct/completed) into a per-video summary. Reads
 // only what's already stored on each active share record — no new tracking.
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   if (!session || !isAdmin(session?.user?.email)) return res.status(403).json({ error: 'Forbidden' });
   if (req.method !== 'GET') return res.status(405).end();
@@ -48,3 +49,5 @@ export default async function handler(req, res) {
 
   res.json(result);
 }
+
+export default withMonitorApi(handler);

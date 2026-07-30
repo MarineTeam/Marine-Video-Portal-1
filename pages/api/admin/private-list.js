@@ -14,6 +14,7 @@ import {
   isExpired,
 } from '../../../lib/shareBundle';
 import crypto from 'crypto';
+import { withMonitorApi } from '../../../lib/monitor';
 
 // Per-video "Private list": a persistent, editable set of emails with
 // standing access to one video — YouTube/Drive-style "share with specific
@@ -50,7 +51,7 @@ const MAX_HOURS = 720; // 30 days — same cap as /api/admin/share; list shares
 // One GET returns every video's current list in one shot (mirrors
 // video-analytics.js's single-scan, group-by-video shape) so the admin UI
 // can fetch once on load instead of once per row.
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   const actor = session?.user?.email;
   if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
@@ -189,3 +190,5 @@ export default async function handler(req, res) {
 
   res.status(405).end();
 }
+
+export default withMonitorApi(handler);

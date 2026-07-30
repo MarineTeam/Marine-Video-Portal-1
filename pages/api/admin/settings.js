@@ -3,9 +3,9 @@ import { redis, k } from '../../../lib/redis';
 import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { mailEnabled } from '../../../lib/mail';
-import { monitorEnabled } from '../../../lib/monitor';
+import { monitorEnabled, withMonitorApi } from '../../../lib/monitor';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   const actor = session?.user?.email;
   if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
@@ -32,3 +32,5 @@ export default async function handler(req, res) {
 
   res.status(405).end();
 }
+
+export default withMonitorApi(handler);

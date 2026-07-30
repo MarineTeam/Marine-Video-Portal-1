@@ -12,6 +12,7 @@ import {
   extendShares,
   pruneFromBundles,
 } from '../../../lib/shareBundle';
+import { withMonitorApi } from '../../../lib/monitor';
 
 // Every mutating action here (resend, revoke, extend) accepts either a single
 // `shareId` or a `shareIds` array. Bulk requests never fail the whole batch
@@ -166,7 +167,7 @@ async function hardDeleteMany(ids, actor) {
   return results;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   const actor = session?.user?.email;
   if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
@@ -256,3 +257,5 @@ export default async function handler(req, res) {
 
   res.status(405).end();
 }
+
+export default withMonitorApi(handler);
