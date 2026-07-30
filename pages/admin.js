@@ -1223,7 +1223,7 @@ export default function Admin() {
             <span className="text-muted">
               {queryMonitorEnabled
                 ? 'A performance panel (query count/time, memory, render time) is showing on every page.'
-                : 'Off. Set QUERY_MONITOR_ENABLED=true and NEXT_PUBLIC_QUERY_MONITOR_ENABLED=true, then redeploy, to show it on every page.'}
+                : 'Off. Set QUERY_MONITOR_ENABLED=true in the environment to show it on every page.'}
             </span>
           </div>
         </div>

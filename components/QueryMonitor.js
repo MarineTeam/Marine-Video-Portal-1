@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
-  MONITOR_CLIENT_ENABLED,
   getMonitorCalls,
   subscribeMonitorCalls,
   resetMonitorCalls,
+  setMonitorRecording,
 } from '../lib/monitorClient';
+
+// Cached across client-side navigations so the probe below runs once per full
+// page load rather than on every route change.
+let enabledCache = null;
 
 function formatMs(ms) {
   if (ms == null) return '—';
@@ -22,38 +26,62 @@ function formatBytes(bytes) {
 // attached server-side by lib/monitor.js's withMonitorPage), API calls made
 // since the view began (via the `X-Query-Monitor` response header, attached by
 // withMonitorApi and collected by lib/monitorClient.js), render time, and
-// server memory/uptime (best-effort, from /api/monitor). Entirely best-effort:
-// any failure here just leaves a stat blank, never breaks the page (same
-// posture as ResumablePlayer/push).
+// server memory/uptime.
+//
+// Enablement comes from the server (/api/monitor, driven by the single
+// QUERY_MONITOR_ENABLED env var), never from a build-time flag — otherwise the
+// panel can render against an uninstrumented server and sit at a frozen zero.
+// Entirely best-effort: any failure leaves a stat blank or the panel hidden,
+// and never breaks the page (same posture as ResumablePlayer/push).
 export default function QueryMonitor({ ssrStats }) {
   const router = useRouter();
+  const [enabled, setEnabled] = useState(enabledCache);
   const [open, setOpen] = useState(false);
   const [calls, setCalls] = useState(getMonitorCalls);
   const [server, setServer] = useState(null);
   const [renderMs, setRenderMs] = useState(null);
 
-  useEffect(() => {
-    if (!MONITOR_CLIENT_ENABLED) return;
-    return subscribeMonitorCalls(setCalls);
-  }, []);
+  useEffect(() => subscribeMonitorCalls(setCalls), []);
 
-  const pollServer = () => {
-    fetch('/api/monitor')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setServer(d); })
-      .catch(() => {});
-  };
+  // Ask the server whether the monitor is on, and keep memory/uptime fresh
+  // while it is. A 404 (feature off) or 401 (not logged in) hides the panel and
+  // stops both the polling and the client-side recording.
+  useEffect(() => {
+    let cancelled = false;
+    let id = null;
+
+    const poll = () =>
+      fetch('/api/monitor')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (cancelled) return;
+          const on = Boolean(d && d.enabled);
+          enabledCache = on;
+          setEnabled(on);
+          setMonitorRecording(on);
+          if (on) {
+            setServer(d);
+          } else if (id) {
+            clearInterval(id);
+            id = null;
+          }
+        })
+        .catch(() => {});
+
+    poll();
+    id = setInterval(poll, 10000);
+    return () => { cancelled = true; if (id) clearInterval(id); };
+  }, []);
 
   // Initial full page load: use the Navigation Timing API.
   useEffect(() => {
-    if (!MONITOR_CLIENT_ENABLED || typeof performance === 'undefined') return;
+    if (typeof performance === 'undefined') return;
     const nav = performance.getEntriesByType('navigation')[0];
     if (nav) setRenderMs(nav.duration);
   }, []);
 
   // Client-side route transitions: time from navigation start to route ready.
   useEffect(() => {
-    if (!MONITOR_CLIENT_ENABLED) return;
     let start = null;
     const onStart = () => { start = performance.now(); resetMonitorCalls(); };
     const onDone = () => { if (start != null) setRenderMs(performance.now() - start); };
@@ -69,11 +97,10 @@ export default function QueryMonitor({ ssrStats }) {
   // re-runs React effects or re-fetches anything — without this, the panel
   // would keep showing whatever it captured before the user navigated away.
   useEffect(() => {
-    if (!MONITOR_CLIENT_ENABLED || typeof window === 'undefined') return;
+    if (typeof window === 'undefined') return;
     const onPageShow = (event) => {
       if (!event.persisted) return;
       resetMonitorCalls();
-      pollServer();
       const nav = performance.getEntriesByType('navigation')[0];
       setRenderMs(nav ? nav.duration : null);
     };
@@ -81,21 +108,7 @@ export default function QueryMonitor({ ssrStats }) {
     return () => window.removeEventListener('pageshow', onPageShow);
   }, []);
 
-  useEffect(() => {
-    if (!MONITOR_CLIENT_ENABLED) return;
-    let cancelled = false;
-    const poll = () => {
-      fetch('/api/monitor')
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (!cancelled && d) setServer(d); })
-        .catch(() => {});
-    };
-    poll();
-    const id = setInterval(poll, 10000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, []);
-
-  if (!MONITOR_CLIENT_ENABLED) return null;
+  if (!enabled) return null;
 
   // /api/monitor is the panel's own heartbeat — counting it would make the
   // numbers climb on their own even on an idle page.

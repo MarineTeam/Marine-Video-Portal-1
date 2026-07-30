@@ -96,7 +96,7 @@ Current as of **v1.18.0**. Grouped by area; items marked _(admin)_ live in the `
 - Hosted on Vercel; dependencies install automatically during deploy (no local Node/npm required to ship).
 - Settings, viewers, order, collections, share records, watch history, push subscriptions, and the audit log are stored in Upstash Redis (via Vercel Storage), editable live from `/admin` without redeploying. All keys are namespaced with a `pvp:` prefix.
 - **Opt-in Sentry error monitoring** — client/server/edge configs; inert until `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` are set.
-- **Opt-in Query Monitor / performance panel** — a floating widget (bottom-right, every page) showing Redis query count & timing, server memory/uptime, and render time, in the spirit of WordPress's Query Monitor plugin. Off by default; toggle with `QUERY_MONITOR_ENABLED` / `NEXT_PUBLIC_QUERY_MONITOR_ENABLED` _(admin, Settings tab shows current on/off state)_. Zero overhead when disabled — instrumentation is a single env-var check on the hot path.
+- **Opt-in Query Monitor / performance panel** — a floating widget (bottom-right, every page, logged-in users) showing Redis query count & timing, server memory/uptime, and render time, in the spirit of WordPress's Query Monitor plugin. Off by default; toggled by the single `QUERY_MONITOR_ENABLED` env var _(admin, Settings tab shows current on/off state)_, with no rebuild needed. Query counts are attributed per view — including the admin panel's tabs, which aren't route changes. Effectively zero overhead when disabled: instrumentation is one env-var check on the hot path, and the browser stops recording as soon as the server reports it's off.
 - **CI pipeline** — GitHub Actions runs lint + tests + build on every push/PR to `main`, catching breakage before Vercel deploys.
 - **Smoke tests** — Vitest coverage for the auth check, video-ordering logic, theme helpers, and push logic.
 
@@ -109,7 +109,7 @@ Current as of **v1.18.0**. Grouped by area; items marked _(admin)_ live in the `
 - `GEO_WHITELIST` — comma-separated ISO country codes allowed for viewers when the viewer geo toggle is on _(admin, Settings tab)_; the toggle itself defaults to off.
 - `ADMIN_GEO_WHITELIST` — same, but for admins, with its own separate toggle (also off by default).
 - `ADMIN_GEO_BYPASS_EMAILS` — comma-separated admin emails that always skip the admin geo check regardless of country; arm this before travel, since env var changes need a redeploy.
-- `QUERY_MONITOR_ENABLED` / `NEXT_PUBLIC_QUERY_MONITOR_ENABLED` — enable the Query Monitor / performance panel (both required; each is inlined/read independently, see above).
+- `QUERY_MONITOR_ENABLED` — enable the Query Monitor / performance panel (single var, no rebuild needed; accepts `true`/`1`/`on`/`yes`).
 
 ## Known gaps / not yet implemented
 - **Access-request flow** — no self-serve way for unapproved users to request access; admins must know who to add.
