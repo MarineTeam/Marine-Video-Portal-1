@@ -7,11 +7,12 @@ import { IconTrash, IconCopy, IconGrip, IconPencil, IconSearch, IconCheck, IconX
 import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
 import { isAdmin as isAdminEmail } from '../lib/auth';
 import { isGeoAllowed } from '../lib/geo';
+import { withMonitorPage } from '../lib/monitor';
 
 // Server-side gate: only admins can load the admin page at all. The client-side
 // checks and per-route 403s remain as defense in depth, but this stops a
 // logged-in non-admin from ever receiving the admin UI shell.
-export async function getServerSideProps({ req, res }) {
+async function getServerSidePropsInner({ req, res }) {
   const session = await getSession(req, res);
   if (!session) {
     return { redirect: { destination: '/api/auth/login?returnTo=/admin', permanent: false } };
@@ -26,6 +27,8 @@ export async function getServerSideProps({ req, res }) {
   }
   return { props: {} };
 }
+
+export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
 
 function timeAgo(ts) {
   if (!ts) return '';
@@ -91,6 +94,7 @@ export default function Admin() {
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [broadcasting, setBroadcasting] = useState(false);
   const [mailEnabled, setMailEnabled] = useState(false);
+  const [queryMonitorEnabled, setQueryMonitorEnabled] = useState(false);
   const [notifyShare, setNotifyShare] = useState({});
   const [shareMsg, setShareMsg] = useState({});
   const [resendMsg, setResendMsg] = useState({});
@@ -147,7 +151,11 @@ export default function Admin() {
 
     fetchVideos().catch((e) => setError(e.message));
     fetch('/api/admin/viewers').then((r) => r.json()).then(setViewers);
-    fetch('/api/admin/settings').then((r) => r.json()).then((d) => { setVideoCount(d.count); setMailEnabled(Boolean(d.mailEnabled)); });
+    fetch('/api/admin/settings').then((r) => r.json()).then((d) => {
+      setVideoCount(d.count);
+      setMailEnabled(Boolean(d.mailEnabled));
+      setQueryMonitorEnabled(Boolean(d.queryMonitorEnabled));
+    });
     fetch('/api/admin/shares').then((r) => r.json()).then(setActiveShares);
     fetch('/api/theme').then((r) => r.json()).then(setTheme).catch(() => {});
     fetch('/api/admin/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
@@ -1192,6 +1200,21 @@ export default function Admin() {
             <button onClick={saveVideoCount} className="btn btn-primary btn-sm">
               {saved ? 'Saved!' : 'Save'}
             </button>
+          </div>
+        </div>
+
+        {/* Performance / query monitor */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Performance Monitor</h2>
+          <div className="admin-row">
+            {queryMonitorEnabled
+              ? <span className="badge badge-ok">Enabled</span>
+              : <span className="badge badge-muted">Disabled</span>}
+            <span className="text-muted">
+              {queryMonitorEnabled
+                ? 'A performance panel (query count/time, memory, render time) is showing on every page.'
+                : 'Off. Set QUERY_MONITOR_ENABLED=true and NEXT_PUBLIC_QUERY_MONITOR_ENABLED=true, then redeploy, to show it on every page.'}
+            </span>
           </div>
         </div>
 

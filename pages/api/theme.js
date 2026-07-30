@@ -3,8 +3,9 @@ import { redis, k } from '../../lib/redis';
 import { isAdmin } from '../../lib/auth';
 import { DEFAULT_THEME, normalizeTheme, isValidHex } from '../../lib/theme';
 import { logAudit } from '../../lib/audit';
+import { withMonitorApi } from '../../lib/monitor';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   // GET is public so the palette loads for every visitor (including the login page).
   if (req.method === 'GET') {
     const stored = await redis.get(k('theme'));
@@ -28,3 +29,5 @@ export default async function handler(req, res) {
 
   res.status(405).end();
 }
+
+export default withMonitorApi(handler);

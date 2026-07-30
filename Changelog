@@ -107,3 +107,6 @@ Picture-in-Picture is now available on video playback (watch pages), via the emb
 v1.17.1
 Regular per-video "Create link" share now accepts multiple recipient emails at once (comma/space/newline separated), each getting their own independently revocable link
 Create link also gets the "Add viewers tagged…" group picker, same as Bulk Share and Private list
+v1.18.0
+Query Monitor: opt-in performance panel (Redis query count/time, memory, render time) on every page, toggled via QUERY_MONITOR_ENABLED / NEXT_PUBLIC_QUERY_MONITOR_ENABLED
+Admin Settings tab shows whether Query Monitor is currently enabled
