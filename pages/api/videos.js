@@ -5,8 +5,9 @@ import { getOrder, applyOrder } from '../../lib/order';
 import { isAdmin } from '../../lib/auth';
 import { allow, callerId } from '../../lib/ratelimit';
 import { isGeoAllowed } from '../../lib/geo';
+import { withMonitorApi } from '../../lib/monitor';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   if (!session) return res.status(401).json({ error: 'Not logged in' });
 
@@ -60,3 +61,5 @@ export default async function handler(req, res) {
     totalPages: Math.max(1, Math.ceil(allVideos.length / perPage)),
   });
 }
+
+export default withMonitorApi(handler);

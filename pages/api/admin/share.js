@@ -11,6 +11,7 @@ import {
   listActiveSharesForEmail,
 } from '../../../lib/shareBundle';
 import crypto from 'crypto';
+import { withMonitorApi } from '../../../lib/monitor';
 
 // Bulk share creation: any number of videos × any number of recipients.
 // Every (video, recipient) pair gets its own independently revocable share
@@ -19,7 +20,7 @@ import crypto from 'crypto';
 // (from this action or accumulated over separate ones) every notification
 // becomes one consolidated "bundle" email listing everything currently
 // active for them, per lib/shareBundle.js.
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   const actor = session?.user?.email;
   if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
@@ -158,3 +159,5 @@ export default async function handler(req, res) {
     mailEnabled: mailEnabled(),
   });
 }
+
+export default withMonitorApi(handler);

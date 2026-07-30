@@ -5,6 +5,7 @@ import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { maybeAnnounceReady } from '../../../lib/push';
 import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/watermark';
+import { withMonitorApi } from '../../../lib/monitor';
 
 // Bulk video ops (delete, collection assignment) accept either a single `id`
 // or an `ids` array, mirroring pages/api/admin/shares.js: every id is
@@ -14,7 +15,7 @@ function idsFrom(body) {
   return Array.isArray(body.ids) ? body.ids : body.id ? [body.id] : [];
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   const actor = session?.user?.email;
   if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
@@ -132,3 +133,5 @@ export default async function handler(req, res) {
 
   res.status(405).end();
 }
+
+export default withMonitorApi(handler);

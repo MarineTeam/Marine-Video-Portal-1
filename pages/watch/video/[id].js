@@ -7,8 +7,9 @@ import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWa
 import AppShell from '../../../components/AppShell';
 import ResumablePlayer from '../../../components/ResumablePlayer';
 import { IconChevronLeft } from '../../../components/icons';
+import { withMonitorPage } from '../../../lib/monitor';
 
-export async function getServerSideProps({ req, res, params }) {
+async function getServerSidePropsInner({ req, res, params }) {
   const session = await getSession(req, res);
 
   if (!session) {
@@ -59,6 +60,8 @@ export async function getServerSideProps({ req, res, params }) {
     },
   };
 }
+
+export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
 
 export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText }) {
   return (

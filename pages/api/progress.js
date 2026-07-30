@@ -2,10 +2,11 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../lib/redis';
 import { isAdmin } from '../../lib/auth';
 import { allow, callerId } from '../../lib/ratelimit';
+import { withMonitorApi } from '../../lib/monitor';
 
 // Per-viewer playback progress / watch history.
 // Stored as a Redis hash per user: field = videoId, value = { seconds, duration, title, at }.
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   if (!session) return res.status(401).json({ error: 'Not logged in' });
 
@@ -58,3 +59,5 @@ export default async function handler(req, res) {
 
   res.status(405).end();
 }
+
+export default withMonitorApi(handler);

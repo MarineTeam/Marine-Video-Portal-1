@@ -2,8 +2,9 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { isAdmin } from '../../../lib/auth';
 import { listCollections, createCollection, deleteCollection } from '../../../lib/bunny';
 import { logAudit } from '../../../lib/audit';
+import { withMonitorApi } from '../../../lib/monitor';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   const actor = session?.user?.email;
   if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
@@ -42,3 +43,5 @@ export default async function handler(req, res) {
 
   res.status(405).end();
 }
+
+export default withMonitorApi(handler);

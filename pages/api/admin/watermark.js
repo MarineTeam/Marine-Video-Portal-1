@@ -8,6 +8,7 @@ import {
   addWatermarkExemption,
   removeWatermarkExemption,
 } from '../../../lib/watermark';
+import { withMonitorApi } from '../../../lib/monitor';
 
 const MAX_EMAIL_LENGTH = 254;
 
@@ -23,7 +24,7 @@ function isLikelyEmail(s) {
   return dot > 0 && dot < domain.length - 1;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   const actor = session?.user?.email;
   if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
@@ -61,3 +62,5 @@ export default async function handler(req, res) {
 
   res.status(405).end();
 }
+
+export default withMonitorApi(handler);

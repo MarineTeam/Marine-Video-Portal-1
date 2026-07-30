@@ -9,11 +9,12 @@ import {
   isAdminGeoEnabled,
   setAdminGeoEnabled,
 } from '../../../lib/geo';
+import { withMonitorApi } from '../../../lib/monitor';
 
 // Country lists are env-configured (GEO_WHITELIST / ADMIN_GEO_WHITELIST) —
 // read-only here, deploy-time only. Only the enforcement toggles are
 // admin-editable, live, via Redis.
-export default async function handler(req, res) {
+async function handler(req, res) {
   const session = await getSession(req, res);
   const actor = session?.user?.email;
   if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
@@ -41,3 +42,5 @@ export default async function handler(req, res) {
 
   res.status(405).end();
 }
+
+export default withMonitorApi(handler);

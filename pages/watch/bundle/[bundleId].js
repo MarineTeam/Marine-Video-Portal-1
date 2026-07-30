@@ -2,13 +2,14 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { getBundle, getShare, isExpired } from '../../../lib/shareBundle';
 import AppShell from '../../../components/AppShell';
 import { IconChevronLeft } from '../../../components/icons';
+import { withMonitorPage } from '../../../lib/monitor';
 
 // A bundle is a pure grouping list — just shareIds, an email, and its own
 // expiry. Everything shown here (title, view/playback status, live expiry)
 // is re-read from each member's own share record on every load, so revoking
 // or extending one item is reflected instantly without ever touching this
 // bundle record.
-export async function getServerSideProps({ req, res, params }) {
+async function getServerSidePropsInner({ req, res, params }) {
   const session = await getSession(req, res);
 
   if (!session) {
@@ -51,6 +52,8 @@ export async function getServerSideProps({ req, res, params }) {
 
   return { props: { items } };
 }
+
+export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
 
 export default function Bundle({ items, error }) {
   return (
