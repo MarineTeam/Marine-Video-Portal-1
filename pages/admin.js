@@ -8,6 +8,7 @@ import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
 import { isAdmin as isAdminEmail } from '../lib/auth';
 import { isGeoAllowed } from '../lib/geo';
 import { withMonitorPage } from '../lib/monitor';
+import { resetMonitorCalls } from '../lib/monitorClient';
 
 // Server-side gate: only admins can load the admin page at all. The client-side
 // checks and per-route 403s remain as defense in depth, but this stops a
@@ -207,6 +208,15 @@ export default function Admin() {
     if (!user || tab !== 'analytics') return;
     fetch('/api/admin/analytics').then((r) => (r.ok ? r.json() : null)).then(setAnalytics).catch(() => {});
   }, [user, tab]);
+
+  // Tabs are pure React state, not route changes, so the Query Monitor panel
+  // has no way to tell that the user moved to a new screen — left alone it
+  // grows forever on the tabs that lazily fetch and looks frozen on the ones
+  // whose data was loaded once upfront. Starting a fresh view here makes it
+  // report what the current tab actually cost. No-op when the monitor is off.
+  useEffect(() => {
+    resetMonitorCalls();
+  }, [tab]);
 
   // Live-preview a palette change across the whole page as the admin edits.
   function previewTheme(next) {
