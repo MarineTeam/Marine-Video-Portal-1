@@ -1,6 +1,7 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../lib/redis';
-import { isAdmin } from '../../lib/auth';
+import { isStaffUser } from '../../lib/roles';
+import { resolveAccess, filterCollections } from '../../lib/groups';
 import { listCollections } from '../../lib/bunny';
 import { withMonitorApi } from '../../lib/monitor';
 
@@ -10,11 +11,18 @@ async function handler(req, res) {
   if (!session) return res.status(401).json({ error: 'Not logged in' });
 
   const email = session.user.email.toLowerCase();
-  const approved = await redis.sismember(k('approved_viewers'), email);
-  if (!approved && !isAdmin(email)) return res.status(403).json({ error: 'not_approved' });
+  const [approved, staff] = await Promise.all([
+    redis.sismember(k('approved_viewers'), email),
+    isStaffUser(email),
+  ]);
+  if (!approved && !staff) return res.status(403).json({ error: 'not_approved' });
 
   try {
-    res.json(await listCollections());
+    // A grouped viewer only gets the collections their groups grant —
+    // otherwise the homepage filter would offer them collections that always
+    // come back empty.
+    const access = await resolveAccess(email, { staff });
+    res.json(filterCollections(access, await listCollections()));
   } catch (e) {
     res.status(502).json({ error: e.message || 'Failed to list collections' });
   }

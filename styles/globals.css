@@ -1132,3 +1132,88 @@ select.input { cursor: pointer; appearance: none; -webkit-appearance: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Access tab — roles and viewer groups */
+.form-error {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-size: 14px;
+}
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  font-size: 12px;
+  text-transform: capitalize;
+  color: var(--fg);
+}
+.role-chip--admin { background: var(--accent-soft); border-color: var(--accent-1); }
+.role-chip--manager { background: var(--surface-2); }
+.role-locked-note { font-size: 12px; }
+
+.group-list { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+.group-card {
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.group-card-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.group-name { margin: 0; font-size: 16px; flex: 1; min-width: 0; }
+.group-warning {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.group-section { display: flex; flex-direction: column; gap: 8px; }
+.group-section-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  cursor: default;
+}
+details.group-section > summary { cursor: pointer; }
+.group-grant-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px 14px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.group-grant-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  min-width: 0;
+}
+.group-grant-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag-chip-x {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tag-chip-x:hover { color: var(--danger); }
+.tag-chip-x svg { width: 12px; height: 12px; }

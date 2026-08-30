@@ -4,10 +4,14 @@ Current as of **v1.18.0**. Grouped by area; items marked _(admin)_ live in the `
 
 ## Authentication & access control
 - Login required for every page via Auth0.
-- Two-tier access: **admins** (fixed `ADMIN_EMAILS` list) and **approved viewers** (managed live by admins, no redeploy needed).
+- Three roles: **Admin** (everything, including settings and granting roles), **Manager** (curate videos, viewers, groups and shares; read analytics — but no settings, no role grants), and **Viewer**. Roles are granted live from the admin Access tab, no redeploy.
+- **`ADMIN_EMAILS` is an always-wins floor** — those addresses are admins regardless of what's stored in Redis and can't be demoted from the UI, so a mis-edit can always be undone from Vercel. The API also refuses any change that would leave the portal with zero admins.
+- **Approved viewers** are managed live by admins and managers, no redeploy needed.
+- **Viewer groups** — grant a named set of viewers access to specific collections and videos. Opt-in by design: a viewer in no group still sees the whole library, so enabling groups takes nothing away from anyone until you deliberately place them in one.
 - Logged-in users who aren't approved see a clear "not approved" message instead of any video data.
-- **Server-side admin gate** — `/admin` checks the session + admin email in `getServerSideProps` and redirects non-admins before any admin UI is sent; every `/api/admin/*` route also independently returns `403`.
-- Centralized admin-check logic in one shared helper (`lib/auth.js`).
+- **Server-side admin gate** — `/admin` checks the session + role in `getServerSideProps` and redirects anyone who isn't an admin or manager before any admin UI is sent; every `/api/admin/*` route also independently checks its own **capability** and returns `403`.
+- **Capability-based route gating** — routes name a capability (`videos:manage`, `settings:manage`, …) rather than a role, so what a Manager can do is one map at the top of `lib/roles.js`. Unknown capability names fail closed.
+- Centralized role logic in one shared module (`lib/roles.js`), built on the `ADMIN_EMAILS` check in `lib/auth.js`.
 - **Auto sign-out after 30 minutes of inactivity** (protects a portal left open on a shared machine).
 - **API rate limiting** (sliding window) on the video list, upload, and share-creation endpoints; fails open so an infrastructure hiccup never blocks real users.
 - Auth0 sign-ups can be disabled tenant-wide so strangers can't self-register. (Access is by email identity, so this is the primary guard against self-registering as an approved/admin address.)
@@ -68,6 +72,8 @@ Current as of **v1.18.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Approved viewer management** — add/remove emails, with **bulk add** (paste comma/space/newline-separated lists; validated + deduped).
 - **Viewer tags** — label approved viewers (e.g. "Team A") from the Viewers tab; Bulk Share can add everyone carrying a given tag to the recipient list in one click instead of pasting emails. Tags are capped at 20 per viewer / 40 characters each and are cleaned up when a viewer is removed.
 - **Viewer last-seen** — each viewer's most recent activity time.
+- **Role management** _(admin only)_ — promote an email to Manager or Admin, or revoke back to viewer, from the Access tab. `ADMIN_EMAILS` entries show as locked. Granting a role also approves that viewer, so a new manager can see the library they're curating.
+- **Group management** — create a group, add or remove members, and tick the collections and individual videos it grants. A group with members but no grants would show them nothing, so the group card warns about it instead of failing silently. Removing a viewer also drops their group memberships.
 - **Activity / audit log** — the most recent admin actions (viewer add/remove, share create/revoke, video rename/delete, collection create/delete, settings, palette), each with actor and time. Logging is best-effort so it never breaks the underlying action.
 - **Analytics dashboard** — total views, 30-day views, watch time, video count, a 30-day views bar chart, and a most-watched list (from bunny.net video stats + the statistics API).
 - **Per-video analytics** — rolls up each video's existing share data: shares created, unique recipients, views, started, completed and completion rate, and average furthest progress. Reads only fields already tracked per share — adds no new tracking. Shown both as a collapsible panel per video (Videos tab) and as one combined list, sorted by shares, in the Analytics tab.
@@ -75,8 +81,9 @@ Current as of **v1.18.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Maintenance / stale-data cleanup** _(admin, Settings tab)_ — one-click sweep that removes share **bundles** whose links have all expired or been revoked, stale `active_shares` references, and orphaned watch-history records left behind by removed viewers. Reports how many of each were removed; a no-op run says so.
 
 ## Admin panel structure _(admin)_
-- **Tabbed layout** — Videos, Viewers, Shares, Settings, Activity, Analytics — so admins jump straight to a section instead of one long scroll. Live count badges on Viewers/Shares.
-- All admin API routes return `403` for non-admins rather than exposing any data.
+- **Tabbed layout** — Videos, Viewers, Access, Shares, Settings, Activity, Analytics — so admins jump straight to a section instead of one long scroll. Live count badges on Viewers/Access/Shares.
+- **Settings is admin-only** and its tab is hidden from managers, as is the Roles half of the Access tab. Hiding is presentation only — each route re-checks its capability server-side.
+- All admin API routes return `403` to callers without the required capability rather than exposing any data.
 
 ## Installable app (PWA)
 - **Installable on desktop and mobile** — Windows, Mac, Android, and iOS can install the portal as a standalone app (web manifest + app icon + service worker). No separate build or app store; it runs off the same Vercel deployment.
@@ -114,5 +121,5 @@ Current as of **v1.18.0**. Grouped by area; items marked _(admin)_ live in the `
 ## Known gaps / not yet implemented
 - **Access-request flow** — no self-serve way for unapproved users to request access; admins must know who to add.
 - **`email_verified` enforcement** — access checks trust the email claim; pair with Auth0 sign-up controls (see Security notes in the README).
-- **In-app admin management** — admins are configured via `ADMIN_EMAILS`, not the UI.
+- **Per-video group grants at upload time** — a new video is only visible to a group once it's ticked into that group (or into a collection the group already has); there's no "default group" for new uploads.
 - **Captions/transcripts, comments/ratings, scheduled publish/expiry** — not implemented.

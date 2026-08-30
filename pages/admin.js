@@ -5,20 +5,27 @@ import AppShell from '../components/AppShell';
 import NotifyButton from '../components/NotifyButton';
 import { IconTrash, IconCopy, IconGrip, IconPencil, IconSearch, IconCheck, IconX } from '../components/icons';
 import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
-import { isAdmin as isAdminEmail } from '../lib/auth';
+import { getRole, ROLE_ADMIN, ROLE_MANAGER } from '../lib/roles';
 import { isGeoAllowed } from '../lib/geo';
 import { withMonitorPage } from '../lib/monitor';
 import { resetMonitorCalls } from '../lib/monitorClient';
 
-// Server-side gate: only admins can load the admin page at all. The client-side
-// checks and per-route 403s remain as defense in depth, but this stops a
-// logged-in non-admin from ever receiving the admin UI shell.
+// Server-side gate: only staff (admins and managers) can load the admin page
+// at all. The client-side checks and per-route 403s remain as defense in
+// depth, but this stops a logged-in viewer from ever receiving the admin UI
+// shell.
+//
+// The role is passed to the component so admin-only sections can be hidden
+// from managers. That is presentation only — every admin-only route
+// independently enforces its capability, so a manager who forces the hidden
+// UI open still gets a 403 from the server.
 async function getServerSidePropsInner({ req, res }) {
   const session = await getSession(req, res);
   if (!session) {
     return { redirect: { destination: '/api/auth/login?returnTo=/admin', permanent: false } };
   }
-  if (!isAdminEmail(session.user?.email)) {
+  const role = await getRole(session.user?.email);
+  if (role !== ROLE_ADMIN && role !== ROLE_MANAGER) {
     return { redirect: { destination: '/', permanent: false } };
   }
   // Admin geo whitelist (off by default) — a bypass-listed admin (see
@@ -26,7 +33,12 @@ async function getServerSidePropsInner({ req, res }) {
   if (!(await isGeoAllowed(req, session.user.email.toLowerCase(), true))) {
     return { redirect: { destination: '/', permanent: false } };
   }
-  return { props: {} };
+  // A boolean, not the role string: everything lib/roles.js exports is
+  // server-only (it reaches lib/redis.js, and through it Node's async_hooks),
+  // so referencing ROLE_ADMIN in the component below would pull that whole
+  // graph into the client bundle and fail the build. Next strips imports used
+  // only by getServerSideProps — keep them that way.
+  return { props: { isAdminRole: role === ROLE_ADMIN } };
 }
 
 export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
@@ -55,7 +67,7 @@ function formatDuration(seconds) {
   return `${m}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export default function Admin() {
+export default function Admin({ isAdminRole }) {
   const { user, isLoading } = useUser();
   const [videos, setVideos] = useState([]);
   const [emails, setEmails] = useState({});
@@ -89,6 +101,16 @@ export default function Admin() {
   const [audit, setAudit] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [collections, setCollections] = useState([]);
+  // Access tab: role grants and viewer groups.
+  const [roleGrants, setRoleGrants] = useState([]);
+  const [newRoleEmail, setNewRoleEmail] = useState('');
+  const [newRolePick, setNewRolePick] = useState('manager');
+  const [roleError, setRoleError] = useState(null);
+  const [groups, setGroups] = useState([]);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [groupMemberDrafts, setGroupMemberDrafts] = useState({});
+  const [groupError, setGroupError] = useState(null);
+  const [groupBusy, setGroupBusy] = useState({});
   const [newCollection, setNewCollection] = useState('');
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastBody, setBroadcastBody] = useState('');
@@ -208,6 +230,19 @@ export default function Admin() {
     if (!user || tab !== 'analytics') return;
     fetch('/api/admin/analytics').then((r) => (r.ok ? r.json() : null)).then(setAnalytics).catch(() => {});
   }, [user, tab]);
+
+  // Roles and groups load when the Access tab is opened — same lazy pattern.
+  // The roles fetch is admin-only, so managers skip it rather than firing a
+  // request that is guaranteed to 403.
+  useEffect(() => {
+    if (!user || tab !== 'access') return;
+    fetch('/api/admin/groups').then((r) => (r.ok ? r.json() : [])).then(setGroups).catch(() => {});
+    if (!isAdminRole) return;
+    fetch('/api/admin/roles')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setRoleGrants(d?.grants || []))
+      .catch(() => {});
+  }, [user, tab, isAdminRole]);
 
   // Tabs are pure React state, not route changes, so the Query Monitor panel
   // has no way to tell that the user moved to a new screen — left alone it
@@ -383,6 +418,120 @@ export default function Admin() {
     setNewViewerEmail('');
     const r = await fetch('/api/admin/viewers');
     setViewers(await r.json());
+  }
+
+  async function saveRoleGrant() {
+    const email = newRoleEmail.trim().toLowerCase();
+    if (!email) return;
+    const res = await fetch('/api/admin/roles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, role: newRolePick }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setRoleError(data.error || 'Failed to save role'); return; }
+    setRoleError(null);
+    setNewRoleEmail('');
+    const r = await fetch('/api/admin/roles');
+    if (r.ok) setRoleGrants((await r.json()).grants || []);
+    // A grant also approves the viewer, so the Viewers tab is now stale.
+    fetch('/api/admin/viewers').then((rr) => (rr.ok ? rr.json() : null)).then((l) => l && setViewers(l)).catch(() => {});
+  }
+
+  async function revokeRoleGrant(email) {
+    const res = await fetch('/api/admin/roles', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setRoleError(data.error || 'Failed to revoke role'); return; }
+    setRoleError(null);
+    setRoleGrants((prev) => prev.filter((g) => g.email !== email));
+  }
+
+  async function createGroup() {
+    const name = newGroupName.trim();
+    if (!name) return;
+    const res = await fetch('/api/admin/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setGroupError(data.error || 'Failed to create group'); return; }
+    setGroupError(null);
+    setNewGroupName('');
+    setGroups((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+  }
+
+  async function deleteGroup(groupId, name) {
+    if (!confirm(`Delete the group "${name}"? Its members go back to seeing the whole library.`)) return;
+    const res = await fetch('/api/admin/groups', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId }),
+    });
+    if (!res.ok) { setGroupError('Failed to delete group'); return; }
+    setGroupError(null);
+    setGroups((prev) => prev.filter((g) => g.id !== groupId));
+  }
+
+  async function addGroupMembers(groupId) {
+    const text = (groupMemberDrafts[groupId] || '').trim();
+    if (!text) return;
+    const res = await fetch('/api/admin/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId, emails: text }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setGroupError(data.error || 'Failed to add members'); return; }
+    setGroupError(null);
+    setGroupMemberDrafts((prev) => ({ ...prev, [groupId]: '' }));
+    setGroups((prev) =>
+      prev.map((g) =>
+        g.id === groupId ? { ...g, members: [...new Set([...g.members, ...data.added])].sort() } : g
+      )
+    );
+  }
+
+  async function removeGroupMember(groupId, email) {
+    const res = await fetch('/api/admin/groups', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId, email }),
+    });
+    if (!res.ok) { setGroupError('Failed to remove member'); return; }
+    setGroupError(null);
+    setGroups((prev) =>
+      prev.map((g) => (g.id === groupId ? { ...g, members: g.members.filter((m) => m !== email) } : g))
+    );
+  }
+
+  // Grants are saved as whole arrays, so a toggle sends the group's next
+  // full state rather than a diff the server would have to merge.
+  async function saveGroupGrants(groupId, patch) {
+    setGroupBusy((prev) => ({ ...prev, [groupId]: true }));
+    try {
+      const res = await fetch('/api/admin/groups', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId, ...patch }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setGroupError(data.error || 'Failed to update group'); return; }
+      setGroupError(null);
+      setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, ...data } : g)));
+    } finally {
+      setGroupBusy((prev) => ({ ...prev, [groupId]: false }));
+    }
+  }
+
+  function toggleGroupGrant(group, field, id) {
+    const current = group[field] || [];
+    const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+    return saveGroupGrants(group.id, { [field]: next });
   }
 
   async function removeViewer(email) {
@@ -1096,8 +1245,12 @@ export default function Admin() {
           {[
             { id: 'videos', label: 'Videos', count: videos.length },
             { id: 'viewers', label: 'Viewers', count: viewers.length },
+            { id: 'access', label: 'Access', count: groups.length || null },
             { id: 'shares', label: 'Shares', count: activeShares.length },
-            { id: 'settings', label: 'Settings', count: null },
+            // Settings is admin-only (theme, geo, watermark, maintenance,
+            // broadcast). Hiding the tab is presentation; every route behind
+            // it enforces 'settings:manage' on its own.
+            ...(isAdminRole ? [{ id: 'settings', label: 'Settings', count: null }] : []),
             { id: 'activity', label: 'Activity', count: null },
             { id: 'analytics', label: 'Analytics', count: null },
           ].map((t) => (
@@ -2299,6 +2452,204 @@ export default function Admin() {
               </li>
             ))}
           </ul>
+          )}
+        </div>
+        </>
+        )}
+
+        {tab === 'access' && (
+        <>
+        {isAdminRole && (
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Roles</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            <strong>Admins</strong> can do everything, including changing settings and granting
+            roles. <strong>Managers</strong> can upload and organise videos, manage viewers,
+            groups and shares, and read analytics — but cannot change portal settings or hand out
+            roles. Everyone else is a viewer.
+          </p>
+
+          <div className="admin-row">
+            <input
+              type="email"
+              placeholder="person@example.com"
+              value={newRoleEmail}
+              onChange={(e) => setNewRoleEmail(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && saveRoleGrant()}
+              className="input input-sm"
+            />
+            <select
+              className="input input-sm"
+              value={newRolePick}
+              onChange={(e) => setNewRolePick(e.target.value)}
+            >
+              <option value="manager">Manager</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button onClick={saveRoleGrant} className="btn btn-primary btn-sm">Grant</button>
+          </div>
+
+          {roleError && <p className="form-error">{roleError}</p>}
+
+          {roleGrants.length > 0 ? (
+            <ul className="viewer-list">
+              {roleGrants.map((g) => (
+                <li key={g.email} className="viewer-item">
+                  <div className="viewer-item-main">
+                    <span className="viewer-email">{g.email}</span>
+                    <span className={`role-chip role-chip--${g.role}`}>{g.role}</span>
+                    {g.locked ? (
+                      <span className="text-muted role-locked-note">
+                        set by ADMIN_EMAILS — change it in Vercel
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => revokeRoleGrant(g.email)}
+                        className="btn btn-icon"
+                        title="Revoke role (back to viewer)"
+                      >
+                        <IconTrash />
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted mt-4">No role grants yet.</p>
+          )}
+        </div>
+        )}
+
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Viewer Groups</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            A group grants its members access to specific collections and videos. A viewer who is
+            in <strong>no group sees the whole library</strong>, exactly as before — groups only
+            ever narrow access, and only for the people you put in one. Share links are separate
+            and keep working regardless of groups.
+          </p>
+
+          <div className="admin-row">
+            <input
+              type="text"
+              placeholder="Group name (e.g. Deck Crew)"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && createGroup()}
+              className="input input-sm"
+            />
+            <button onClick={createGroup} className="btn btn-primary btn-sm">Create group</button>
+          </div>
+
+          {groupError && <p className="form-error">{groupError}</p>}
+
+          {groups.length === 0 ? (
+            <p className="text-muted mt-4">
+              No groups yet — every approved viewer can see the whole library.
+            </p>
+          ) : (
+            <div className="group-list">
+              {groups.map((g) => {
+                const grantCount = (g.collectionIds || []).length + (g.videoIds || []).length;
+                return (
+                  <div key={g.id} className="group-card">
+                    <div className="group-card-head">
+                      <h3 className="group-name">{g.name}</h3>
+                      <span className="text-muted">
+                        {g.members.length} member{g.members.length === 1 ? '' : 's'} · {grantCount} grant
+                        {grantCount === 1 ? '' : 's'}
+                      </span>
+                      <button
+                        onClick={() => deleteGroup(g.id, g.name)}
+                        className="btn btn-icon"
+                        title="Delete group"
+                      >
+                        <IconTrash />
+                      </button>
+                    </div>
+
+                    {g.members.length > 0 && grantCount === 0 && (
+                      <p className="group-warning">
+                        This group has members but grants nothing, so they currently see no videos
+                        at all. Tick a collection or video below, or remove the members.
+                      </p>
+                    )}
+
+                    <div className="group-section">
+                      <span className="group-section-label">Members</span>
+                      <div className="viewer-tags-row">
+                        {g.members.map((m) => (
+                          <span key={m} className="tag-chip">
+                            {m}
+                            <button
+                              onClick={() => removeGroupMember(g.id, m)}
+                              className="tag-chip-x"
+                              title={`Remove ${m} from ${g.name}`}
+                            >
+                              <IconX />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="admin-row">
+                        <input
+                          type="text"
+                          className="input input-sm"
+                          placeholder="Add viewers — comma or space separated"
+                          value={groupMemberDrafts[g.id] ?? ''}
+                          onChange={(e) =>
+                            setGroupMemberDrafts((prev) => ({ ...prev, [g.id]: e.target.value }))
+                          }
+                          onKeyDown={(e) => e.key === 'Enter' && addGroupMembers(g.id)}
+                        />
+                        <button onClick={() => addGroupMembers(g.id)} className="btn btn-sm">Add</button>
+                      </div>
+                    </div>
+
+                    <div className="group-section">
+                      <span className="group-section-label">Collections</span>
+                      {collections.length === 0 ? (
+                        <p className="text-muted">No collections in the library yet.</p>
+                      ) : (
+                        <div className="group-grant-grid">
+                          {collections.map((c) => (
+                            <label key={c.id} className="group-grant-item">
+                              <input
+                                type="checkbox"
+                                checked={(g.collectionIds || []).includes(c.id)}
+                                disabled={Boolean(groupBusy[g.id])}
+                                onChange={() => toggleGroupGrant(g, 'collectionIds', c.id)}
+                              />
+                              <span>{c.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <details className="group-section">
+                      <summary className="group-section-label">
+                        Individual videos ({(g.videoIds || []).length})
+                      </summary>
+                      <div className="group-grant-grid">
+                        {videos.map((v) => (
+                          <label key={v.id} className="group-grant-item">
+                            <input
+                              type="checkbox"
+                              checked={(g.videoIds || []).includes(v.id)}
+                              disabled={Boolean(groupBusy[g.id])}
+                              onChange={() => toggleGroupGrant(g, 'videoIds', v.id)}
+                            />
+                            <span>{v.title || 'Untitled'}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </details>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
         </>

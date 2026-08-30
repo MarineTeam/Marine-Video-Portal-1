@@ -1,8 +1,8 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { requireCapability } from '../../../lib/roles';
 import { redis, k } from '../../../lib/redis';
-import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { withMonitorApi } from '../../../lib/monitor';
+import { removeUserFromAllGroups } from '../../../lib/groups';
 
 const MAX_EMAIL_LENGTH = 254; // RFC 5321 practical limit
 const MAX_TAGS_PER_VIEWER = 20;
@@ -44,9 +44,9 @@ function isLikelyEmail(s) {
 }
 
 async function handler(req, res) {
-  const session = await getSession(req, res);
-  const actor = session?.user?.email;
-  if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'viewers:manage');
+  if (!auth) return;
+  const actor = auth.email;
 
   if (req.method === 'GET') {
     const emails = await redis.smembers(k('approved_viewers'));
@@ -104,6 +104,9 @@ async function handler(req, res) {
     await redis.srem(k('approved_viewers'), e);
     await redis.hdel(k('viewer_last_seen'), e);
     await redis.hdel(k('viewer_tags'), e);
+    // Drop their group memberships too, so removal doesn't leave an orphan
+    // entry that would silently re-restrict them if they're ever re-added.
+    await removeUserFromAllGroups(e);
     await logAudit(actor, 'viewer.remove', e);
     return res.json({ ok: true });
   }

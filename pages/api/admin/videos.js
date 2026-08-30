@@ -1,7 +1,6 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { requireCapability } from '../../../lib/roles';
 import { listVideos, deleteVideo, updateVideoTitle, setVideoCollection, getThumbnailUrl } from '../../../lib/bunny';
 import { getOrder, setOrder, applyOrder } from '../../../lib/order';
-import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { maybeAnnounceReady } from '../../../lib/push';
 import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/watermark';
@@ -16,9 +15,9 @@ function idsFrom(body) {
 }
 
 async function handler(req, res) {
-  const session = await getSession(req, res);
-  const actor = session?.user?.email;
-  if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'videos:manage');
+  if (!auth) return;
+  const actor = auth.email;
 
   if (req.method === 'GET') {
     const videos = await listVideos({ itemsPerPage: 100 });

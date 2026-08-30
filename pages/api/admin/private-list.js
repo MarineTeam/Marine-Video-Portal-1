@@ -1,6 +1,5 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { requireCapability } from '../../../lib/roles';
 import { redis, k } from '../../../lib/redis';
-import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
 import { mailEnabled, sendShareLinksEmail, sendBundleEmail } from '../../../lib/mail';
@@ -52,9 +51,9 @@ const MAX_HOURS = 720; // 30 days — same cap as /api/admin/share; list shares
 // video-analytics.js's single-scan, group-by-video shape) so the admin UI
 // can fetch once on load instead of once per row.
 async function handler(req, res) {
-  const session = await getSession(req, res);
-  const actor = session?.user?.email;
-  if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'shares:manage');
+  if (!auth) return;
+  const { session, email: actor } = auth;
 
   if (req.method === 'GET') {
     const ids = await redis.smembers(k('active_shares'));

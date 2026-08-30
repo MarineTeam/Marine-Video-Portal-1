@@ -1,11 +1,10 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { requireCapability } from '../../../lib/roles';
 import { getOrder, setOrder } from '../../../lib/order';
-import { isAdmin } from '../../../lib/auth';
 import { withMonitorApi } from '../../../lib/monitor';
 
 async function handler(req, res) {
-  const session = await getSession(req, res);
-  if (!session || !isAdmin(session?.user?.email)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'videos:manage');
+  if (!auth) return;
 
   if (req.method === 'GET') {
     const order = await getOrder();

@@ -1,6 +1,5 @@
-import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../lib/redis';
-import { isAdmin } from '../../lib/auth';
+import { requireCapability } from '../../lib/roles';
 import { DEFAULT_THEME, normalizeTheme, isValidHex } from '../../lib/theme';
 import { logAudit } from '../../lib/audit';
 import { withMonitorApi } from '../../lib/monitor';
@@ -13,17 +12,17 @@ async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const session = await getSession(req, res);
-    if (!session || !isAdmin(session?.user?.email)) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
+    // Admin-only: the palette is portal-wide, so it sits with the other
+    // settings a Manager deliberately can't reshape.
+    const auth = await requireCapability(req, res, 'settings:manage');
+    if (!auth) return;
     const { accent1, accent2 } = req.body || {};
     if (!isValidHex(accent1) || !isValidHex(accent2)) {
       return res.status(400).json({ error: 'accent1 and accent2 must be #rrggbb hex colors' });
     }
     const theme = { accent1: accent1.toLowerCase(), accent2: accent2.toLowerCase() };
     await redis.set(k('theme'), theme);
-    await logAudit(session.user.email, 'theme.update', `${theme.accent1} / ${theme.accent2}`);
+    await logAudit(auth.email, 'theme.update', `${theme.accent1} / ${theme.accent2}`);
     return res.json({ ok: true, ...theme });
   }
 

@@ -1,11 +1,10 @@
-import { getSession } from '@auth0/nextjs-auth0';
-import { isAdmin } from '../../../lib/auth';
+import { requireCapability } from '../../../lib/roles';
 import { listVideos, getLibraryStatistics } from '../../../lib/bunny';
 import { withMonitorApi } from '../../../lib/monitor';
 
 async function handler(req, res) {
-  const session = await getSession(req, res);
-  if (!session || !isAdmin(session?.user?.email)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'analytics:read');
+  if (!auth) return;
   if (req.method !== 'GET') return res.status(405).end();
 
   const videos = await listVideos({ itemsPerPage: 100 });

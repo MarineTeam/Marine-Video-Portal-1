@@ -1,5 +1,4 @@
-import { getSession } from '@auth0/nextjs-auth0';
-import { isAdmin } from '../../../lib/auth';
+import { requireCapability } from '../../../lib/roles';
 import { logAudit } from '../../../lib/audit';
 import { pushEnabled, targetEmails, sendToEmails } from '../../../lib/push';
 import { withMonitorApi } from '../../../lib/monitor';
@@ -9,9 +8,9 @@ import { withMonitorApi } from '../../../lib/monitor';
 async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const session = await getSession(req, res);
-  const actor = session?.user?.email;
-  if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'settings:manage');
+  if (!auth) return;
+  const actor = auth.email;
 
   if (!pushEnabled()) return res.status(503).json({ error: 'Push notifications are not configured' });
 

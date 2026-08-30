@@ -37,7 +37,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) return;
-    fetch('/api/admin/settings').then((r) => { if (r.ok) setIsAdmin(true); });
+    // /api/me answers "what may I do" directly. Probing an admin route for
+    // a 403 used to work when admin was the only elevated tier; it would
+    // report a manager as a plain viewer and hide their Admin link.
+    fetch('/api/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me) => setIsAdmin(Boolean(me?.isStaff)))
+      .catch(() => {});
     fetch('/api/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
     fetch('/api/progress').then((r) => (r.ok ? r.json() : [])).then(setProgress).catch(() => {});
   }, [user]);

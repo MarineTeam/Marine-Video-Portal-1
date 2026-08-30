@@ -26,14 +26,18 @@ export default function Activity() {
 
   useEffect(() => {
     if (!user) return;
-    fetch('/api/admin/settings').then((r) => {
-      if (r.ok) {
+    // Managers hold 'viewers:manage' but not 'settings:manage', so ask
+    // /api/me what this account is instead of inferring it from a 403.
+    fetch('/api/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me) => {
+        if (!me?.isStaff) return;
         setIsAdmin(true);
         fetch('/api/admin/viewers').then((rr) => (rr.ok ? rr.json() : [])).then((list) => {
           setViewers(list.map((v) => v.email));
         }).catch(() => {});
-      }
-    });
+      })
+      .catch(() => {});
   }, [user]);
 
   useEffect(() => {

@@ -1,5 +1,4 @@
-import { getSession } from '@auth0/nextjs-auth0';
-import { isAdmin } from '../../../lib/auth';
+import { requireCapability } from '../../../lib/roles';
 import { logAudit } from '../../../lib/audit';
 import { sweepStaleBundles, reapActiveShares } from '../../../lib/shareBundle';
 import { sweepOrphanedProgress } from '../../../lib/maintenance';
@@ -11,9 +10,9 @@ import { withMonitorApi } from '../../../lib/monitor';
 // hashes left behind by removed viewers. Each sub-sweep is independent, so
 // one failing never blocks the others.
 async function handler(req, res) {
-  const session = await getSession(req, res);
-  const actor = session?.user?.email;
-  if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'settings:manage');
+  if (!auth) return;
+  const actor = auth.email;
   if (req.method !== 'POST') return res.status(405).end();
 
   const [bundles, shares, progress] = await Promise.all([

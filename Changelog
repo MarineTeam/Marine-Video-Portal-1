@@ -113,3 +113,10 @@ Counts are attributed per view (including the admin panel's tabs) plus a cumulat
 bunny.net API calls are timed too, not just Redis — on most screens the Bunny round-trip is the real cost
 Memory/uptime are labelled per-instance, since each serverless function reports only its own
 Admin Settings tab shows whether Query Monitor is currently enabled
+v1.19.0
+User roles: Admin / Manager / Viewer, granted from the new admin Access tab — Managers curate videos, viewers, groups and shares, but can't change portal settings or hand out roles
+ADMIN_EMAILS stays an always-wins floor: those admins can't be demoted from the UI, and no change is allowed that would leave the portal with zero admins
+Viewer groups: name a set of viewers and grant them specific collections and videos; group members see only what their groups grant, on the homepage, in search, in the collection filter, and on direct video links
+Groups are opt-in — a viewer in no group still sees the whole library, so nobody loses access on deploy
+Share links are unaffected by groups: a share still works for its recipient regardless of their group
+Every /api/admin/* route now checks a named capability instead of a bare admin check
