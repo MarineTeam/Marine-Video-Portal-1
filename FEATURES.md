@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.18.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.19.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
