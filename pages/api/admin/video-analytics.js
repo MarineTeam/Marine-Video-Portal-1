@@ -1,6 +1,5 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { requireCapability } from '../../../lib/roles';
 import { redis, k } from '../../../lib/redis';
-import { isAdmin } from '../../../lib/auth';
 import { getShares } from '../../../lib/shareBundle';
 import { withMonitorApi } from '../../../lib/monitor';
 
@@ -8,8 +7,8 @@ import { withMonitorApi } from '../../../lib/monitor';
 // write views/plays/furthestPct/completed) into a per-video summary. Reads
 // only what's already stored on each active share record — no new tracking.
 async function handler(req, res) {
-  const session = await getSession(req, res);
-  if (!session || !isAdmin(session?.user?.email)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'analytics:read');
+  if (!auth) return;
   if (req.method !== 'GET') return res.status(405).end();
 
   const ids = await redis.smembers(k('active_shares'));

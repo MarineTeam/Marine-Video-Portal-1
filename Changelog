@@ -113,3 +113,16 @@ Counts are attributed per view (including the admin panel's tabs) plus a cumulat
 bunny.net API calls are timed too, not just Redis — on most screens the Bunny round-trip is the real cost
 Memory/uptime are labelled per-instance, since each serverless function reports only its own
 Admin Settings tab shows whether Query Monitor is currently enabled
+v1.19.0
+User roles: Admin / Manager / Viewer, granted from the new admin Access tab — Managers curate videos, viewers, groups and shares, but can't change portal settings or hand out roles
+ADMIN_EMAILS stays an always-wins floor: those admins can't be demoted from the UI, and no change is allowed that would leave the portal with zero admins
+Viewer groups: name a set of viewers and grant them specific collections and videos; group members see only what their groups grant, on the homepage, in search, in the collection filter, and on direct video links
+Groups are opt-in — a viewer in no group still sees the whole library, so nobody loses access on deploy
+Share links are unaffected by groups: a share still works for its recipient regardless of their group
+Every /api/admin/* route now checks a named capability instead of a bare admin check
+v1.20.0
+Access requests: a signed-in but unapproved user can ask for access with a short note, instead of hitting a dead end; admins and managers approve or deny from the Access tab
+Scheduled publish/expiry per video: set an optional publish time and/or expiry, and viewers only see the video inside that window — admins and managers always see it, badged
+Optional email verification, off by default: enforce Auth0's email_verified claim from Settings, with admins and managers never blocked, an env bypass list, fail-open on errors, and a panel that names exactly which viewers enabling it would block first
+Route authorization tests covering every admin API route — a signed-out caller, an approved viewer, and a manager on admin-only routes
+Fix: the push-broadcast route answered 405 before checking authorization, telling unauthorized callers the route existed and which verb it wanted

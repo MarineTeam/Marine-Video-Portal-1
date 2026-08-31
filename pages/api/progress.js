@@ -1,6 +1,6 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../lib/redis';
-import { isAdmin } from '../../lib/auth';
+import { isStaffUser, hasCapability } from '../../lib/roles';
 import { allow, callerId } from '../../lib/ratelimit';
 import { withMonitorApi } from '../../lib/monitor';
 
@@ -15,8 +15,11 @@ async function handler(req, res) {
   }
 
   const email = session.user.email.toLowerCase();
-  const approved = await redis.sismember(k('approved_viewers'), email);
-  if (!approved && !isAdmin(email)) return res.status(403).json({ error: 'not_approved' });
+  const [approved, staff] = await Promise.all([
+    redis.sismember(k('approved_viewers'), email),
+    isStaffUser(email),
+  ]);
+  if (!approved && !staff) return res.status(403).json({ error: 'not_approved' });
 
   const key = k(`progress:${email}`);
 
@@ -27,11 +30,13 @@ async function handler(req, res) {
       return res.json(entry || null);
     }
 
-    // Admins can look up any viewer's watch history by email (e.g. from the
-    // admin panel); everyone else only ever sees their own.
+    // Admins and managers can look up any viewer's watch history by email
+    // (e.g. from the admin panel); everyone else only ever sees their own.
     let lookupKey = key;
     if (targetEmail && targetEmail.toLowerCase() !== email) {
-      if (!isAdmin(email)) return res.status(403).json({ error: 'Forbidden' });
+      if (!(await hasCapability(email, 'analytics:read'))) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
       lookupKey = k(`progress:${targetEmail.toLowerCase()}`);
     }
 

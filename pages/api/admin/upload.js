@@ -1,14 +1,14 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { requireCapability } from '../../../lib/roles';
 import { createVideo, signTusUpload } from '../../../lib/bunny';
-import { isAdmin } from '../../../lib/auth';
 import { allow, callerId } from '../../../lib/ratelimit';
 import { withMonitorApi } from '../../../lib/monitor';
 
 // Creates the Bunny video record and returns a signed TUS authorization so the
 // browser can upload the file bytes directly to Bunny. The API key stays server-side.
 async function handler(req, res) {
-  const session = await getSession(req, res);
-  if (!session || !isAdmin(session?.user?.email)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'videos:manage');
+  if (!auth) return;
+  const { session } = auth;
   if (req.method !== 'POST') return res.status(405).end();
 
   if (!(await allow(callerId(req, session, 'upload')))) {

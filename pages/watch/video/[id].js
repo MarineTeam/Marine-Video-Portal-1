@@ -1,7 +1,10 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../../lib/redis';
 import { listVideos, getEmbedUrl } from '../../../lib/bunny';
-import { isAdmin } from '../../../lib/auth';
+import { isStaffUser } from '../../../lib/roles';
+import { resolveAccess, canSeeVideo } from '../../../lib/groups';
+import { getSchedule, isVisibleNow } from '../../../lib/schedule';
+import { isVerified } from '../../../lib/verification';
 import { isGeoAllowed } from '../../../lib/geo';
 import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWatermark } from '../../../lib/watermark';
 import AppShell from '../../../components/AppShell';
@@ -22,16 +25,28 @@ async function getServerSidePropsInner({ req, res, params }) {
   }
 
   const email = session.user.email.toLowerCase();
-  const approved = await redis.sismember(k('approved_viewers'), email);
+  const [approved, staff] = await Promise.all([
+    redis.sismember(k('approved_viewers'), email),
+    isStaffUser(email),
+  ]);
 
-  if (!approved && !isAdmin(email)) {
+  if (!approved && !staff) {
     return { props: { error: 'Your account is not approved to view this content.', adminUser: false } };
   }
 
   // Admins have their own separate whitelist/toggle (plus a bypass-email
   // safety net) — see lib/geo.js. Both are off by default.
-  if (!(await isGeoAllowed(req, email, isAdmin(email)))) {
+  if (!(await isGeoAllowed(req, email, staff))) {
     return { props: { error: 'This video is not available in your region.', adminUser: false } };
+  }
+
+  if (!(await isVerified(session, { staff }))) {
+    return {
+      props: {
+        error: 'Please verify your email address before watching. Contact an admin if you need help.',
+        adminUser: false,
+      },
+    };
   }
 
   if (approved) await redis.hset(k('viewer_last_seen'), { [email]: Date.now() });
@@ -40,7 +55,26 @@ async function getServerSidePropsInner({ req, res, params }) {
   const video = videos.find((v) => v.guid === params.id);
 
   if (!video) {
-    return { props: { error: 'Video not found.', adminUser: isAdmin(email) } };
+    return { props: { error: 'Video not found.', adminUser: staff } };
+  }
+
+  // Group gating. This is the real boundary for direct-GUID access: the
+  // homepage and search already hide videos outside a grouped viewer's
+  // grants, and without this check they could still be opened by URL. Staff
+  // and ungrouped viewers resolve to UNRESTRICTED and pass straight through.
+  //
+  // Share links are NOT affected — /watch/[shareId] is a separate route with
+  // its own per-recipient token, so an admin can still share one video with
+  // someone whose groups wouldn't otherwise show it.
+  const access = await resolveAccess(email, { staff });
+  if (!canSeeVideo(access, video)) {
+    return { props: { error: "This video isn't available to your account.", adminUser: staff } };
+  }
+
+  // Scheduled publish/expiry — the direct-link half of the same gate applied
+  // to the listing in /api/videos. Staff bypass so they can preview.
+  if (!staff && !isVisibleNow(await getSchedule(video.guid))) {
+    return { props: { error: 'This video is not currently available.', adminUser: staff } };
   }
 
   const [globalDefault, videoMode, exempt] = await Promise.all([
@@ -55,7 +89,7 @@ async function getServerSidePropsInner({ req, res, params }) {
       embedUrl: getEmbedUrl(video.guid, 3600),
       title: video.title,
       videoId: video.guid,
-      adminUser: isAdmin(email),
+      adminUser: staff,
       watermarkText: watermark ? email : null,
     },
   };

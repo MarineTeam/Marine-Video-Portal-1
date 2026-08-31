@@ -1,6 +1,6 @@
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../../lib/redis';
-import { isAdmin } from '../../../lib/auth';
+import { isStaffUser } from '../../../lib/roles';
 import { allow, callerId } from '../../../lib/ratelimit';
 import { pushEnabled } from '../../../lib/push';
 import { withMonitorApi } from '../../../lib/monitor';
@@ -19,7 +19,7 @@ async function handler(req, res) {
 
   const email = session.user.email.toLowerCase();
   const approved = await redis.sismember(k('approved_viewers'), email);
-  if (!approved && !isAdmin(email)) return res.status(403).json({ error: 'not_approved' });
+  if (!approved && !(await isStaffUser(email))) return res.status(403).json({ error: 'not_approved' });
 
   if (!pushEnabled()) return res.status(503).json({ error: 'Push notifications are not configured' });
 

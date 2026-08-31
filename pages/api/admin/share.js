@@ -1,6 +1,5 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { requireCapability } from '../../../lib/roles';
 import { redis, k } from '../../../lib/redis';
-import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
 import { mailEnabled, sendShareLinksEmail, sendBundleEmail } from '../../../lib/mail';
@@ -21,9 +20,9 @@ import { withMonitorApi } from '../../../lib/monitor';
 // becomes one consolidated "bundle" email listing everything currently
 // active for them, per lib/shareBundle.js.
 async function handler(req, res) {
-  const session = await getSession(req, res);
-  const actor = session?.user?.email;
-  if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'shares:manage');
+  if (!auth) return;
+  const { session, email: actor } = auth;
   if (req.method !== 'POST') return res.status(405).end();
 
   if (!(await allow(callerId(req, session, 'share')))) {

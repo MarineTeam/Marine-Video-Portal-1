@@ -1,5 +1,4 @@
-import { getSession } from '@auth0/nextjs-auth0';
-import { isAdmin } from '../../../lib/auth';
+import { requireCapability } from '../../../lib/roles';
 import { logAudit } from '../../../lib/audit';
 import { pushEnabled, targetEmails, sendToEmails } from '../../../lib/push';
 import { withMonitorApi } from '../../../lib/monitor';
@@ -7,11 +6,14 @@ import { withMonitorApi } from '../../../lib/monitor';
 // Manual push broadcast from the admin Settings tab. Reaches only currently
 // approved viewers + admins; dead subscriptions are pruned by sendToEmails.
 async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+  // Authorize before anything else, including the method check: every other
+  // admin route answers an unauthorized caller with 403, and answering 405
+  // here told them the route exists and which verb it wants.
+  const auth = await requireCapability(req, res, 'settings:manage');
+  if (!auth) return;
+  const actor = auth.email;
 
-  const session = await getSession(req, res);
-  const actor = session?.user?.email;
-  if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
+  if (req.method !== 'POST') return res.status(405).end();
 
   if (!pushEnabled()) return res.status(503).json({ error: 'Push notifications are not configured' });
 

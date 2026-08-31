@@ -1,14 +1,13 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { requireCapability } from '../../../lib/roles';
 import { redis, k } from '../../../lib/redis';
-import { isAdmin } from '../../../lib/auth';
 import { logAudit } from '../../../lib/audit';
 import { mailEnabled } from '../../../lib/mail';
 import { monitorEnabled, withMonitorApi } from '../../../lib/monitor';
 
 async function handler(req, res) {
-  const session = await getSession(req, res);
-  const actor = session?.user?.email;
-  if (!session || !isAdmin(actor)) return res.status(403).json({ error: 'Forbidden' });
+  const auth = await requireCapability(req, res, 'settings:manage');
+  if (!auth) return;
+  const actor = auth.email;
 
   if (req.method === 'GET') {
     const count = await redis.get(k('homepage_video_count'));
