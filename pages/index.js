@@ -15,6 +15,11 @@ export default function Home() {
   const [collections, setCollections] = useState([]);
   const [progress, setProgress] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  // Access request (shown only on the not-approved screen).
+  const [accessRequest, setAccessRequest] = useState(null);
+  const [requestNote, setRequestNote] = useState('');
+  const [requestBusy, setRequestBusy] = useState(false);
+  const [requestError, setRequestError] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -36,6 +41,14 @@ export default function Home() {
   }, [user, page, query, collection]);
 
   useEffect(() => {
+    if (!user || !notApproved) return;
+    fetch('/api/access-request')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setAccessRequest(d?.request || null))
+      .catch(() => {});
+  }, [user, notApproved]);
+
+  useEffect(() => {
     if (!user) return;
     // /api/me answers "what may I do" directly. Probing an admin route for
     // a 403 used to work when admin was the only elevated tier; it would
@@ -47,6 +60,34 @@ export default function Home() {
     fetch('/api/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
     fetch('/api/progress').then((r) => (r.ok ? r.json() : [])).then(setProgress).catch(() => {});
   }, [user]);
+
+  async function requestAccess() {
+    setRequestBusy(true);
+    setRequestError(null);
+    try {
+      const res = await fetch('/api/access-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: requestNote }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRequestError(data.error || 'Could not send your request. Please try again.');
+        return;
+      }
+      // Approved between page load and clicking — reload rather than showing
+      // a "request sent" message to someone who can already get in.
+      if (data.alreadyApproved) {
+        window.location.reload();
+        return;
+      }
+      setAccessRequest(data.request);
+    } catch {
+      setRequestError('Could not send your request. Please try again.');
+    } finally {
+      setRequestBusy(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -70,14 +111,48 @@ export default function Home() {
   }
 
   if (notApproved) {
+    const pending = accessRequest?.status === 'pending';
+    const denied = accessRequest?.status === 'denied';
     return (
       <AppShell isAdmin={isAdmin}>
         <div className="card hero">
           <h1>You&rsquo;re signed in, but not approved</h1>
           <p>
             <span className="font-medium">{user.email}</span> isn&rsquo;t on the approved viewer list yet.
-            Please ask the admin to add you.
           </p>
+
+          {pending ? (
+            <p className="request-sent">
+              Your access request has been sent and is waiting for an admin to review it.
+              You&rsquo;ll be able to sign in and watch as soon as it&rsquo;s approved.
+            </p>
+          ) : (
+            <div className="request-form">
+              {denied && (
+                <p className="text-muted">
+                  A previous request wasn&rsquo;t approved. You can send another if something has changed.
+                </p>
+              )}
+              <label htmlFor="access-note" className="text-muted">
+                Tell the admin who you are (optional)
+              </label>
+              <textarea
+                id="access-note"
+                className="input"
+                rows={3}
+                maxLength={500}
+                placeholder="e.g. Deck crew, joined in March — Sam asked me to sign up"
+                value={requestNote}
+                onChange={(e) => setRequestNote(e.target.value)}
+                disabled={requestBusy}
+              />
+              <button onClick={requestAccess} className="btn btn-primary" disabled={requestBusy}>
+                {requestBusy ? 'Sending…' : 'Request access'}
+              </button>
+              {requestError && <p className="form-error">{requestError}</p>}
+            </div>
+          )}
+
           <a href="/api/auth/logout" className="btn btn-outline">Sign out</a>
         </div>
       </AppShell>

@@ -43,6 +43,8 @@ The app: a private, invite-only video portal. Next.js 14 **Pages Router** + Reac
 
 `lib/auth.js`'s `isAdmin(email)` still exists and still means exactly one thing — "is this email in `ADMIN_EMAILS`". It is the floor primitive `lib/roles.js` consumes, not a second admin check. Nothing outside `lib/roles.js` should call it.
 
+**Amended 2026-08-31 (Decision 14).** The "`email_verified` is NEVER checked" invariant below is superseded: it may now be enforced, but only through the opt-in, staff-exempt, fail-open mechanism in `lib/verification.js`. The underlying fact that produced the original invariant is unchanged — this tenant has no mail server, so the claim is `false` for effectively every account, and enabling enforcement without reading the blast-radius panel first will lock out every viewer it counts.
+
 **Why.** The portal is invite-only for a small known audience; email strings the admin typed are the natural identity. **INVARIANT: `email_verified` is never checked anywhere.** The Auth0 tenant has no mail server, so `email_verified` is `false` for every account; enforcing it locks out everyone including admins (session record, 2026-07-10, maintainer-confirmed). The self-registration risk this leaves open (anyone could sign up claiming any email) is mitigated one layer up: **Auth0 sign-ups are disabled** at the tenant (tenant setting, documented in `README.md`).
 
 **What breaks if violated.** Add an `email_verified` check → total lockout, every user, immediately. Add a second admin-check mechanism → the two drift and one becomes a bypass. Re-enable Auth0 sign-ups without adding email verification infrastructure → anyone can mint an account for an email on a share link.
@@ -165,6 +167,34 @@ The app: a private, invite-only video portal. Next.js 14 **Pages Router** + Reac
 - Call `isAdmin` from `lib/auth.js` in a route instead of going through `lib/roles.js` → that route silently ignores every Redis-granted admin. (It fails closed, so it's a denial rather than a bypass — but it's still drift, and drift is what Decision 2 exists to prevent.)
 - Reference a `lib/roles.js` export from the *component* body of `pages/admin.js` → `lib/redis.js` and Node's `async_hooks` get pulled into the client bundle and the build fails. Keep those imports inside `getServerSideProps` and pass booleans through props.
 
+### 14. email_verified enforcement is opt-in, staff-exempt, and fails open
+
+**Decision (2026-08-31).** `email_verified` MAY now be enforced, but only through `lib/verification.js`, which is built so that the 2026-07-10 near-lockout cannot recur. Four guards, all mandatory:
+
+1. **Off by default**, stored in Redis (`pvp:require_email_verified`), toggled from the admin Settings tab. Shipping the code changes nothing.
+2. **Staff are always exempt** — admins and managers are never subject to it, whatever the toggle says. This is the recovery path: an admin can always reach `/admin` and switch it back off.
+3. **Env bypass list** `EMAIL_VERIFIED_BYPASS_EMAILS`, mirroring `ADMIN_GEO_BYPASS_EMAILS`.
+4. **Fails open** — any error reading the flag admits the caller.
+
+Plus a fifth, non-negotiable property: **absence of the claim is not failure.** Only an explicit `email_verified === false` blocks; a token that doesn't carry the field admits the caller.
+
+The app also **passively records** the observed claim per account (`pvp:email_verified_seen`) without enforcing anything, and the Settings panel reports how many observed viewers enabling it would block, by name. The API refuses to enable enforcement without `confirm: true`.
+
+**Why the reversal.** Decision 2's "never checked anywhere" was a *constraint of the tenant*, not a principle: no mail server means the claim is `false` for everyone, so blanket enforcement is an outage. The maintainer asked for the capability on 2026-08-31. The resolution is that the dangerous part was never the check — it was enforcing an unsatisfiable claim, invisibly, with no exemption for the person who would have to undo it. All three of those are now structurally impossible.
+
+**What breaks if violated.** Remove the staff exemption → the first admin to sign in after the toggle is locked out of the only UI that can turn it off, exactly reproducing the 2026-07-10 scenario. Treat an absent claim as `false` → every account on a token without the field is blocked. Make it fail closed → a Redis blip locks out the portal. Enforce it on `/watch/[shareId]` → every share link breaks the moment the toggle goes on (share recipients are the population *least* likely to be verified); shares are deliberately out of scope.
+
+### 15. Scheduled publish/expiry is additive; access requests never grant
+
+**Decision (2026-08-31).** Two smaller additions sharing one shape:
+
+- **Schedules** (`lib/schedule.js`, `pvp:video_schedule`): optional `publishAt`/`expiresAt` per video. A video with **no entry** behaves exactly as before. Both bounds are independently optional; clearing both deletes the entry rather than storing nulls. Staff bypass so they can preview an unpublished video. Enforced in `pages/api/videos.js` and `pages/watch/video/[id].js`.
+- **Access requests** (`lib/accessRequests.js`, `pvp:access_requests`): a signed-in but unapproved user can ask for access. The module **never writes to `pvp:approved_viewers`** — only `pages/api/admin/access-requests.js` does, behind `viewers:manage`.
+
+**Why.** Both follow Decision 13's opt-in rule for the same reason: a default that hides content or narrows access on deploy is indistinguishable from an outage. And keeping the grant in the capability-gated route means there is exactly one place in the codebase that can widen the approved set.
+
+**What breaks if violated.** Make an absent schedule mean "not published" → the entire library disappears on deploy. Let `lib/accessRequests.js` add the viewer directly → a self-serve endpoint reachable by anyone who can sign in becomes a self-approval endpoint.
+
 ---
 
 ## B. Invariants checklist
@@ -183,7 +213,10 @@ Walk this list on every review that touches auth, API routes, Redis, or `lib/bun
 - [ ] `GET /api/theme` is public; `POST /api/theme` is admin-only; all color values hex-validated on write AND in the `_document.js` pre-paint script.
 - [ ] GUID validation (`GUID_RE.test(...)`) stays **INLINE** inside each mutating function in `lib/bunny.js` (`updateVideoTitle`, `deleteVideo`, `deleteCollection`, `setVideoCollection`). CodeQL's dataflow analysis only recognizes it as an SSRF sanitizer when inline — extracting it to a shared helper re-opens the findings (commit `eb4bcdd`).
 - [ ] The share-mismatch error in `pages/watch/[shareId].js` never reveals the intended recipient's email — it says the link "isn't valid for your account," nothing more.
-- [ ] `email_verified` is checked nowhere (Decision 2 — enforcing it is total lockout).
+- [ ] `email_verified` is enforced ONLY via `lib/verification.js` (Decision 14): off by default, staff unconditionally exempt, env bypass honoured, fails open, and an absent claim admits. Never gate `/watch/[shareId]` on it.
+- [ ] An unscheduled video and an ungrouped viewer both behave exactly as they did before those features existed (Decisions 13 and 15).
+- [ ] `lib/accessRequests.js` never writes `pvp:approved_viewers`; only `pages/api/admin/access-requests.js` does, behind `viewers:manage`.
+- [ ] Every admin route authorizes BEFORE checking `req.method`, so an unauthorized caller gets 403 rather than 405 (`lib/__tests__/apiGates.test.js` pins this).
 - [ ] `allow()` in `lib/ratelimit.js` fails open; `logAudit()` in `lib/audit.js` never throws; `ResumablePlayer` failures never block playback.
 - [ ] `BUNNY_API_KEY` never appears in any response payload or client bundle; browsers only ever receive TUS signatures.
 
@@ -215,5 +248,6 @@ Stated plainly. These are accepted risks with named mitigations, not secrets. Do
 - **Ground truth**: every code claim above was verified against the working tree at commit `739c54f` on 2026-07-10 by reading the cited files: `lib/auth.js`, `lib/bunny.js`, `lib/redis.js`, `lib/order.js`, `lib/ratelimit.js`, `lib/audit.js`, `lib/theme.js`, `pages/admin.js`, `pages/index.js`, `pages/_document.js`, `pages/api/theme.js`, `pages/api/progress.js`, `pages/api/videos.js`, `pages/api/admin/*.js` (all 10), `pages/watch/[shareId].js`, `pages/watch/video/[id].js`, `components/ResumablePlayer.js`, `next.config.js`, `vercel.json`, `.github/workflows/ci.yml`, `styles/globals.css`, `package.json`, and the founding doc `bunny-vercel-auth0-guide.md`. Commits `8e81183` (TUS 401 fix) and `eb4bcdd` (inline GUID sanitizer) verified in git history.
 - **Session facts**: items marked "(session record, 2026-07-10, maintainer-confirmed)" — the email_verified lockout constraint and the 14-alert Dependabot deferral rationale — come from maintainer sessions, not from code, and cannot be re-derived by reading the repo.
 - **Volatile facts** are date-stamped "(as of 2026-07-10)": route counts, rate-limit parameters, default homepage count, audit cap, which routes are rate-limited, dependency versions, and the absence of `middleware.js`/`app/`. Re-verify each against the tree before relying on it after significant changes.
+- **2026-08-31 update (roles/groups follow-on)**: Decisions 14 and 15 added (opt-in email_verified enforcement; scheduled publish/expiry and access requests). Decision 2's `email_verified` invariant superseded in place with its original rationale retained. Verified against `lib/verification.js`, `lib/schedule.js`, `lib/accessRequests.js`, `pages/api/admin/{verification,access-requests}.js`, `pages/api/access-request.js`, and the re-gated `pages/api/admin/broadcast.js`. 209 vitest cases passing (including a new route-handler gate suite), lint and build green.
 - **2026-08-30 update (v1.19.0, roles and groups)**: Decision 13 added; Decisions 2, 3 and 8 amended in place with their originals retained; invariants checklist extended; weak point #3 downgraded. Verified against `lib/roles.js`, `lib/groups.js`, `lib/auth.js`, `lib/maintenance.js`, all 18 files in `pages/api/admin/`, `pages/api/me.js`, `pages/api/videos.js`, `pages/api/collections.js`, `pages/api/progress.js`, `pages/api/theme.js`, `pages/admin.js`, `pages/index.js`, `pages/activity.js`, `pages/watch/video/[id].js`, and `pages/watch/[shareId].js`. `npm run lint`, `npm test` (62 passing) and `npm run build` all green at the time of writing.
 - **When to update this skill**: whenever a decision in section A is deliberately changed (record the new rationale, don't delete the old one), a weak point in section C is remediated (move it to a "retired risks" note with the fixing commit), or a new invariant is forged by an incident (add it to B and cross-link `failure-archaeology`).

@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.19.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.20.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
@@ -8,6 +8,8 @@ Current as of **v1.19.0**. Grouped by area; items marked _(admin)_ live in the `
 - **`ADMIN_EMAILS` is an always-wins floor** — those addresses are admins regardless of what's stored in Redis and can't be demoted from the UI, so a mis-edit can always be undone from Vercel. The API also refuses any change that would leave the portal with zero admins.
 - **Approved viewers** are managed live by admins and managers, no redeploy needed.
 - **Viewer groups** — grant a named set of viewers access to specific collections and videos. Opt-in by design: a viewer in no group still sees the whole library, so enabling groups takes nothing away from anyone until you deliberately place them in one.
+- **Access requests** — a signed-in user who isn't approved sees a "Request access" form instead of a dead end, with an optional note saying who they are. Admins and managers approve or deny from the Access tab; approving adds them to the approved viewers exactly as adding them by hand does. Re-asking while a request is pending is a no-op, and the request itself grants nothing.
+- **Optional email verification** _(off by default)_ — enforcement of Auth0's `email_verified` claim, toggled from the Settings tab. **Admins and managers are never blocked by it**, there's an `EMAIL_VERIFIED_BYPASS_EMAILS` escape hatch, it fails open on infrastructure errors, and an account whose token simply doesn't carry the claim is allowed through. Before you can turn it on, the panel shows exactly how many viewers it would block and names them — this Auth0 tenant has no mail server, so for most accounts the claim is permanently `false`.
 - Logged-in users who aren't approved see a clear "not approved" message instead of any video data.
 - **Server-side admin gate** — `/admin` checks the session + role in `getServerSideProps` and redirects anyone who isn't an admin or manager before any admin UI is sent; every `/api/admin/*` route also independently checks its own **capability** and returns `403`.
 - **Capability-based route gating** — routes name a capability (`videos:manage`, `settings:manage`, …) rather than a role, so what a Manager can do is one map at the top of `lib/roles.js`. Unknown capability names fail closed.
@@ -25,6 +27,7 @@ Current as of **v1.19.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Resume playback & Continue-watching** — videos remember where each viewer left off (via player.js); the homepage shows a Continue-watching strip with progress bars. Degrades gracefully if the player protocol is unavailable.
 - **Watch history ("Activity" page)** — a viewer can see their own full watch history (title, furthest position, last-watched time), reusing the same progress data behind Continue-watching — no new tracking added. Admins get an extra lookup dropdown to view any approved viewer's history by email.
 - **Admin-adjustable video count** _(admin)_ — hard cap enforced in code (bunny.net's API doesn't honor it as a strict limit).
+- **Scheduled publish/expiry** _(admin)_ — an optional publish time and/or expiry time per video. Outside the window a viewer can't see it in the library, in search, in a collection, or by opening its direct link; admins and managers always can, with a badge on the row so "scheduled" never reads as "broken". Additive: a video with no schedule is unaffected.
 - **Custom ordering** _(admin)_ — drag-to-reorder; newly uploaded videos float to the top (newest first) until placed.
 - **Pagination** — 10 per page with Previous/Next.
 - Autoplay disabled on all embedded players.
@@ -105,7 +108,8 @@ Current as of **v1.19.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Opt-in Sentry error monitoring** — client/server/edge configs; inert until `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` are set.
 - **Opt-in Query Monitor / performance panel** — a floating widget (bottom-right, every page, logged-in users) showing Redis query count & timing, outbound bunny.net API count & timing, per-instance memory/uptime, and render time, in the spirit of WordPress's Query Monitor plugin. Off by default; toggled by the single `QUERY_MONITOR_ENABLED` env var _(admin, Settings tab shows current on/off state)_, with no rebuild needed. Counts are attributed per view — including the admin panel's tabs, which aren't route changes — alongside a cumulative since-page-load total, so the drop between a screen's first visit (which includes the page's one-time bootstrap fetches) and a later revisit reads as arithmetic rather than a bug. Effectively zero overhead when disabled: instrumentation is one env-var check on the hot path, and the browser stops recording as soon as the server reports it's off.
 - **CI pipeline** — GitHub Actions runs lint + tests + build on every push/PR to `main`, catching breakage before Vercel deploys.
-- **Smoke tests** — Vitest coverage for the auth check, video-ordering logic, theme helpers, and push logic.
+- **Smoke tests** — Vitest coverage for the auth and role checks, group access resolution, video-ordering logic, schedule windows, theme helpers, watermark layering, share bundling, geo, and push logic.
+- **Route authorization tests** — a table-driven suite over every `pages/api/admin/*` route proving each one rejects a signed-out caller, an approved viewer, and (for admin-only routes) a manager. It reads the directory at test time, so a newly added admin route is covered automatically and an ungated one fails the build.
 
 ## Configuration knobs (environment)
 - `BUNNY_CDN_HOSTNAME` — enables thumbnails.
@@ -119,7 +123,7 @@ Current as of **v1.19.0**. Grouped by area; items marked _(admin)_ live in the `
 - `QUERY_MONITOR_ENABLED` — enable the Query Monitor / performance panel (single var, no rebuild needed; accepts `true`/`1`/`on`/`yes`).
 
 ## Known gaps / not yet implemented
-- **Access-request flow** — no self-serve way for unapproved users to request access; admins must know who to add.
-- **`email_verified` enforcement** — access checks trust the email claim; pair with Auth0 sign-up controls (see Security notes in the README).
+- **Verified email addresses in practice** — the enforcement toggle exists, but the Auth0 tenant still has no mail server, so no account can actually verify. Adding a mail provider is the prerequisite for the toggle to be usable rather than just available.
+- **Notification on access request** — a pending request is visible on the Access tab, but nothing emails or pushes to tell an admin one has arrived.
 - **Per-video group grants at upload time** — a new video is only visible to a group once it's ticked into that group (or into a collection the group already has); there's no "default group" for new uploads.
-- **Captions/transcripts, comments/ratings, scheduled publish/expiry** — not implemented.
+- **Captions/transcripts, comments/ratings** — not implemented.

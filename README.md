@@ -62,6 +62,7 @@ pages/
     collections.js        Collection list for the homepage filter (approved viewers)
     progress.js           Per-viewer playback progress / watch history
     me.js                 Current user's role + capabilities (any logged-in user)
+    access-request.js     Submit/read your own access request (any logged-in user)
     theme.js              Public GET palette; admin POST to update it
     share/[shareId]/track.js  Records player.js playback events (play/progress/completed) for a share link
     push/
@@ -84,6 +85,8 @@ pages/
       broadcast.js        Send a manual push broadcast to viewers + admins
       roles.js            Grant/revoke the Admin and Manager roles (admin-only)
       groups.js           Viewer groups — CRUD, membership, collection/video grants
+      access-requests.js  Review access requests — approve (adds the viewer) / deny / dismiss
+      verification.js     Optional email_verified enforcement toggle + blast-radius report
 components/
   AppShell.js             Header/layout shell
   IdleTimeout.js          30-minute inactivity auto sign-out
@@ -96,6 +99,9 @@ lib/
   auth.js                 isAdmin(email) — the ADMIN_EMAILS floor check
   roles.js                Roles + capability map; requireCapability() guard for every admin route
   groups.js               Viewer groups and the access resolution that gates the library
+  accessRequests.js       Self-serve access requests (never grants — the admin route does)
+  schedule.js             Per-video publish/expiry windows
+  verification.js         Opt-in email_verified enforcement (off by default, staff-exempt, fails open)
   bunny.js                Bunny API: list/create/update/delete videos, collections, TUS signing,
                           signed embed URLs, thumbnail URLs (token-signed), statistics
   redis.js                Upstash Redis connection + key prefix helper k()
@@ -107,7 +113,9 @@ lib/
   shareBundle.js          Share-record helpers, grace-period TTL/expiry, and per-recipient bundling
   ratelimit.js            Sliding-window limiter (fails open)
   watermark.js            Layered watermark resolution (exemption > share > video > global default)
-  __tests__/              Vitest smoke tests (auth, roles, groups, order, theme, push, shareBundle, watermark)
+  __tests__/              Vitest tests (auth, roles, groups, schedule, verification, order, theme,
+                          push, shareBundle, watermark, geo, monitor) + apiGates.test.js, which proves
+                          every pages/api/admin/* route rejects callers without its capability
 public/
   manifest.webmanifest    PWA manifest
   sw.js                   Service worker (caches only icons + manifest)
@@ -155,6 +163,7 @@ vitest.config.js          Test config (node env + dummy env)
 | `QUERY_MONITOR_ENABLED` | Enable the **Query Monitor / performance panel** (Redis query count & timing, memory, render time) shown as a floating widget on every page, for logged-in users. Set to `true` (also accepts `1`/`on`/`yes`, and surrounding whitespace/casing is ignored) to turn it on; unset or falsey and no widget appears and nothing is instrumented. This single variable controls both halves — the browser asks the server whether it's on, so **no rebuild is needed to toggle it**, just a redeploy/restart to pick up the new env value. The admin Settings tab shows the current state. |
 | `ADMIN_GEO_WHITELIST` | Same, but for **admins** — a separate list, separate toggle (also off by default). Gates both video watch pages and the `/admin` panel itself for admin accounts. |
 | `ADMIN_GEO_BYPASS_EMAILS` | Comma-separated admin emails that always skip the admin geo check, regardless of country or the toggle. Arm this **before** traveling — it's a standing safety net, not an in-the-moment fix, since env var changes need a redeploy. |
+| `EMAIL_VERIFIED_BYPASS_EMAILS` | Comma-separated emails that always skip the optional email-verification check, regardless of the toggle. Admins and managers are exempt unconditionally and don't need listing. Env changes need a redeploy, so set this *before* enabling enforcement. |
 
 After adding or changing any variable, **redeploy** — changes only apply to new deployments.
 
@@ -195,9 +204,9 @@ Tabbed layout, gated server-side to admins and managers:
 
 - **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, a per-video **watermark override** (Default/Always/Never), a collapsible **per-video analytics** panel, a per-video quick private share form (any number of recipient emails at once, a viewer-**tag** picker to add a whole tagged group in one click, its own watermark selector, and an optional **"email the link(s) to the recipient(s)"** checkbox when email is configured), and a collapsible **Private list** panel per video (a persistent, editable access list, also with a tag picker — see below). Multi-select checkboxes for **bulk delete** and **bulk collection assignment**. Also a Collections manager (create/delete).
 - **Viewers** — add/remove approved emails, **bulk add** (paste a list), per-viewer **tags** (e.g. "Team A") for grouping, and each viewer's **last-seen** time.
-- **Access** — **Roles** (admin-only: grant Admin or Manager to an email, revoke back to viewer) and **Viewer Groups** (create a group, add/remove members, tick the collections and individual videos it grants). See "Roles and groups" below.
+- **Access** — **Access Requests** (approve or deny people who asked to be let in), **Roles** (admin-only: grant Admin or Manager to an email, revoke back to viewer) and **Viewer Groups** (create a group, add/remove members, tick the collections and individual videos it grants). See "Roles and groups" below. The tab badge shows pending requests.
 - **Shares** — a **bulk-share** form (pick any number of videos × any number of recipients — every pair gets its own link, one email per recipient, with its own watermark selector); every active private link with recipient, expiry, **view count/last-viewed**, **playback status** (plays, furthest % watched, completed), and a durable **"Copy bundle link"** button when the link is part of a bundle; multi-select checkboxes for **bulk resend / bulk revoke / bulk un-revoke / bulk extend / bulk delete permanently**; and per-link **extend**, **un-revoke** (restore a revoked link in place), and **delete permanently** (only allowed once a link is already revoked).
-- **Settings** (admin-only) — homepage video count, the site **color palette** (7 presets + custom, applied to all visitors), the **watermark global default** and its exemption list, the **geo location whitelist** on/off toggles (viewer and admin, each off by default, country lists shown read-only), a **push broadcast** composer, and a content-protection info panel.
+- **Settings** (admin-only) — **email verification** (off by default, with a panel showing exactly who enabling it would block — see "Optional email verification" below), homepage video count, the site **color palette** (7 presets + custom, applied to all visitors), the **watermark global default** and its exemption list, the **geo location whitelist** on/off toggles (viewer and admin, each off by default, country lists shown read-only), a **push broadcast** composer, and a content-protection info panel.
 - **Activity** — the most recent admin actions (add/remove viewer, role grant/revoke, group create/update/delete and membership changes, share create/revoke/un-revoke/delete, video rename/delete/reorder, settings, palette, collections).
 - **Analytics** — total views, 30-day views, watch time, video count, a 30-day views chart, a most-watched list, and a **per-video analytics** list (shares, recipients, views, started, completed + rate, avg progress) rolled up from existing share data.
 
@@ -327,6 +336,49 @@ Admins and managers bypass groups entirely — they're curating the library, so 
 
 ---
 
+## Access requests
+
+A signed-in user who isn't an approved viewer now sees a **Request access** form rather than a dead end — an optional note ("Deck crew, joined in March") plus a button. The request is stored in Redis and appears on **Admin → Access → Access Requests**, where an admin or manager approves or denies it. The tab badge counts pending ones.
+
+Approving does exactly what adding the email by hand on the Viewers tab does. Denying leaves them without access and never removes anyone who already has it. Re-asking while a request is pending is a no-op, so a refresh loop produces one row, not a queue.
+
+The request grants nothing by itself: `lib/accessRequests.js` never writes to the approved-viewer set — only the capability-gated admin route does, which keeps exactly one place in the codebase able to widen access.
+
+**Not included:** nothing notifies you that a request arrived. Check the Access tab, or wire the pending count into the existing push broadcast if you want a nudge.
+
+---
+
+## Scheduled publish and expiry
+
+Each video can carry an optional **publish time**, an optional **expiry time**, or both, set from a **Schedule** panel on its row in the Videos tab. Outside that window a viewer can't see the video in the library, in search results, in a collection filter, or by opening its direct `/watch/video/<guid>` link.
+
+Admins and managers always see it — with a badge on the row (*Not yet published* / *Scheduled · live* / *Expired*) so a deliberately hidden video never reads as a broken one.
+
+This is **additive**: a video with no schedule set behaves exactly as it always has. Setting an expiry that falls at or before the publish time is rejected rather than stored, since it would hide the video forever with no explanation.
+
+---
+
+## Optional email verification
+
+Auth0 reports whether an account's email address has been verified. This portal can enforce that claim — but it is **off by default and should stay off unless you have added a mail provider to your Auth0 tenant**.
+
+**Why the caution.** A tenant with no mail server never sends verification emails, so `email_verified` is `false` for every account that will ever exist, including yours. Enforcing it blindly locks out the entire user base. That very change was written once here and caught at the push step; the incident is on record.
+
+So the feature is built to make that outcome impossible by accident:
+
+- **Off by default.** Nothing changes until an admin turns it on in Settings.
+- **Admins and managers are never blocked**, whatever the setting says. That's the recovery path — you can always reach `/admin` and switch it back off.
+- **`EMAIL_VERIFIED_BYPASS_EMAILS`** is a standing env-level escape hatch, mirroring `ADMIN_GEO_BYPASS_EMAILS`. Set it before enabling, since env changes need a redeploy.
+- **It fails open.** Any error reading the setting admits the caller; an infrastructure hiccup can't become a portal-wide lockout.
+- **A missing claim is not a failure.** Only an explicit `email_verified: false` blocks. A token that doesn't carry the field at all is allowed through.
+- **You see the blast radius first.** The app passively records the claim it observes for each account that signs in — enforcing nothing — and the Settings panel reports how many viewers enabling it would block right now, by name. The API refuses to switch it on without an explicit confirmation.
+
+Note the counts only cover accounts the portal has actually seen sign in since this was added; viewers who haven't been back aren't counted, so real impact can be larger.
+
+**Scope:** enforcement covers the approved-viewer library surface (the homepage feed, collections, and direct video links). **Share links are deliberately exempt** — `/watch/<shareId>` is how you reach people outside the viewer list, who are the least likely to have a verified address, and gating it would break sharing outright the moment the toggle went on.
+
+---
+
 ## Security notes
 
 - **Access is by email identity.** Role, approved-viewer, group, and share-recipient checks all compare `session.user.email`. Because of this, keep Auth0 **sign-ups disabled** so nobody can self-register as an approved/admin address. Role resolution lives in `lib/roles.js` — the single place that decides what a caller may do — and `lib/auth.js`'s `isAdmin()` is the `ADMIN_EMAILS` floor it builds on.
@@ -336,6 +388,8 @@ Admins and managers bypass groups entirely — they're curating the library, so 
 - **Share-link mismatches don't reveal** the intended recipient's email — the bundle page and the playback-tracking endpoint use the exact same generic mismatch message.
 - **No middleware, by design.** The bundle page and the share-tracking API each carry their own `getSession` + email-match check via `getServerSideProps` / handler code, the same pattern every other page/route in this app uses. There is deliberately no `middleware.js` gating routes centrally; adding one would expand the app's Next.js attack surface (Pages Router only, no App Router/middleware — see "Architecture at a glance" above).
 - **Thumbnails** are served from the CDN and, when a token key is present, are **signed** so they keep working with "Block Direct URL File Access" enabled. Requests from the app carry the site's `Referer`, so hotlink protection still blocks direct/off-site access.
+- **Optional email verification is opt-in and cannot self-lock.** Off by default, staff unconditionally exempt, env bypass list, fails open, and an absent claim admits — see "Optional email verification" above. Never write a bare `email_verified` check anywhere; go through `lib/verification.js`.
+- **Access requests can't self-approve.** The viewer-facing endpoint only records a request; the approved-viewer set is written in exactly one capability-gated place.
 - **Groups narrow, they never widen.** Group gating runs *after* the approved-viewer check, so it can only reduce what an already-approved viewer sees. A viewer in no group is unrestricted, and if Redis is unavailable group resolution degrades to unrestricted rather than blanking the library — the same fail-open posture as the rate limiter, and for the same availability reason.
 - **Rate limiting** guards the video list, upload, and share-creation endpoints (fails open if the limiter backend is unavailable).
 - **Idle sign-out** logs users out after 30 minutes of inactivity.

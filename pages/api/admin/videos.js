@@ -4,6 +4,7 @@ import { getOrder, setOrder, applyOrder } from '../../../lib/order';
 import { logAudit } from '../../../lib/audit';
 import { maybeAnnounceReady } from '../../../lib/push';
 import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/watermark';
+import { listSchedules, setSchedule, scheduleState } from '../../../lib/schedule';
 import { withMonitorApi } from '../../../lib/monitor';
 
 // Bulk video ops (delete, collection assignment) accept either a single `id`
@@ -24,6 +25,7 @@ async function handler(req, res) {
     const order = await getOrder();
     const ordered = applyOrder(videos, order);
     const watermarkModes = await listVideoWatermarkModes();
+    const schedules = await listSchedules();
 
     // Best-effort: notify viewers about any newly-ready video. This admin poll is
     // the natural trigger (admins watch the library refresh while encoding). It
@@ -45,6 +47,8 @@ async function handler(req, res) {
         thumbnail: getThumbnailUrl(v),
         views: v.views || 0,
         watermarkMode: watermarkModes[v.guid] || 'default',
+        schedule: schedules[v.guid] || null,
+        scheduleState: scheduleState(schedules[v.guid]),
       }))
     );
   }
@@ -54,6 +58,28 @@ async function handler(req, res) {
     const { title, watermarkMode } = body;
     const ids = idsFrom(body);
     if (ids.length === 0) return res.status(400).json({ error: 'id(s) required' });
+
+    // Per-video publish/expiry window. Always a single id; sending both
+    // bounds empty clears the schedule entirely.
+    if (Object.prototype.hasOwnProperty.call(body, 'publishAt') ||
+        Object.prototype.hasOwnProperty.call(body, 'expiresAt')) {
+      try {
+        const entry = await setSchedule(ids[0], {
+          publishAt: body.publishAt,
+          expiresAt: body.expiresAt,
+        });
+        await logAudit(
+          actor,
+          'video.schedule',
+          entry
+            ? `${ids[0]} → ${entry.publishAt ? new Date(entry.publishAt).toISOString() : 'now'} … ${entry.expiresAt ? new Date(entry.expiresAt).toISOString() : 'forever'}`
+            : `${ids[0]} → cleared`
+        );
+        return res.json({ ok: true, schedule: entry, scheduleState: scheduleState(entry) });
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+    }
 
     // Per-video watermark override — always a single id (there's no bulk
     // watermark control), 'default' clears back to inheriting the global setting.
@@ -95,7 +121,7 @@ async function handler(req, res) {
       return res.json({ ok: true });
     }
 
-    return res.status(400).json({ error: 'title, collectionId, or watermarkMode required' });
+    return res.status(400).json({ error: 'title, collectionId, watermarkMode, or publishAt/expiresAt required' });
   }
 
   if (req.method === 'DELETE') {

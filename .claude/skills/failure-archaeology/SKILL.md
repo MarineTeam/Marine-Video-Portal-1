@@ -69,7 +69,9 @@ commit hash cited here was verified against git history on 2026-07-10; run
 
 **Evidence** | No commits (canceled pre-push). A memory note exists for assistant sessions (`no-email-verification.md` in the project memory directory); this skill entry is the durable record for anyone else.
 
-**Status** | **SETTLED — do not reopen.** Never enforce `email_verified` in this codebase. The correct mitigation for unwanted accounts is **disabling sign-ups in the Auth0 tenant** (invite-only), which is the model this portal already uses.
+**Status** | **REOPENED 2026-08-31, maintainer-requested — with the hazard designed out.** Was "SETTLED — do not reopen" from 2026-07-10 until the maintainer asked for the capability. Enforcement now exists in `lib/verification.js`, but it is **off by default, staff are unconditionally exempt, there is an env bypass list, it fails open, and an absent claim admits the caller** — so the failure mode recorded above cannot recur by accident (`architecture-contract` Decision 14). The admin UI reports, by name, how many observed viewers enabling it would block, and the API refuses to enable without explicit confirmation.
+
+**The underlying fact has NOT changed**: this tenant still has no mail server, so the claim is still `false` for effectively every account, and turning the toggle on will still block every viewer the panel counts. Disabling sign-ups in the Auth0 tenant remains the actual mitigation for unwanted accounts. What changed is that the check is now opt-in and reversible instead of unconditional and self-locking. **Still never** write a bare `email_verified` check anywhere else in the codebase, and never gate `/watch/[shareId]` on it.
 
 **Lesson** | A security control that assumes infrastructure you don't have is an outage, not a control. Verify the claim's real-world value distribution before gating on it.
 
@@ -209,7 +211,7 @@ Switching to bcrypt/scrypt/argon2 is impossible: Bunny verifies the signature se
 | # | Incident | Status | One-line takeaway |
 |---|----------|--------|-------------------|
 | 1 | TUS upload 401 saga | SETTLED — do not reopen | Expiry in Unix seconds + `.trim()` env values; read the vendor spec before hypothesizing |
-| 2 | email_verified near-lockout | SETTLED — do not reopen | Never enforce `email_verified` (no mail server → false for everyone); disable sign-ups instead |
+| 2 | email_verified near-lockout | REOPENED 2026-08-31 (hazard designed out) | Enforcement is opt-in, staff-exempt, fail-open via `lib/verification.js`; the tenant still has no mail server, so enabling it still blocks everyone it counts |
 | 3 | Resume playback silent failure | SETTLED | Constructor is at `mod.default.Player`; silent catch blocks must `console.warn` |
 | 4 | Design revert wars | SETTLED | Ask before user-visible changes; resolved by approved glassmorphism redesign `206bbff` |
 | 5 | CodeQL sanitizer shape | SETTLED — do not reopen | Keep GUID guards inline in `lib/bunny.js`; a shared helper reopens the alerts |

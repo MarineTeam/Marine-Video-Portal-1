@@ -40,7 +40,7 @@ Both passed builds. Both only surfaced in real use. That is why rung 1 is a floo
 
 ### Rung 2 — vitest pure-logic tests: protects invariants
 
-`npm test` runs `vitest run` over `lib/__tests__/*.test.js` (three files as of 2026-07-10: `auth.test.js`, `order.test.js`, `theme.test.js`). These protect:
+`npm test` runs `vitest run` over `lib/__tests__/*.test.js` (13 files / 209 cases as of 2026-08-31). These protect:
 
 - **Auth matching** (`isAdmin`): case-insensitive match against `ADMIN_EMAILS`, rejects falsy input. A regression here is a lockout or a privilege leak.
 - **Ordering** (`applyOrder`): unordered (new) videos float to the top newest-first; saved order follows; ghost ids ignored; every video returned exactly once. This is why a fresh upload appears at the top of the homepage.
@@ -69,7 +69,7 @@ Classes match `change-control` (a change spanning classes takes the union of gat
 1. Enumerate who could be denied access after this change (admins? approved viewers? share recipients?).
 2. Prove the admin path survives: trace how an `ADMIN_EMAILS` account still reaches `/admin` after the change.
 3. Check the failure mode: if the new check errors at runtime, does it fail open or locked?
-4. **Never gate on `email_verified`.** Auth0 here has no mail server, so no account can ever verify — enforcing it locks out everyone including admins. Disable sign-ups instead (session record, 2026-07-10, maintainer-confirmed).
+4. **Never write a bare `email_verified` gate.** Auth0 here has no mail server, so no account can ever verify — an unconditional check locks out everyone including admins. As of 2026-08-31 enforcement exists, but ONLY via `lib/verification.js`, which is off by default, exempts staff unconditionally, honours an env bypass list, fails open, and admits an absent claim (`architecture-contract` Decision 14). Any new call site must go through `isVerified()`; never re-derive the check, and never apply it to `/watch/[shareId]`.
 
 ## 3. Manual E2E checklists
 
@@ -148,7 +148,7 @@ Requires `NEXT_PUBLIC_VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` set in Vercel and 
   - `describe`/`it`/`expect`, one behavior per `it`, plain synchronous assertions.
   - Test through the public export of the `lib/` module; build tiny literal fixtures inline (see `order.test.js`'s `vid()` helper).
 - New shared logic in `lib/` SHOULD land with a test in the same commit — that is the existing bar.
-- Page components and API handlers are currently **untested** (they are integration-heavy: sessions, Redis, Bunny). Do not pretend otherwise. Adding a handler-test harness (mocked req/res + mocked lib layer) is a **candidate improvement**, not an existing practice — if you add one, say so explicitly rather than presenting it as convention.
+- Page components remain **untested**. API handlers gained a narrow harness on 2026-08-31 (`lib/__tests__/apiGates.test.js`): mocked `getSession`, a fake `lib/redis`, a stubbed limiter, and a mocked req/res pair, used to prove the **authorization gate** on every `pages/api/admin/*` route and nothing else. It is table-driven over the directory listing, so a new admin route is covered the moment it is added — and a new ungated one fails the suite. It found a real defect on its first run (`broadcast.js` answered 405 before authorizing). Deliberate limits: it does not exercise handler bodies, Bunny, Auth0, or real Redis. Mocking those would produce green tests over broken integrations, which is the exact failure the evidence ladder exists to prevent — those still need the §3 checklists.
 - Remember you cannot run vitest locally (no Node) — push and let CI run it, per `change-control`'s CI-is-the-alarm workflow.
 
 ## 5. Definition of done

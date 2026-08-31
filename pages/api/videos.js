@@ -4,6 +4,8 @@ import { redis, k } from '../../lib/redis';
 import { getOrder, applyOrder } from '../../lib/order';
 import { isStaffUser } from '../../lib/roles';
 import { resolveAccess, filterVideos } from '../../lib/groups';
+import { listSchedules, filterScheduled } from '../../lib/schedule';
+import { isVerified, recordObservation } from '../../lib/verification';
 import { allow, callerId } from '../../lib/ratelimit';
 import { isGeoAllowed } from '../../lib/geo';
 import { withMonitorApi } from '../../lib/monitor';
@@ -32,6 +34,14 @@ async function handler(req, res) {
     return res.status(403).json({ error: 'geo_blocked' });
   }
 
+  // Always observe the email_verified claim; only enforce it when an admin has
+  // turned enforcement on (off by default — see lib/verification.js). The
+  // observation is what makes the blast radius visible BEFORE the toggle.
+  await recordObservation(email, session);
+  if (!(await isVerified(session, { staff }))) {
+    return res.status(403).json({ error: 'not_verified' });
+  }
+
   // Track viewer activity for the admin "last seen" column.
   if (approved) await redis.hset(k('viewer_last_seen'), { [email]: Date.now() });
 
@@ -47,7 +57,11 @@ async function handler(req, res) {
   // they can actually see rather than the whole one. Staff and viewers in no
   // group resolve to UNRESTRICTED and this filter is a pass-through.
   const access = await resolveAccess(email, { staff });
-  const ordered = filterVideos(access, applyOrder(fetched, order));
+  let ordered = filterVideos(access, applyOrder(fetched, order));
+  // Scheduled publish/expiry. Staff keep seeing everything so they can check a
+  // video before it goes live; for viewers an out-of-window video is simply
+  // absent, exactly as if it hadn't been uploaded yet.
+  if (!staff) ordered = filterScheduled(await listSchedules(), ordered);
   // A search or collection filter looks across the whole library; the default
   // (unfiltered) view respects the admin's homepage cap.
   let allVideos;

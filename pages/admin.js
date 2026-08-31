@@ -56,6 +56,17 @@ function timeAgo(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
+// datetime-local wants "YYYY-MM-DDTHH:mm" in LOCAL time; a ms epoch put
+// through toISOString() would render as UTC and silently shift the admin's
+// entry by their offset every time the field round-trips.
+function toLocalInput(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function formatNumber(n) {
   return (n || 0).toLocaleString();
 }
@@ -111,6 +122,8 @@ export default function Admin({ isAdminRole }) {
   const [groupMemberDrafts, setGroupMemberDrafts] = useState({});
   const [groupError, setGroupError] = useState(null);
   const [groupBusy, setGroupBusy] = useState({});
+  const [accessRequests, setAccessRequests] = useState([]);
+  const [requestBusy, setRequestBusy] = useState({});
   const [newCollection, setNewCollection] = useState('');
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastBody, setBroadcastBody] = useState('');
@@ -156,6 +169,8 @@ export default function Admin({ isAdminRole }) {
   const [geoAdminEnabled, setGeoAdminEnabled] = useState(false);
   const [geoAdminCountries, setGeoAdminCountries] = useState([]);
   const [geoSaved, setGeoSaved] = useState(false);
+  const [verification, setVerification] = useState(null);
+  const [verificationBusy, setVerificationBusy] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [cleanupMsg, setCleanupMsg] = useState('');
   const fileInputRef = useRef(null);
@@ -185,6 +200,10 @@ export default function Admin({ isAdminRole }) {
     fetch('/api/admin/watermark')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) { setWatermarkGlobal(Boolean(d.global)); setWatermarkExempt(d.exempt || []); } })
+      .catch(() => {});
+    fetch('/api/admin/verification')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setVerification(d))
       .catch(() => {});
     fetch('/api/admin/geo')
       .then((r) => (r.ok ? r.json() : null))
@@ -237,6 +256,10 @@ export default function Admin({ isAdminRole }) {
   useEffect(() => {
     if (!user || tab !== 'access') return;
     fetch('/api/admin/groups').then((r) => (r.ok ? r.json() : [])).then(setGroups).catch(() => {});
+    fetch('/api/admin/access-requests')
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setAccessRequests)
+      .catch(() => {});
     if (!isAdminRole) return;
     fetch('/api/admin/roles')
       .then((r) => (r.ok ? r.json() : null))
@@ -448,6 +471,39 @@ export default function Admin({ isAdminRole }) {
     if (!res.ok) { setRoleError(data.error || 'Failed to revoke role'); return; }
     setRoleError(null);
     setRoleGrants((prev) => prev.filter((g) => g.email !== email));
+  }
+
+  async function decideAccessRequest(email, status) {
+    setRequestBusy((prev) => ({ ...prev, [email]: true }));
+    try {
+      const res = await fetch('/api/admin/access-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, status }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Failed to update request'); return; }
+      setAccessRequests((prev) => prev.map((r) => (r.email === email ? data.request : r)));
+      // Approving adds them to the viewer list, so that tab is now stale.
+      if (status === 'approved') {
+        fetch('/api/admin/viewers')
+          .then((rr) => (rr.ok ? rr.json() : null))
+          .then((l) => l && setViewers(l))
+          .catch(() => {});
+      }
+    } finally {
+      setRequestBusy((prev) => ({ ...prev, [email]: false }));
+    }
+  }
+
+  async function dismissAccessRequest(email) {
+    const res = await fetch('/api/admin/access-requests', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) { alert('Failed to remove request'); return; }
+    setAccessRequests((prev) => prev.filter((r) => r.email !== email));
   }
 
   async function createGroup() {
@@ -696,6 +752,23 @@ export default function Admin({ isAdminRole }) {
     });
     if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Failed to update'); return; }
     setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, collectionId } : x)));
+  }
+
+  // Both bounds go up together, so clearing one and saving doesn't look like
+  // "leave it as it was". Empty strings clear the schedule server-side.
+  async function saveVideoSchedule(v, publishAt, expiresAt) {
+    const res = await fetch('/api/admin/videos', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: v.id, publishAt: publishAt || '', expiresAt: expiresAt || '' }),
+    });
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || 'Failed to save schedule'); return; }
+    setVideos((prev) =>
+      prev.map((x) =>
+        x.id === v.id ? { ...x, schedule: data.schedule, scheduleState: data.scheduleState } : x
+      )
+    );
   }
 
   async function assignWatermarkMode(v, watermarkMode) {
@@ -1137,6 +1210,35 @@ export default function Admin({ isAdminRole }) {
     setTimeout(() => setSaved(false), 2000);
   }
 
+  async function setVerificationEnforcement(enabled) {
+    // Turning it ON requires an explicit confirmation naming the number of
+    // viewers it would block, because this is the check that nearly locked
+    // everyone out of this portal once already. Turning it OFF is always
+    // allowed with no ceremony — that's the recovery path.
+    if (enabled) {
+      const n = verification?.summary?.wouldBlock ?? 0;
+      const total = verification?.summary?.subject ?? 0;
+      const msg =
+        n === 0
+          ? 'No observed viewer would be blocked right now. Note that viewers this portal has never seen sign in are not counted. Turn email verification on?'
+          : `This will immediately block ${n} of the ${total} viewers this portal has seen sign in.\n\nThis Auth0 tenant has no mail server, so those accounts have no way to verify themselves. Admins and managers are never blocked, so you can switch this back off.\n\nTurn email verification on anyway?`;
+      if (!confirm(msg)) return;
+    }
+    setVerificationBusy(true);
+    try {
+      const res = await fetch('/api/admin/verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled, confirm: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Failed to update'); return; }
+      setVerification((prev) => ({ ...prev, enabled: data.enabled }));
+    } finally {
+      setVerificationBusy(false);
+    }
+  }
+
   async function saveGeoToggles(next) {
     const res = await fetch('/api/admin/geo', {
       method: 'POST',
@@ -1236,6 +1338,7 @@ export default function Admin({ isAdminRole }) {
   const bulkShownVideos = bulkQ ? videos.filter((v) => (v.title || '').toLowerCase().includes(bulkQ)) : videos;
   const bulkSelectedCount = Object.values(bulkSelected).filter(Boolean).length;
   const allViewerTags = [...new Set(viewers.flatMap((v) => v.tags || []))].sort();
+  const pendingRequests = accessRequests.filter((r) => r.status === 'pending');
 
   return (
     <AppShell isAdmin>
@@ -1245,7 +1348,7 @@ export default function Admin({ isAdminRole }) {
           {[
             { id: 'videos', label: 'Videos', count: videos.length },
             { id: 'viewers', label: 'Viewers', count: viewers.length },
-            { id: 'access', label: 'Access', count: groups.length || null },
+            { id: 'access', label: 'Access', count: pendingRequests.length || groups.length || null },
             { id: 'shares', label: 'Shares', count: activeShares.length },
             // Settings is admin-only (theme, geo, watermark, maintenance,
             // broadcast). Hiding the tab is presentation; every route behind
@@ -1379,6 +1482,72 @@ export default function Admin({ isAdminRole }) {
                 : 'Off. Set QUERY_MONITOR_ENABLED=true in the environment to show it on every page.'}
             </span>
           </div>
+        </div>
+
+        {/* Email verification (opt-in, off by default) */}
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Email Verification</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            When on, viewers whose Auth0 account reports <code>email_verified: false</code> can&rsquo;t
+            open the library. Admins and managers are <strong>never</strong> blocked by this, so you
+            can always come back here and switch it off.
+          </p>
+
+          <div className="verify-warning">
+            <strong>Before you turn this on:</strong> this Auth0 tenant has no mail server
+            configured, so verification emails never send and most accounts will report
+            <code> false</code> permanently. The counts below are measured from accounts this portal
+            has actually seen sign in — viewers who haven&rsquo;t signed in since this was added
+            aren&rsquo;t counted yet, so the real impact can be larger.
+          </div>
+
+          {verification ? (
+            <>
+              <div className="verify-stats">
+                <div><strong>{verification.summary.subject}</strong><span>viewers seen</span></div>
+                <div><strong>{verification.summary.verified}</strong><span>verified</span></div>
+                <div className={verification.summary.wouldBlock > 0 ? 'verify-stat-danger' : undefined}>
+                  <strong>{verification.summary.wouldBlock}</strong><span>would be blocked</span>
+                </div>
+                <div><strong>{verification.summary.unknown}</strong><span>no claim (allowed)</span></div>
+              </div>
+
+              {verification.summary.wouldBlockEmails.length > 0 && (
+                <details style={{ marginBottom: '1rem' }}>
+                  <summary className="text-muted">
+                    Who would be blocked ({verification.summary.wouldBlockEmails.length})
+                  </summary>
+                  <div className="viewer-tags-row" style={{ marginTop: 8 }}>
+                    {verification.summary.wouldBlockEmails.map((e) => (
+                      <span key={e} className="tag-chip">{e}</span>
+                    ))}
+                  </div>
+                </details>
+              )}
+
+              {verification.bypassEmails.length > 0 && (
+                <p className="text-muted">
+                  Always exempt via <code>EMAIL_VERIFIED_BYPASS_EMAILS</code>:{' '}
+                  {verification.bypassEmails.join(', ')}
+                </p>
+              )}
+
+              <label className="admin-row">
+                <input
+                  type="checkbox"
+                  checked={Boolean(verification.enabled)}
+                  disabled={verificationBusy}
+                  onChange={(e) => setVerificationEnforcement(e.target.checked)}
+                />
+                <span>
+                  Require a verified email address to watch
+                  {verification.enabled ? ' — currently ON' : ' — currently off'}
+                </span>
+              </label>
+            </>
+          ) : (
+            <p className="text-muted">Loading…</p>
+          )}
         </div>
 
         {/* Geo location whitelist */}
@@ -2231,6 +2400,47 @@ export default function Admin({ isAdminRole }) {
                   </select>
                 </div>
 
+                <details className="video-schedule">
+                  <summary>
+                    Schedule
+                    {v.scheduleState && v.scheduleState !== 'none' && (
+                      <span className={`schedule-chip schedule-chip--${v.scheduleState}`}>
+                        {v.scheduleState === 'scheduled' ? 'Not yet published' : null}
+                        {v.scheduleState === 'expired' ? 'Expired' : null}
+                        {v.scheduleState === 'live' ? 'Scheduled · live' : null}
+                      </span>
+                    )}
+                  </summary>
+                  <p className="text-muted" style={{ margin: '8px 0' }}>
+                    Leave both blank to keep this video visible with no time limit. Viewers can&rsquo;t
+                    see or open it outside the window; admins and managers always can.
+                  </p>
+                  <div className="schedule-fields">
+                    <label>
+                      <span className="collection-label">Publish at</span>
+                      <input
+                        type="datetime-local"
+                        className="input input-sm"
+                        value={toLocalInput(v.schedule?.publishAt)}
+                        onChange={(e) =>
+                          saveVideoSchedule(v, e.target.value, toLocalInput(v.schedule?.expiresAt))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span className="collection-label">Expires at</span>
+                      <input
+                        type="datetime-local"
+                        className="input input-sm"
+                        value={toLocalInput(v.schedule?.expiresAt)}
+                        onChange={(e) =>
+                          saveVideoSchedule(v, toLocalInput(v.schedule?.publishAt), e.target.value)
+                        }
+                      />
+                    </label>
+                  </div>
+                </details>
+
                 <textarea
                   className="input input-sm"
                   placeholder="Recipient emails — separate with commas, spaces, or new lines"
@@ -2459,6 +2669,64 @@ export default function Admin({ isAdminRole }) {
 
         {tab === 'access' && (
         <>
+        <div className="card admin-section">
+          <h2 className="admin-section-title">
+            Access Requests
+            {pendingRequests.length > 0 && (
+              <span className="tab-count">{pendingRequests.length}</span>
+            )}
+          </h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            People who signed in, found they weren&rsquo;t approved, and asked for access.
+            Approving adds them to the approved viewers — exactly like adding them by hand on the
+            Viewers tab. Denying leaves them signed out of the library and never removes anyone who
+            already has access.
+          </p>
+
+          {accessRequests.length === 0 ? (
+            <p className="text-muted">No access requests.</p>
+          ) : (
+            <ul className="viewer-list">
+              {accessRequests.map((r) => (
+                <li key={r.email} className="viewer-item viewer-item--tagged">
+                  <div className="viewer-item-main">
+                    <span className="viewer-email">{r.email}</span>
+                    <span className={`role-chip role-chip--${r.status}`}>{r.status}</span>
+                    <span className="viewer-seen">{r.requestedAt ? timeAgo(r.requestedAt) : ''}</span>
+                    {r.status === 'pending' ? (
+                      <>
+                        <button
+                          onClick={() => decideAccessRequest(r.email, 'approved')}
+                          className="btn btn-primary btn-sm"
+                          disabled={Boolean(requestBusy[r.email])}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => decideAccessRequest(r.email, 'denied')}
+                          className="btn btn-sm"
+                          disabled={Boolean(requestBusy[r.email])}
+                        >
+                          Deny
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => dismissAccessRequest(r.email)}
+                        className="btn btn-icon"
+                        title="Remove this request from the list"
+                      >
+                        <IconTrash />
+                      </button>
+                    )}
+                  </div>
+                  {r.note && <p className="request-note">{r.note}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         {isAdminRole && (
         <div className="card admin-section">
           <h2 className="admin-section-title">Roles</h2>

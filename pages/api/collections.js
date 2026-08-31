@@ -2,6 +2,7 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../lib/redis';
 import { isStaffUser } from '../../lib/roles';
 import { resolveAccess, filterCollections } from '../../lib/groups';
+import { isVerified } from '../../lib/verification';
 import { listCollections } from '../../lib/bunny';
 import { withMonitorApi } from '../../lib/monitor';
 
@@ -16,6 +17,9 @@ async function handler(req, res) {
     isStaffUser(email),
   ]);
   if (!approved && !staff) return res.status(403).json({ error: 'not_approved' });
+  if (!(await isVerified(session, { staff }))) {
+    return res.status(403).json({ error: 'not_verified' });
+  }
 
   try {
     // A grouped viewer only gets the collections their groups grant —
