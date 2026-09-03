@@ -5,6 +5,7 @@ import AppShell from '../components/AppShell';
 import NotifyButton from '../components/NotifyButton';
 import { IconTrash, IconCopy, IconGrip, IconPencil, IconSearch, IconCheck, IconX } from '../components/icons';
 import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
+import { MAX_SITE_NAME_LENGTH, cleanSiteName } from '../lib/branding';
 import { getRole, ROLE_ADMIN, ROLE_MANAGER } from '../lib/roles';
 import { isGeoAllowed } from '../lib/geo';
 import { withMonitorPage } from '../lib/monitor';
@@ -97,6 +98,8 @@ export default function Admin({ isAdminRole }) {
   const [tab, setTab] = useState('videos');
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const [themeSaved, setThemeSaved] = useState(false);
+  const [siteNameDraft, setSiteNameDraft] = useState('');
+  const [siteNameSaved, setSiteNameSaved] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -195,7 +198,13 @@ export default function Admin({ isAdminRole }) {
       setQueryMonitorEnabled(Boolean(d.queryMonitorEnabled));
     });
     fetch('/api/admin/shares').then((r) => r.json()).then(setActiveShares);
-    fetch('/api/theme').then((r) => r.json()).then(setTheme).catch(() => {});
+    fetch('/api/theme')
+      .then((r) => r.json())
+      .then(({ siteName, ...palette }) => {
+        setTheme(palette);
+        setSiteNameDraft(siteName || '');
+      })
+      .catch(() => {});
     fetch('/api/admin/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
     fetch('/api/admin/watermark')
       .then((r) => (r.ok ? r.json() : null))
@@ -285,6 +294,25 @@ export default function Admin({ isAdminRole }) {
 
   function setAccent(which, value) {
     previewTheme({ ...theme, [which]: value });
+  }
+
+  async function saveSiteName() {
+    const name = cleanSiteName(siteNameDraft);
+    const res = await fetch('/api/theme', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ siteName: name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(data.error || 'Failed to save the name'); return; }
+    // The server resolves a blank name back to the default, so echo whatever
+    // it actually stored rather than the empty box.
+    setSiteNameDraft(data.siteName || '');
+    setSiteNameSaved(true);
+    setTimeout(() => setSiteNameSaved(false), 1500);
+    // The header reads the name from context, seeded by the /api/theme fetch
+    // in _app — reload so the rename is visible everywhere at once.
+    window.location.reload();
   }
 
   async function saveTheme() {
@@ -1376,6 +1404,30 @@ export default function Admin({ isAdminRole }) {
         {/* Appearance */}
         <div className="card admin-section">
           <h2 className="admin-section-title">Appearance</h2>
+
+          <div className="setting-block">
+            <label htmlFor="site-name" className="collection-label">Portal name</label>
+            <p className="text-muted" style={{ margin: '4px 0 8px' }}>
+              Shown in the header and browser tab, on the installed app&rsquo;s icon, in push
+              notifications, and in share emails. Leave blank to reset to the default.
+            </p>
+            <div className="admin-row">
+              <input
+                id="site-name"
+                type="text"
+                className="input input-sm"
+                maxLength={MAX_SITE_NAME_LENGTH}
+                placeholder="Marine Team"
+                value={siteNameDraft}
+                onChange={(e) => setSiteNameDraft(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && saveSiteName()}
+              />
+              <button onClick={saveSiteName} className="btn btn-primary btn-sm">
+                {siteNameSaved ? 'Saved!' : 'Save name'}
+              </button>
+            </div>
+          </div>
+
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
             Choose the accent palette used across the portal for every visitor.
           </p>

@@ -1,15 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Marine Video Portal">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Video portal">
   <defs>
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#2dd4bf"/>
       <stop offset="1" stop-color="#3b82f6"/>
     </linearGradient>
   </defs>
-  <!-- Full-bleed dark background; content kept within the central ~62% maskable safe zone -->
+  <!-- Full-bleed dark background; content kept within the central ~62% maskable safe zone.
+       A play mark rather than anything themed: the portal's name is admin-adjustable, so the
+       icon has to suit whatever it's called. (It used to be an anchor, which read as nautical
+       — the group is not a marine/ocean organisation.) -->
   <rect width="512" height="512" rx="112" fill="#070b14"/>
-  <g transform="translate(96,96) scale(13.3333)" fill="none" stroke="url(#accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="5" r="3"/>
-    <line x1="12" y1="22" x2="12" y2="8"/>
-    <path d="M5 12H2a10 10 0 0 0 20 0h-3"/>
-  </g>
+  <path d="M209 174 L346 256 L209 338 Z"
+        fill="url(#accent)"
+        stroke="url(#accent)"
+        stroke-width="30"
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
 </svg>

@@ -31,7 +31,8 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head>
-        <link rel="manifest" href="/manifest.webmanifest" />
+        {/* Served from an API route so the installed app carries the admin-set portal name. */}
+        <link rel="manifest" href="/api/manifest" />
         <meta name="theme-color" content="#070b14" />
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
         <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
@@ -39,7 +40,6 @@ export default function Document() {
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="Marine" />
       </Head>
       <body>
         <script dangerouslySetInnerHTML={{ __html: noFlashTheme }} />

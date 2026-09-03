@@ -126,3 +126,8 @@ Scheduled publish/expiry per video: set an optional publish time and/or expiry, 
 Optional email verification, off by default: enforce Auth0's email_verified claim from Settings, with admins and managers never blocked, an env bypass list, fail-open on errors, and a panel that names exactly which viewers enabling it would block first
 Route authorization tests covering every admin API route — a signed-out caller, an approved viewer, and a manager on admin-only routes
 Fix: the push-broadcast route answered 405 before checking authorization, telling unauthorized callers the route existed and which verb it wanted
+v1.21.0
+Adjustable portal name: set it in Settings and it follows through to the header, browser tab, installed app name, push notifications and share emails; blank resets to the default
+New app icon — the old one was an anchor, which read as nautical; it's now a neutral play mark that suits whatever the portal is named
+PWA manifest is generated instead of static, so an installed app picks up a rename
+Fix: the public palette endpoint returned a 500 when Redis was unreachable, taking the sign-in screen's styling down with it; it now falls back to the default palette and name

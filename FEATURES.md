@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.20.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.21.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
@@ -20,6 +20,7 @@ Current as of **v1.20.0**. Grouped by area; items marked _(admin)_ live in the `
 
 ## Homepage & viewer experience
 - **Modern dark design** — glassmorphism, gradient accents, Inter typography.
+- **Adjustable portal name** _(admin)_ — set the portal's name from Settings; it flows to the page header, the browser tab, the installed app's name, push notification titles and share emails. Blank resets to the default. Served by the public palette endpoint so the login page is already branded before sign-in, and the PWA manifest is generated rather than static so an installed app picks up a rename.
 - **Admin-adjustable color palette** _(admin)_ — 7 presets plus custom hex colors, applied to **all** visitors; cached client-side with a no-flash pre-paint script so returning visitors never see a color flicker.
 - **Video thumbnails** — the homepage upgrades to a responsive **thumbnail grid** (16:9 cards with a play overlay) when thumbnails are configured, and falls back to a clean title list otherwise. The admin library shows thumbnails too. Thumbnail URLs are **CDN token-signed** so they work with "Block Direct URL File Access" enabled.
 - **Search** — viewers can search the whole library by title (debounced).
@@ -92,7 +93,8 @@ Current as of **v1.20.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Installable on desktop and mobile** — Windows, Mac, Android, and iOS can install the portal as a standalone app (web manifest + app icon + service worker). No separate build or app store; it runs off the same Vercel deployment.
 - **Login works unchanged** — the installed app is the same site, so Auth0 sign-in behaves exactly as in the browser.
 - **Full admin in the installed app** — admin accounts see the Admin button and can manage everything from the installed (standalone) app, exactly as in a normal browser tab. (Admin access is still gated server-side, so nothing sensitive is exposed to non-admins either way.)
-- Ships PNG app icons (192/512, maskable, plus a 180px Apple touch icon) so home-screen/taskbar icons render cleanly on every platform including iOS.
+- Ships PNG app icons (192/512, maskable, plus a 180px Apple touch icon) so home-screen/taskbar icons render cleanly on every platform including iOS. The mark is a generic play triangle rather than themed artwork, since the portal name is adjustable; the Apple touch icon is full-bleed because iOS applies its own rounding.
+- **Manifest is generated, not static** — the installed app's name follows the admin-set portal name instead of being fixed at build time.
 - The service worker caches only public static assets (app icons + manifest) — never API responses, authed pages, or video — so nothing private or stale is ever served.
 
 ## Push notifications
