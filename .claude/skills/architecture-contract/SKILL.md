@@ -137,6 +137,14 @@ The app: a private, invite-only video portal. Next.js 14 **Pages Router** + Reac
 
 **What breaks if violated.** Auth-gate the GET → unstyled login page. Interpolate anything dynamic into the `_document.js` script or drop its hex check → you've built an XSS gadget into every page load. Skip validation on POST → stored values flow to inline styles portal-wide.
 
+**Amended 2026-09-03.** `GET /api/theme` now also returns the admin-set portal name (`pvp:site_name`), and `POST` accepts it — the endpoint is already public and already fetched once per page load, so the name needed no second round-trip. Three properties are load-bearing:
+
+- **The name is NOT in the pre-paint script.** `localStorage.mvp_theme` stays colors-only, so the inline script's input is still nothing but two hex-validated strings. The name rides its own key (`mvp_site_name`) and is rendered through React, which escapes it. Putting an admin-supplied free-text string into that script would turn the app's only `dangerouslySetInnerHTML` into an XSS gadget on every page load — the exact thing this decision exists to prevent.
+- **The name is cleaned on write** (`cleanSiteName` in `lib/branding.js`: control characters stripped, whitespace collapsed, clamped to 40 chars), and blank always resolves back to the default so the portal can never be left unnamed.
+- **GET now fails soft.** The palette read is wrapped and `getSiteName()` swallows its own errors, so an Upstash blip yields default colors and the default name instead of a 500 on the public endpoint that renders the login page. It previously 500ed; that was pre-existing, and inconsistent with the degradation posture in Decision 10.
+
+`lib/branding.js` is pure and client-safe; `lib/brandingStore.js` holds the Redis access and is server-only — the same split as `lib/theme.js` vs the API route, and for the same client-bundle reason as Decision 13's note about `lib/roles.js`.
+
 ### 12. Sentry is opt-in/inert; CI builds on dummy env vars
 
 **Decision.** `withSentryConfig` wraps the build in `next.config.js`, but runtime reporting is inert until `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN` are set (`sentry.client.config.js`, `sentry.server.config.js`, `sentry.edge.config.js`), and source-map upload only happens when `SENTRY_AUTH_TOKEN`/org/project exist. CI (`.github/workflows/ci.yml`) builds with a block of **dummy** env values (`AUTH0_*`, `BUNNY_*`, `ADMIN_EMAILS`, `KV_REST_API_*`).

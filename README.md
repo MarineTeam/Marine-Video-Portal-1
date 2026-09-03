@@ -62,8 +62,9 @@ pages/
     collections.js        Collection list for the homepage filter (approved viewers)
     progress.js           Per-viewer playback progress / watch history
     me.js                 Current user's role + capabilities (any logged-in user)
+    manifest.js           PWA manifest, generated so it carries the admin-set portal name
     access-request.js     Submit/read your own access request (any logged-in user)
-    theme.js              Public GET palette; admin POST to update it
+    theme.js              Public GET palette + portal name; admin POST to update either
     share/[shareId]/track.js  Records player.js playback events (play/progress/completed) for a share link
     push/
       subscribe.js        Store a viewer's Web Push subscription
@@ -94,6 +95,7 @@ components/
   SharePlayer.js          Wraps the Bunny embed on share-link pages, reports play/progress/completed
   Watermark.js            Tiled, non-interactive viewer-email overlay shown when the layered setting resolves "on"
   NotifyButton.js         Per-device push opt-in/out toggle
+  BrandingProvider.js     Supplies the portal name to every page (localStorage-seeded)
   icons.js                Inline SVG icons
 lib/
   auth.js                 isAdmin(email) — the ADMIN_EMAILS floor check
@@ -107,6 +109,8 @@ lib/
   redis.js                Upstash Redis connection + key prefix helper k()
   order.js                Apply custom video order (new uploads float to top, newest first)
   theme.js                Palette presets, validation, CSS-variable mapping
+  branding.js             Portal name default + validation (pure, client-safe)
+  brandingStore.js        Portal name Redis read/write (server only)
   audit.js                Append-only admin action log (capped)
   push.js                 Web Push helpers (VAPID send, announce-once guard, self-pruning)
   mail.js                 Resend email helper for share/bundle emails (inert without RESEND_API_KEY)
@@ -117,8 +121,7 @@ lib/
                           push, shareBundle, watermark, geo, monitor) + apiGates.test.js, which proves
                           every pages/api/admin/* route rejects callers without its capability
 public/
-  manifest.webmanifest    PWA manifest
-  sw.js                   Service worker (caches only icons + manifest)
+  sw.js                   Service worker (caches only icons)
   icon-192.png / icon-512.png / apple-touch-icon.png / icon.svg   App icons
 styles/globals.css        Design system (dark glassmorphism, gradient accents, Inter)
 sentry.{client,server,edge}.config.js   Opt-in Sentry init (inert without a DSN)
@@ -298,6 +301,21 @@ Both toggles default to **off**, so a fresh deployment behaves exactly as before
 A country that can't be determined (local development, a non-Vercel host, a missing header) always **fails open** — it's never blocked, the same fail-open philosophy the rate limiter already uses.
 
 **`ADMIN_GEO_BYPASS_EMAILS`** lets specific admin emails skip the admin geo check entirely, regardless of country or the toggle. This is a standing safety net an admin arms *before* traveling, not an in-the-moment fix — changing it (or `ADMIN_GEO_WHITELIST`, or the toggle, since all env var changes need a redeploy to take effect) is slower than the Redis-backed toggle alone. If an admin is ever locked out of `/admin` by their own whitelist, recovery is: edit the relevant env var (or disable the toggle) in Vercel, then redeploy.
+
+---
+
+## Portal name and icon
+
+The portal's name is **adjustable from Admin → Settings → Appearance**. It appears in the page header, the browser tab title, the installed PWA's name, push notification titles, and share emails. Leaving the field blank resets it to the default (`Marine Team`).
+
+It's stored in Redis (`pvp:site_name`) and served by the already-public `GET /api/theme`, so the login page shows the right name before anyone signs in. The PWA manifest is generated at `/api/manifest` rather than being a static file, so an installed app picks up a rename.
+
+Two deliberate details:
+
+- The name is **not** part of the no-flash pre-paint script in `_document.js`. That script stays colors-only and hex-validated — it's the app's only `dangerouslySetInnerHTML`, and interpolating an admin-supplied string into it would make it an XSS gadget on every page load. The name is cached under its own `localStorage` key and rendered through React, which escapes it.
+- `MAIL_FROM` still wins for the email sender when it's set; the portal name only supplies the default display name.
+
+The app icon is a **play mark** (`public/icon.svg`, with PNGs rendered from it at 192/512/180). It's deliberately generic rather than themed to any particular name, since the name is adjustable. If you regenerate the PNGs after editing the SVG, note the content sits inside the central ~62% maskable safe zone, and the Apple touch icon is rendered full-bleed because iOS applies its own rounding.
 
 ---
 

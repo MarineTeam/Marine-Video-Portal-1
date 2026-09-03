@@ -1,9 +1,11 @@
-export function IconAnchor({ className }) {
+// Header brand mark. Matches public/icon.svg — a play triangle, deliberately
+// not themed to any particular name, since the portal's name is adjustable.
+// (This was an anchor, which read as nautical; the group is not a marine or
+// ocean organisation.)
+export function IconBrand({ className }) {
   return (
-    <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="5" r="3" />
-      <line x1="12" y1="22" x2="12" y2="8" />
-      <path d="M5 12H2a10 10 0 0 0 20 0h-3" />
+    <svg className={className} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 7.5 L17 12 L9 16.5 Z" />
     </svg>
   );
 }

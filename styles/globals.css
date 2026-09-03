@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 /* ============================================================
-   Marine Video Portal — modern design system
+   Video portal — modern design system
    ============================================================ */
 
 :root {
@@ -1274,3 +1274,7 @@ details.group-section > summary { cursor: pointer; }
 .verify-stats strong { font-size: 22px; }
 .verify-stats span { font-size: 12px; color: var(--muted); }
 .verify-stat-danger strong { color: var(--danger); }
+
+/* Grouped setting inside a section card */
+.setting-block { margin-bottom: 22px; padding-bottom: 22px; border-bottom: 1px dashed var(--border); }
+.setting-block:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }

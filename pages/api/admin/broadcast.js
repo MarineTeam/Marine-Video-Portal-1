@@ -1,5 +1,6 @@
 import { requireCapability } from '../../../lib/roles';
 import { logAudit } from '../../../lib/audit';
+import { getSiteName } from '../../../lib/brandingStore';
 import { pushEnabled, targetEmails, sendToEmails } from '../../../lib/push';
 import { withMonitorApi } from '../../../lib/monitor';
 
@@ -17,7 +18,7 @@ async function handler(req, res) {
 
   if (!pushEnabled()) return res.status(503).json({ error: 'Push notifications are not configured' });
 
-  const title = String((req.body && req.body.title) || '').trim() || 'Marine Video Portal';
+  const title = String((req.body && req.body.title) || '').trim() || (await getSiteName());
   const body = String((req.body && req.body.body) || '').trim();
   if (!body) return res.status(400).json({ error: 'Message body is required' });
 

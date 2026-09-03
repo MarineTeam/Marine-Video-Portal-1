@@ -1,16 +1,22 @@
+import Head from 'next/head';
 import { useUser } from '@auth0/nextjs-auth0/client';
-import { IconAnchor, IconShield, IconLogOut } from './icons';
+import { IconBrand, IconShield, IconLogOut } from './icons';
+import { useSiteName } from './BrandingProvider';
 
 export default function AppShell({ children, isAdmin = false }) {
   const { user } = useUser();
+  const siteName = useSiteName();
 
   return (
     <div className="shell">
+      <Head>
+        <title>{siteName}</title>
+      </Head>
       <header className="shell-header">
         <div className="shell-inner">
           <a href="/" className="shell-brand">
-            <IconAnchor className="shell-brand-icon" />
-            <span>Marine Video Portal</span>
+            <IconBrand className="shell-brand-icon" />
+            <span>{siteName}</span>
           </a>
           <nav className="shell-nav">
             {user ? (
