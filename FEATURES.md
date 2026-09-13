@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.21.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.22.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
@@ -28,6 +28,8 @@ Current as of **v1.21.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Resume playback & Continue-watching** — videos remember where each viewer left off (via player.js); the homepage shows a Continue-watching strip with progress bars. Degrades gracefully if the player protocol is unavailable.
 - **Watch history ("Activity" page)** — a viewer can see their own full watch history (title, furthest position, last-watched time), reusing the same progress data behind Continue-watching — no new tracking added. Admins get an extra lookup dropdown to view any approved viewer's history by email.
 - **Admin-adjustable video count** _(admin)_ — hard cap enforced in code (bunny.net's API doesn't honor it as a strict limit).
+- **Chapters** _(admin)_ — a timestamped chapter list per video (`24:15 Sermon`), shown under the player as clickable jump links. Accepts `M:SS`/`MM:SS`/`H:MM:SS`, sorts on save so they needn't be typed in order, and reports any line it couldn't read instead of dropping it. Degrades to plain text if the player library doesn't load.
+- **Sermon notes** _(admin)_ — free text per video (passage, series, speaker), shown on the watch page and **matched by search**, so a talk is findable by its content and not just its title. Searching notes never surfaces a video the viewer's groups or its publish window would hide.
 - **Scheduled publish/expiry** _(admin)_ — an optional publish time and/or expiry time per video. Outside the window a viewer can't see it in the library, in search, in a collection, or by opening its direct link; admins and managers always can, with a badge on the row so "scheduled" never reads as "broken". Additive: a video with no schedule is unaffected.
 - **Custom ordering** _(admin)_ — drag-to-reorder; newly uploaded videos float to the top (newest first) until placed.
 - **Pagination** — 10 per page with Previous/Next.
@@ -77,6 +79,7 @@ Current as of **v1.21.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Viewer tags** — label approved viewers (e.g. "Team A") from the Viewers tab; Bulk Share can add everyone carrying a given tag to the recipient list in one click instead of pasting emails. Tags are capped at 20 per viewer / 40 characters each and are cleaned up when a viewer is removed.
 - **Viewer last-seen** — each viewer's most recent activity time.
 - **Role management** _(admin only)_ — promote an email to Manager or Admin, or revoke back to viewer, from the Access tab. `ADMIN_EMAILS` entries show as locked. Granting a role also approves that viewer, so a new manager can see the library they're curating.
+- **Access-request notifications** — when someone asks for access, everyone who can approve it (admins and managers) gets an email and a push notification naming the requester and their note. Only a genuinely new request notifies, so a refresh loop can't flood anyone; best-effort throughout, and inert unless email or push is configured.
 - **Group management** — create a group, add or remove members, and tick the collections and individual videos it grants. A group with members but no grants would show them nothing, so the group card warns about it instead of failing silently. Removing a viewer also drops their group memberships.
 - **Activity / audit log** — the most recent admin actions (viewer add/remove, share create/revoke, video rename/delete, collection create/delete, settings, palette), each with actor and time. Logging is best-effort so it never breaks the underlying action.
 - **Analytics dashboard** — total views, 30-day views, watch time, video count, a 30-day views bar chart, and a most-watched list (from bunny.net video stats + the statistics API).
@@ -126,6 +129,7 @@ Current as of **v1.21.0**. Grouped by area; items marked _(admin)_ live in the `
 
 ## Known gaps / not yet implemented
 - **Verified email addresses in practice** — the enforcement toggle exists, but the Auth0 tenant still has no mail server, so no account can actually verify. Adding a mail provider is the prerequisite for the toggle to be usable rather than just available.
-- **Notification on access request** — a pending request is visible on the Access tab, but nothing emails or pushes to tell an admin one has arrived.
 - **Per-video group grants at upload time** — a new video is only visible to a group once it's ticked into that group (or into a collection the group already has); there's no "default group" for new uploads.
 - **Captions/transcripts, comments/ratings** — not implemented.
+- **Audio-only / podcast feed** — not implemented. Podcast apps can't sign in, so this needs a deliberate decision about tokenised feed URLs or public audio before it can be built.
+- **Public or unlisted videos** — not implemented. Everything still requires a login; the only way to widen access is a per-recipient share link, which needs the recipient's email up front.

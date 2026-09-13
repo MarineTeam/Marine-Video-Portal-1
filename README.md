@@ -110,6 +110,9 @@ lib/
   order.js                Apply custom video order (new uploads float to top, newest first)
   theme.js                Palette presets, validation, CSS-variable mapping
   branding.js             Portal name default + validation (pure, client-safe)
+  videoMeta.js            Chapter parsing/formatting + note cleaning (pure, client-safe)
+  videoMetaStore.js       Chapters and notes Redis read/write (server only)
+  accessRequestNotify.js  Best-effort email/push when an access request arrives
   brandingStore.js        Portal name Redis read/write (server only)
   audit.js                Append-only admin action log (capped)
   push.js                 Web Push helpers (VAPID send, announce-once guard, self-pruning)
@@ -354,6 +357,18 @@ Admins and managers bypass groups entirely — they're curating the library, so 
 
 ---
 
+## Chapters and sermon notes
+
+Recordings of a service run long, so each video can carry a **chapter list** and a block of **notes**, both set from the Videos tab in the admin panel.
+
+**Chapters** are typed one per line — `24:15 Sermon` — accepting `M:SS`, `MM:SS` and `H:MM:SS`. They're sorted on save, so you don't have to type them in order, and **any line that can't be read is reported back** rather than silently dropped. Viewers get a clickable list under the player; clicking jumps straight there.
+
+**Notes** are free text (passage, series, speaker — whatever is worth finding later). They render on the watch page and are **matched by search**, so "Philippians" finds the talk even when the title doesn't mention it. Note-matching runs over the list a viewer is already allowed to see, so search can never surface a video their groups or its publish window would otherwise hide.
+
+Both are additive: a video with neither behaves exactly as it did before the feature existed, and clearing both removes the record entirely. If `player.js` fails to load, the chapter list degrades to plain text rather than offering buttons that do nothing.
+
+---
+
 ## Access requests
 
 A signed-in user who isn't an approved viewer now sees a **Request access** form rather than a dead end — an optional note ("Deck crew, joined in March") plus a button. The request is stored in Redis and appears on **Admin → Access → Access Requests**, where an admin or manager approves or denies it. The tab badge counts pending ones.
@@ -362,7 +377,7 @@ Approving does exactly what adding the email by hand on the Viewers tab does. De
 
 The request grants nothing by itself: `lib/accessRequests.js` never writes to the approved-viewer set — only the capability-gated admin route does, which keeps exactly one place in the codebase able to widen access.
 
-**Not included:** nothing notifies you that a request arrived. Check the Access tab, or wire the pending count into the existing push broadcast if you want a nudge.
+**You're told when one arrives.** Admins and managers — everyone who can actually approve it — get an email (when `RESEND_API_KEY` is set) and a Web Push notification (when the VAPID keys are set) naming the requester and their note. Only a *genuinely new* request notifies: re-asking while one is pending is a no-op, so a viewer refreshing the page can't flood your inbox. The whole thing is best-effort and inert without keys — a mail outage can never turn someone's "please let me in" into an error page.
 
 ---
 

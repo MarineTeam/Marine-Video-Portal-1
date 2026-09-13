@@ -1278,3 +1278,43 @@ details.group-section > summary { cursor: pointer; }
 /* Grouped setting inside a section card */
 .setting-block { margin-bottom: 22px; padding-bottom: 22px; border-bottom: 1px dashed var(--border); }
 .setting-block:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+
+/* Chapters and notes on the watch page */
+.chapters, .video-notes { margin-top: 22px; }
+.chapters-title { font-size: 15px; margin: 0 0 10px; }
+.chapter-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.chapter-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chapter-row:hover { background: var(--surface-2); }
+.chapter-row--static { cursor: default; }
+.chapter-row--static:hover { background: none; }
+.chapter-time {
+  flex: none;
+  min-width: 4.5rem;
+  color: var(--accent-1);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+.chapter-label { overflow-wrap: anywhere; }
+.video-notes-body {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}

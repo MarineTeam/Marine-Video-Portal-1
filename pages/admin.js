@@ -98,6 +98,9 @@ export default function Admin({ isAdminRole }) {
   const [tab, setTab] = useState('videos');
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const [themeSaved, setThemeSaved] = useState(false);
+  const [metaDrafts, setMetaDrafts] = useState({});
+  const [metaBusy, setMetaBusy] = useState({});
+  const [metaIgnored, setMetaIgnored] = useState({});
   const [siteNameDraft, setSiteNameDraft] = useState('');
   const [siteNameSaved, setSiteNameSaved] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -780,6 +783,49 @@ export default function Admin({ isAdminRole }) {
     });
     if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Failed to update'); return; }
     setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, collectionId } : x)));
+  }
+
+  function metaDraft(v, field) {
+    const draft = metaDrafts[v.id];
+    if (draft && draft[field] !== undefined) return draft[field];
+    return field === 'chaptersText' ? v.chaptersText || '' : v.notes || '';
+  }
+
+  function setMetaDraft(videoId, field, value) {
+    setMetaDrafts((prev) => ({ ...prev, [videoId]: { ...prev[videoId], [field]: value } }));
+  }
+
+  async function saveVideoMeta(v) {
+    setMetaBusy((prev) => ({ ...prev, [v.id]: true }));
+    try {
+      const res = await fetch('/api/admin/videos', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: v.id,
+          notes: metaDraft(v, 'notes'),
+          chaptersText: metaDraft(v, 'chaptersText'),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Failed to save chapters and notes'); return; }
+      setVideos((prev) =>
+        prev.map((x) =>
+          x.id === v.id
+            ? { ...x, notes: data.notes, chapters: data.chapters, chaptersText: data.chaptersText }
+            : x
+        )
+      );
+      // Echo back what the server actually stored, so a reformatted timestamp
+      // or a dropped line is visible in the box rather than only on reload.
+      setMetaDrafts((prev) => ({
+        ...prev,
+        [v.id]: { notes: data.notes, chaptersText: data.chaptersText },
+      }));
+      setMetaIgnored((prev) => ({ ...prev, [v.id]: data.ignored || [] }));
+    } finally {
+      setMetaBusy((prev) => ({ ...prev, [v.id]: false }));
+    }
   }
 
   // Both bounds go up together, so clearing one and saving doesn't look like
@@ -2491,6 +2537,65 @@ export default function Admin({ isAdminRole }) {
                       />
                     </label>
                   </div>
+                </details>
+
+                <details className="video-schedule">
+                  <summary>
+                    Chapters &amp; notes
+                    {v.chapters?.length > 0 && (
+                      <span className="schedule-chip">{v.chapters.length} chapter{v.chapters.length === 1 ? '' : 's'}</span>
+                    )}
+                    {v.notes ? <span className="schedule-chip">notes</span> : null}
+                  </summary>
+
+                  <p className="text-muted" style={{ margin: '8px 0' }}>
+                    One chapter per line, e.g. <code>24:15 Sermon</code>. Viewers get a clickable
+                    list under the player. Notes are shown on the watch page and are searchable.
+                  </p>
+
+                  <label className="collection-label" htmlFor={`chapters-${v.id}`}>Chapters</label>
+                  <textarea
+                    id={`chapters-${v.id}`}
+                    className="input input-sm"
+                    rows={4}
+                    placeholder={'0:00 Worship\n18:30 Announcements\n24:15 Sermon'}
+                    value={metaDraft(v, 'chaptersText')}
+                    onChange={(e) => setMetaDraft(v.id, 'chaptersText', e.target.value)}
+                    style={{ width: '100%', resize: 'vertical' }}
+                  />
+
+                  <label className="collection-label" htmlFor={`notes-${v.id}`} style={{ marginTop: 8 }}>
+                    Notes
+                  </label>
+                  <textarea
+                    id={`notes-${v.id}`}
+                    className="input input-sm"
+                    rows={3}
+                    placeholder="Passage, series, speaker — anything worth searching for later"
+                    value={metaDraft(v, 'notes')}
+                    onChange={(e) => setMetaDraft(v.id, 'notes', e.target.value)}
+                    style={{ width: '100%', resize: 'vertical' }}
+                  />
+
+                  <div className="admin-row" style={{ marginTop: 8 }}>
+                    <button
+                      onClick={() => saveVideoMeta(v)}
+                      className="btn btn-primary btn-sm"
+                      disabled={Boolean(metaBusy[v.id])}
+                    >
+                      {metaBusy[v.id] ? 'Saving…' : 'Save chapters & notes'}
+                    </button>
+                  </div>
+
+                  {metaIgnored[v.id]?.length > 0 && (
+                    <p className="form-error" style={{ marginTop: 8 }}>
+                      Couldn&rsquo;t read {metaIgnored[v.id].length} line
+                      {metaIgnored[v.id].length === 1 ? '' : 's'} — each needs a timestamp and a
+                      label, like <code>24:15 Sermon</code>:
+                      <br />
+                      {metaIgnored[v.id].join(' · ')}
+                    </p>
+                  )}
                 </details>
 
                 <textarea

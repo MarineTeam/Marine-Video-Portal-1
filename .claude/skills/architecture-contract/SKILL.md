@@ -203,6 +203,28 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 
 **What breaks if violated.** Make an absent schedule mean "not published" → the entire library disappears on deploy. Let `lib/accessRequests.js` add the viewer directly → a self-serve endpoint reachable by anyone who can sign in becomes a self-approval endpoint.
 
+### 16. Chapters and notes are additive metadata; access-request notices are best-effort
+
+**Decision (2026-09-13).**
+
+- **Per-video chapters and notes** live in `pvp:video_meta`, split across `lib/videoMeta.js` (pure — parsing, validation, formatting) and `lib/videoMetaStore.js` (Redis). A video with neither stores **no entry at all**; an entry that would be empty is deleted rather than written. Chapters render as clickable seek targets on the watch page, and notes are matched by the existing search **after** the group and schedule filters have already narrowed the list.
+- **Access-request notifications** (`lib/accessRequestNotify.js`) tell holders of `viewers:manage` — admins and managers both, since both can approve — when a request arrives. They fire **only when `submitRequest` reports the request is new**, never on a re-ask.
+
+**Why.**
+
+- The pure/store split is the same one Decision 14's `lib/branding.js` uses, for the same reason: `pages/admin.js` parses chapter text in the browser to show the admin what was understood, and importing `lib/redis.js` into a component pulls Node's `async_hooks` into the client bundle and fails the build.
+- Additive-by-default follows Decisions 13 and 15. Chapters and notes are decoration on top of playback, so both stores **fail soft** (`listVideoMeta` returns `{}`, `getVideoMeta` returns `null`) — an Upstash blip must not fail a watch page.
+- The parser **reports the lines it could not read** rather than dropping them silently. A chapter list that is quietly short is a support call.
+- `ResumablePlayer` exposes its seek function through an `onSeekAvailable` callback rather than the watch page reaching into the player. When player.js fails to load the callback never fires, and chapters render as plain text instead of dead buttons — the resilience rule in Decision 10 applied to a new surface.
+- Notifications are swallowed end-to-end and inert without `RESEND_API_KEY` / VAPID keys. A viewer's "please let me in" must never fail because a notification did.
+
+**What breaks if violated.**
+
+- Make an absent `pvp:video_meta` entry mean anything other than "no chapters, no notes" → every video grows phantom metadata.
+- Let the notification throw out of `pages/api/access-request.js` → a mail outage turns the access-request form into an error page for the exact people who cannot get in any other way.
+- Notify on every submission instead of only new ones → a viewer refreshing the not-approved page floods every admin's inbox.
+- Search notes **before** applying the group/schedule filters → search becomes a way to discover videos a viewer is not allowed to see.
+
 ---
 
 ## B. Invariants checklist
@@ -223,6 +245,8 @@ Walk this list on every review that touches auth, API routes, Redis, or `lib/bun
 - [ ] The share-mismatch error in `pages/watch/[shareId].js` never reveals the intended recipient's email — it says the link "isn't valid for your account," nothing more.
 - [ ] `email_verified` is enforced ONLY via `lib/verification.js` (Decision 14): off by default, staff unconditionally exempt, env bypass honoured, fails open, and an absent claim admits. Never gate `/watch/[shareId]` on it.
 - [ ] An unscheduled video and an ungrouped viewer both behave exactly as they did before those features existed (Decisions 13 and 15).
+- [ ] A video with no `pvp:video_meta` entry behaves exactly as before chapters/notes existed, and note-matching in search runs only over the already-filtered list (Decision 16).
+- [ ] `notifyNewAccessRequest` still cannot throw into the request path, and still fires only when the request is new.
 - [ ] `lib/accessRequests.js` never writes `pvp:approved_viewers`; only `pages/api/admin/access-requests.js` does, behind `viewers:manage`.
 - [ ] Every admin route authorizes BEFORE checking `req.method`, so an unauthorized caller gets 403 rather than 405 (`lib/__tests__/apiGates.test.js` pins this).
 - [ ] `allow()` in `lib/ratelimit.js` fails open; `logAudit()` in `lib/audit.js` never throws; `ResumablePlayer` failures never block playback.
@@ -256,6 +280,7 @@ Stated plainly. These are accepted risks with named mitigations, not secrets. Do
 - **Ground truth**: every code claim above was verified against the working tree at commit `739c54f` on 2026-07-10 by reading the cited files: `lib/auth.js`, `lib/bunny.js`, `lib/redis.js`, `lib/order.js`, `lib/ratelimit.js`, `lib/audit.js`, `lib/theme.js`, `pages/admin.js`, `pages/index.js`, `pages/_document.js`, `pages/api/theme.js`, `pages/api/progress.js`, `pages/api/videos.js`, `pages/api/admin/*.js` (all 10), `pages/watch/[shareId].js`, `pages/watch/video/[id].js`, `components/ResumablePlayer.js`, `next.config.js`, `vercel.json`, `.github/workflows/ci.yml`, `styles/globals.css`, `package.json`, and the founding doc `bunny-vercel-auth0-guide.md`. Commits `8e81183` (TUS 401 fix) and `eb4bcdd` (inline GUID sanitizer) verified in git history.
 - **Session facts**: items marked "(session record, 2026-07-10, maintainer-confirmed)" — the email_verified lockout constraint and the 14-alert Dependabot deferral rationale — come from maintainer sessions, not from code, and cannot be re-derived by reading the repo.
 - **Volatile facts** are date-stamped "(as of 2026-07-10)": route counts, rate-limit parameters, default homepage count, audit cap, which routes are rate-limited, dependency versions, and the absence of `middleware.js`/`app/`. Re-verify each against the tree before relying on it after significant changes.
+- **2026-09-13 update (chapters, notes, access-request notices)**: Decision 16 added. Verified against `lib/videoMeta.js`, `lib/videoMetaStore.js`, `lib/accessRequestNotify.js`, `components/ResumablePlayer.js`, `pages/watch/video/[id].js`, `pages/api/videos.js`, `pages/api/admin/videos.js` and `pages/api/access-request.js`. 258 vitest cases passing, lint and build green.
 - **2026-08-31 update (roles/groups follow-on)**: Decisions 14 and 15 added (opt-in email_verified enforcement; scheduled publish/expiry and access requests). Decision 2's `email_verified` invariant superseded in place with its original rationale retained. Verified against `lib/verification.js`, `lib/schedule.js`, `lib/accessRequests.js`, `pages/api/admin/{verification,access-requests}.js`, `pages/api/access-request.js`, and the re-gated `pages/api/admin/broadcast.js`. 209 vitest cases passing (including a new route-handler gate suite), lint and build green.
 - **2026-08-30 update (v1.19.0, roles and groups)**: Decision 13 added; Decisions 2, 3 and 8 amended in place with their originals retained; invariants checklist extended; weak point #3 downgraded. Verified against `lib/roles.js`, `lib/groups.js`, `lib/auth.js`, `lib/maintenance.js`, all 18 files in `pages/api/admin/`, `pages/api/me.js`, `pages/api/videos.js`, `pages/api/collections.js`, `pages/api/progress.js`, `pages/api/theme.js`, `pages/admin.js`, `pages/index.js`, `pages/activity.js`, `pages/watch/video/[id].js`, and `pages/watch/[shareId].js`. `npm run lint`, `npm test` (62 passing) and `npm run build` all green at the time of writing.
 - **When to update this skill**: whenever a decision in section A is deliberately changed (record the new rationale, don't delete the old one), a weak point in section C is remediated (move it to a "retired risks" note with the fixing commit), or a new invariant is forged by an incident (add it to B and cross-link `failure-archaeology`).

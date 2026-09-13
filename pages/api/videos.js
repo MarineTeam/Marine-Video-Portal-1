@@ -5,6 +5,8 @@ import { getOrder, applyOrder } from '../../lib/order';
 import { isStaffUser } from '../../lib/roles';
 import { resolveAccess, filterVideos } from '../../lib/groups';
 import { listSchedules, filterScheduled } from '../../lib/schedule';
+import { listVideoMeta } from '../../lib/videoMetaStore';
+import { metaMatches } from '../../lib/videoMeta';
 import { isVerified, recordObservation } from '../../lib/verification';
 import { allow, callerId } from '../../lib/ratelimit';
 import { isGeoAllowed } from '../../lib/geo';
@@ -66,7 +68,14 @@ async function handler(req, res) {
   // (unfiltered) view respects the admin's homepage cap.
   let allVideos;
   if (q) {
-    allVideos = ordered.filter((v) => (v.title || '').toLowerCase().includes(q));
+    // Search matches sermon notes as well as titles, so "that talk on
+    // Philippians" is findable. Matching runs over `ordered`, which the group
+    // and schedule filters above have already narrowed — searching can never
+    // surface a video the viewer isn't allowed to see.
+    const meta = await listVideoMeta();
+    allVideos = ordered.filter(
+      (v) => (v.title || '').toLowerCase().includes(q) || metaMatches(meta[v.guid], q)
+    );
   } else if (collection) {
     allVideos = ordered.filter((v) => v.collectionId === collection);
   } else {

@@ -2,6 +2,7 @@ import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../lib/redis';
 import { isStaffUser } from '../../lib/roles';
 import { submitRequest, getRequest } from '../../lib/accessRequests';
+import { notifyNewAccessRequest } from '../../lib/accessRequestNotify';
 import { allow, callerId } from '../../lib/ratelimit';
 import { withMonitorApi } from '../../lib/monitor';
 
@@ -40,6 +41,16 @@ async function handler(req, res) {
   if (req.method === 'POST') {
     try {
       const { record, alreadyPending } = await submitRequest(email, (req.body || {}).note);
+
+      // Only a genuinely new request notifies. submitRequest treats a re-ask
+      // while pending as a no-op, and without this check a viewer refreshing
+      // the page would fire a notification every time.
+      //
+      // Awaited, but it cannot throw (notifyNewAccessRequest swallows
+      // everything) and it is a no-op unless mail or push is configured — so
+      // the request is never at risk of failing because a notification did.
+      if (!alreadyPending) await notifyNewAccessRequest(record);
+
       return res.json({ ok: true, request: record, alreadyPending });
     } catch (e) {
       return res.status(400).json({ error: e.message });

@@ -131,3 +131,8 @@ Adjustable portal name: set it in Settings and it follows through to the header,
 New app icon — the old one was an anchor, which read as nautical; it's now a neutral play mark that suits whatever the portal is named
 PWA manifest is generated instead of static, so an installed app picks up a rename
 Fix: the public palette endpoint returned a 500 when Redis was unreachable, taking the sign-in screen's styling down with it; it now falls back to the default palette and name
+v1.22.0
+Chapters: give a video a timestamped chapter list and viewers get clickable jump links under the player — handy on hour-long service recordings
+Chapter lines can be typed in any order and any unreadable line is reported back instead of silently dropped
+Sermon notes per video, shown on the watch page and searchable, so a talk is findable by its content rather than only its title
+Access requests now notify everyone who can approve them, by email and push, naming the requester and their note — only once per request, never on a re-ask

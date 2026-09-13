@@ -1,9 +1,12 @@
+import { useCallback, useState } from 'react';
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../../lib/redis';
 import { listVideos, getEmbedUrl } from '../../../lib/bunny';
 import { isStaffUser } from '../../../lib/roles';
 import { resolveAccess, canSeeVideo } from '../../../lib/groups';
 import { getSchedule, isVisibleNow } from '../../../lib/schedule';
+import { getVideoMeta } from '../../../lib/videoMetaStore';
+import { formatTimestamp } from '../../../lib/videoMeta';
 import { isVerified } from '../../../lib/verification';
 import { isGeoAllowed } from '../../../lib/geo';
 import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWatermark } from '../../../lib/watermark';
@@ -77,6 +80,8 @@ async function getServerSidePropsInner({ req, res, params }) {
     return { props: { error: 'This video is not currently available.', adminUser: staff } };
   }
 
+  const meta = await getVideoMeta(video.guid);
+
   const [globalDefault, videoMode, exempt] = await Promise.all([
     getGlobalWatermark(),
     getVideoWatermarkMode(video.guid),
@@ -91,13 +96,20 @@ async function getServerSidePropsInner({ req, res, params }) {
       videoId: video.guid,
       adminUser: staff,
       watermarkText: watermark ? email : null,
+      chapters: meta?.chapters || [],
+      notes: meta?.notes || '',
     },
   };
 }
 
 export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
 
-export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText }) {
+export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText, chapters = [], notes = '' }) {
+  // Set once player.js attaches. Until then (and forever, if it fails to load)
+  // chapters render as plain text rather than buttons that would do nothing.
+  const [seek, setSeek] = useState(null);
+  // Stable identity so ResumablePlayer's effect doesn't re-run each render.
+  const handleSeekAvailable = useCallback((fn) => setSeek(() => fn), []);
   return (
     <AppShell isAdmin={adminUser}>
       <div className="watch-back">
@@ -114,7 +126,43 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser,
       ) : (
         <>
           <h1 className="watch-title">{title}</h1>
-          <ResumablePlayer embedUrl={embedUrl} title={title} videoId={videoId} watermarkText={watermarkText} />
+          <ResumablePlayer
+            embedUrl={embedUrl}
+            title={title}
+            videoId={videoId}
+            watermarkText={watermarkText}
+            onSeekAvailable={handleSeekAvailable}
+          />
+
+          {chapters.length > 0 && (
+            <section className="chapters">
+              <h2 className="chapters-title">Chapters</h2>
+              <ul className="chapter-list">
+                {chapters.map((c) => (
+                  <li key={`${c.seconds}-${c.label}`}>
+                    {seek ? (
+                      <button type="button" className="chapter-row" onClick={() => seek(c.seconds)}>
+                        <span className="chapter-time">{formatTimestamp(c.seconds)}</span>
+                        <span className="chapter-label">{c.label}</span>
+                      </button>
+                    ) : (
+                      <span className="chapter-row chapter-row--static">
+                        <span className="chapter-time">{formatTimestamp(c.seconds)}</span>
+                        <span className="chapter-label">{c.label}</span>
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {notes && (
+            <section className="video-notes">
+              <h2 className="chapters-title">Notes</h2>
+              <p className="video-notes-body">{notes}</p>
+            </section>
+          )}
         </>
       )}
     </AppShell>

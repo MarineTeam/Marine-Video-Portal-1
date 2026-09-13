@@ -5,6 +5,8 @@ import { logAudit } from '../../../lib/audit';
 import { maybeAnnounceReady } from '../../../lib/push';
 import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/watermark';
 import { listSchedules, setSchedule, scheduleState } from '../../../lib/schedule';
+import { listVideoMeta, setVideoMeta, clearVideoMeta } from '../../../lib/videoMetaStore';
+import { formatChaptersText } from '../../../lib/videoMeta';
 import { withMonitorApi } from '../../../lib/monitor';
 
 // Bulk video ops (delete, collection assignment) accept either a single `id`
@@ -26,6 +28,7 @@ async function handler(req, res) {
     const ordered = applyOrder(videos, order);
     const watermarkModes = await listVideoWatermarkModes();
     const schedules = await listSchedules();
+    const meta = await listVideoMeta();
 
     // Best-effort: notify viewers about any newly-ready video. This admin poll is
     // the natural trigger (admins watch the library refresh while encoding). It
@@ -49,6 +52,9 @@ async function handler(req, res) {
         watermarkMode: watermarkModes[v.guid] || 'default',
         schedule: schedules[v.guid] || null,
         scheduleState: scheduleState(schedules[v.guid]),
+        notes: meta[v.guid]?.notes || '',
+        chapters: meta[v.guid]?.chapters || [],
+        chaptersText: formatChaptersText(meta[v.guid]?.chapters),
       }))
     );
   }
@@ -58,6 +64,33 @@ async function handler(req, res) {
     const { title, watermarkMode } = body;
     const ids = idsFrom(body);
     if (ids.length === 0) return res.status(400).json({ error: 'id(s) required' });
+
+    // Per-video chapters and notes. Always a single id. Sending both fields
+    // empty clears the entry entirely.
+    if (Object.prototype.hasOwnProperty.call(body, 'notes') ||
+        Object.prototype.hasOwnProperty.call(body, 'chaptersText')) {
+      try {
+        const { meta, ignored } = await setVideoMeta(ids[0], {
+          notes: body.notes,
+          chaptersText: body.chaptersText,
+        });
+        await logAudit(
+          actor,
+          'video.meta',
+          `${ids[0]} → ${meta ? `${meta.chapters.length} chapter(s), ${meta.notes.length} note chars` : 'cleared'}`
+        );
+        // `ignored` is how the admin finds out which chapter lines didn't parse.
+        return res.json({
+          ok: true,
+          notes: meta?.notes || '',
+          chapters: meta?.chapters || [],
+          chaptersText: formatChaptersText(meta?.chapters),
+          ignored,
+        });
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+    }
 
     // Per-video publish/expiry window. Always a single id; sending both
     // bounds empty clears the schedule entirely.
@@ -121,7 +154,7 @@ async function handler(req, res) {
       return res.json({ ok: true });
     }
 
-    return res.status(400).json({ error: 'title, collectionId, watermarkMode, or publishAt/expiresAt required' });
+    return res.status(400).json({ error: 'title, collectionId, watermarkMode, publishAt/expiresAt, notes, or chaptersText required' });
   }
 
   if (req.method === 'DELETE') {
@@ -141,6 +174,8 @@ async function handler(req, res) {
 
     // Drop every successfully-deleted id from the saved custom order so it doesn't linger.
     const okIds = new Set(results.filter((r) => r.ok).map((r) => r.id));
+    // Don't leave chapters/notes behind for a video that no longer exists.
+    for (const id of okIds) await clearVideoMeta(id);
     if (okIds.size > 0) {
       const order = await getOrder();
       const pruned = order.filter((x) => !okIds.has(x));

@@ -4,7 +4,12 @@ import Watermark from './Watermark';
 // Wraps the Bunny embed iframe and uses the player.js protocol to (a) resume
 // from the viewer's last position and (b) periodically save progress.
 // Degrades gracefully: if player.js can't attach, the video still plays.
-export default function ResumablePlayer({ embedUrl, title, videoId, watermarkText }) {
+// `onSeekAvailable` is called with a seek(seconds) function once player.js has
+// attached, and with null on teardown. The watch page uses it to decide whether
+// to render chapters as buttons or as plain text — if player.js never loads,
+// playback still works and the chapter list degrades instead of offering dead
+// controls.
+export default function ResumablePlayer({ embedUrl, title, videoId, watermarkText, onSeekAvailable }) {
   const iframeRef = useRef(null);
 
   useEffect(() => {
@@ -66,6 +71,16 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
         try { player.getDuration((d) => { if (d) duration = d; }); } catch (e) {}
         trySeek();
 
+        if (typeof onSeekAvailable === 'function') {
+          onSeekAvailable((seconds) => {
+            // A manual jump supersedes the pending resume-seek; without this the
+            // resume retry below would yank the viewer back out of the chapter
+            // they just picked.
+            didSeek = true;
+            try { player.setCurrentTime(Math.max(0, Math.floor(seconds))); } catch (e) {}
+          });
+        }
+
         player.on('timeupdate', (value) => {
           const seconds = value ? value.seconds : 0;
           if (value && value.duration) duration = value.duration;
@@ -87,8 +102,13 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
     setup();
     return () => {
       cancelled = true;
+      if (typeof onSeekAvailable === 'function') onSeekAvailable(null);
       try { if (player && player.off) player.off('timeupdate'); } catch (e) {}
     };
+    // onSeekAvailable is intentionally excluded: the watch page passes a stable
+    // useCallback, and including it would re-run setup (and re-create the
+    // player) on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId, title]);
 
   return (
