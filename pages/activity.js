@@ -23,6 +23,9 @@ export default function Activity() {
   const [lookupEmail, setLookupEmail] = useState('');
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [feedUrl, setFeedUrl] = useState(null);
+  const [feedBusy, setFeedBusy] = useState(false);
+  const [feedCopied, setFeedCopied] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -39,6 +42,39 @@ export default function Activity() {
       })
       .catch(() => {});
   }, [user]);
+
+  // Personal podcast feed. Returns { enabled: false } until the media host is
+  // configured, in which case the section stays hidden rather than offering a
+  // feed that would have no episodes.
+  useEffect(() => {
+    if (!user) return;
+    fetch('/api/feed-url')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setFeedUrl(d?.enabled ? d.feedUrl : null))
+      .catch(() => {});
+  }, [user]);
+
+  async function rotateFeedUrl() {
+    if (!confirm('Replace your podcast link?\n\nAny app already subscribed with the old link will stop receiving new recordings until you re-add the new one.')) return;
+    setFeedBusy(true);
+    try {
+      const res = await fetch('/api/feed-url', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.feedUrl) setFeedUrl(data.feedUrl);
+    } finally {
+      setFeedBusy(false);
+    }
+  }
+
+  function copyFeedUrl() {
+    navigator.clipboard.writeText(feedUrl).then(
+      () => {
+        setFeedCopied(true);
+        setTimeout(() => setFeedCopied(false), 1500);
+      },
+      () => {}
+    );
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -78,6 +114,27 @@ export default function Activity() {
         </a>
       </div>
       <h1 className="watch-title">{lookupEmail ? `${lookupEmail}'s activity` : 'Your activity'}</h1>
+
+      {feedUrl && !lookupEmail && (
+        <div className="card admin-section">
+          <h2 className="admin-section-title">Listen in a podcast app</h2>
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>
+            Add this link to Apple Podcasts, Spotify, Overcast or any podcast app to get new
+            recordings automatically. <strong>It&rsquo;s personal to you</strong> — anyone you send
+            it to could listen without signing in, so treat it like a password. If it gets out,
+            replace it below.
+          </p>
+          <div className="admin-row">
+            <input className="input input-sm" value={feedUrl} readOnly onFocus={(e) => e.target.select()} />
+            <button onClick={copyFeedUrl} className="btn btn-primary btn-sm">
+              {feedCopied ? 'Copied!' : 'Copy'}
+            </button>
+            <button onClick={rotateFeedUrl} className="btn btn-sm" disabled={feedBusy}>
+              {feedBusy ? 'Replacing…' : 'Replace link'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {isAdmin && viewers.length > 0 && (
         <div className="search-box" style={{ maxWidth: 360, marginBottom: 20 }}>

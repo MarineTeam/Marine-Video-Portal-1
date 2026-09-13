@@ -225,6 +225,33 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 - Notify on every submission instead of only new ones → a viewer refreshing the not-approved page floods every admin's inbox.
 - Search notes **before** applying the group/schedule filters → search becomes a way to discover videos a viewer is not allowed to see.
 
+### 17. Public videos are opt-in and fail CLOSED; the podcast feed is token-bound
+
+**Decision (2026-09-13).** Two features that, uniquely in this codebase, WIDEN access. Both are deliberately narrow.
+
+**Public videos.** An admin can mark one video viewable without a login. `pvp:public_videos` holds the guids; `lib/publicWatch.js` holds the whole access decision; `pages/watch/public/[id].js` is a thin renderer over it.
+
+- **A separate route, never a relaxed existing one.** The alternative — an "or public" branch in `pages/watch/video/[id].js` — would make every future edit to the invite-only gate re-reason about the anonymous case. There is now exactly one file to audit for "what can a stranger see?", and the answer is one video.
+- **`isPublicVideo` fails CLOSED** on a Redis error. This is the ONLY module here that does; the rate limiter, groups, schedules, chapters and verification all fail open because failing closed would lock out legitimate viewers. Here the asymmetry reverses: a briefly-unavailable public link is categorically better than publishing the library during an Upstash blip. Do not "make this consistent".
+- **Uniform refusal.** Private, missing, and out-of-window all return the same message, so probing cannot distinguish them.
+- It is gated on **`settings:manage` (admin-only)**, not `videos:manage`, and lives on its own route `pages/api/admin/public-videos.js`. Publishing to the open internet is a different kind of decision from curating the library.
+- It still honours the **publish/expiry window** and the viewer geo whitelist, and still uses a **signed, time-limited embed token**. Public means no login; it never means an unsigned or permanent URL. No watermark, no progress, no per-viewer keys — there is no email.
+
+**Podcast feed.** Podcast apps cannot sign in, so each viewer gets a private feed URL carrying a 256-bit token (`lib/feedTokens.js`).
+
+- The token is **only an identity claim**. `pages/api/feed/[token].js` re-applies the approved-viewer check, group narrowing and schedule filtering **on every fetch against live data**, so removing a viewer kills their feed on the next poll with no separate revocation.
+- Tokens are **rotatable** by the viewer and revoked when a viewer is removed. `resolveToken` fails closed.
+- `lib/bunny.js` gained `getVideoFileUrl` — a NEW consumer of the SAME CDN URL-token formula `getThumbnailUrl` uses. **The three signing formulas are untouched**; the change to that file is purely additive (zero lines removed).
+
+**What breaks if violated.**
+
+- Make `isPublicVideo` fail open → an Upstash blip publishes every video to anyone who guesses a guid.
+- Read a missing public flag as "public" → access widens by omission, which is how this kind of feature leaks.
+- Trust the feed token without re-checking the approved set → a removed viewer keeps a working feed forever.
+- Let the public route reuse the invite-only page → two access models in one file, and the next person to edit it has to hold both in their head.
+
+**Known unverified dependency.** Feed enclosures point at Bunny CDN media URLs, and **Bunny's hotlink protection is referrer-based** — a signed URL with no `Referer` 403s by design (`bunny-reference` §5), which is exactly what a podcast app sends. Two things must hold at the Bunny end and **neither could be checked from the codebase**: the rendition named by `PODCAST_MEDIA_FILE` must exist, and the pull zone must accept token-authenticated requests without a referrer. Until both are confirmed against the live library, treat feed playback as unproven.
+
 ---
 
 ## B. Invariants checklist
@@ -247,6 +274,9 @@ Walk this list on every review that touches auth, API routes, Redis, or `lib/bun
 - [ ] An unscheduled video and an ungrouped viewer both behave exactly as they did before those features existed (Decisions 13 and 15).
 - [ ] A video with no `pvp:video_meta` entry behaves exactly as before chapters/notes existed, and note-matching in search runs only over the already-filtered list (Decision 16).
 - [ ] `notifyNewAccessRequest` still cannot throw into the request path, and still fires only when the request is new.
+- [ ] `isPublicVideo` still fails CLOSED, the public route still refuses uniformly, and nothing outside `lib/publicWatch.js` decides anonymous access (Decision 17).
+- [ ] `pages/api/feed/[token].js` still re-checks the approved set, groups and schedules on every fetch — the token alone grants nothing.
+- [ ] `lib/bunny.js`'s three signing formulas remain byte-identical; `getVideoFileUrl` is additive and reuses the CDN-token formula unchanged.
 - [ ] `lib/accessRequests.js` never writes `pvp:approved_viewers`; only `pages/api/admin/access-requests.js` does, behind `viewers:manage`.
 - [ ] Every admin route authorizes BEFORE checking `req.method`, so an unauthorized caller gets 403 rather than 405 (`lib/__tests__/apiGates.test.js` pins this).
 - [ ] `allow()` in `lib/ratelimit.js` fails open; `logAudit()` in `lib/audit.js` never throws; `ResumablePlayer` failures never block playback.
@@ -280,6 +310,7 @@ Stated plainly. These are accepted risks with named mitigations, not secrets. Do
 - **Ground truth**: every code claim above was verified against the working tree at commit `739c54f` on 2026-07-10 by reading the cited files: `lib/auth.js`, `lib/bunny.js`, `lib/redis.js`, `lib/order.js`, `lib/ratelimit.js`, `lib/audit.js`, `lib/theme.js`, `pages/admin.js`, `pages/index.js`, `pages/_document.js`, `pages/api/theme.js`, `pages/api/progress.js`, `pages/api/videos.js`, `pages/api/admin/*.js` (all 10), `pages/watch/[shareId].js`, `pages/watch/video/[id].js`, `components/ResumablePlayer.js`, `next.config.js`, `vercel.json`, `.github/workflows/ci.yml`, `styles/globals.css`, `package.json`, and the founding doc `bunny-vercel-auth0-guide.md`. Commits `8e81183` (TUS 401 fix) and `eb4bcdd` (inline GUID sanitizer) verified in git history.
 - **Session facts**: items marked "(session record, 2026-07-10, maintainer-confirmed)" — the email_verified lockout constraint and the 14-alert Dependabot deferral rationale — come from maintainer sessions, not from code, and cannot be re-derived by reading the repo.
 - **Volatile facts** are date-stamped "(as of 2026-07-10)": route counts, rate-limit parameters, default homepage count, audit cap, which routes are rate-limited, dependency versions, and the absence of `middleware.js`/`app/`. Re-verify each against the tree before relying on it after significant changes.
+- **2026-09-13 update (public videos, podcast feed)**: Decision 17 added. Verified against `lib/publicVideos.js`, `lib/publicWatch.js`, `lib/feedTokens.js`, `lib/podcastFeed.js`, `lib/podcastConfig.js`, `pages/watch/public/[id].js`, `pages/api/feed/[token].js`, `pages/api/feed-url.js`, `pages/api/admin/public-videos.js`, and the additive-only diff to `lib/bunny.js`. 294 vitest cases passing, lint and build green; feed enclosure playback UNVERIFIED against the live Bunny library.
 - **2026-09-13 update (chapters, notes, access-request notices)**: Decision 16 added. Verified against `lib/videoMeta.js`, `lib/videoMetaStore.js`, `lib/accessRequestNotify.js`, `components/ResumablePlayer.js`, `pages/watch/video/[id].js`, `pages/api/videos.js`, `pages/api/admin/videos.js` and `pages/api/access-request.js`. 258 vitest cases passing, lint and build green.
 - **2026-08-31 update (roles/groups follow-on)**: Decisions 14 and 15 added (opt-in email_verified enforcement; scheduled publish/expiry and access requests). Decision 2's `email_verified` invariant superseded in place with its original rationale retained. Verified against `lib/verification.js`, `lib/schedule.js`, `lib/accessRequests.js`, `pages/api/admin/{verification,access-requests}.js`, `pages/api/access-request.js`, and the re-gated `pages/api/admin/broadcast.js`. 209 vitest cases passing (including a new route-handler gate suite), lint and build green.
 - **2026-08-30 update (v1.19.0, roles and groups)**: Decision 13 added; Decisions 2, 3 and 8 amended in place with their originals retained; invariants checklist extended; weak point #3 downgraded. Verified against `lib/roles.js`, `lib/groups.js`, `lib/auth.js`, `lib/maintenance.js`, all 18 files in `pages/api/admin/`, `pages/api/me.js`, `pages/api/videos.js`, `pages/api/collections.js`, `pages/api/progress.js`, `pages/api/theme.js`, `pages/admin.js`, `pages/index.js`, `pages/activity.js`, `pages/watch/video/[id].js`, and `pages/watch/[shareId].js`. `npm run lint`, `npm test` (62 passing) and `npm run build` all green at the time of writing.

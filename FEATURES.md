@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.22.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.23.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
@@ -30,6 +30,8 @@ Current as of **v1.22.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Admin-adjustable video count** _(admin)_ — hard cap enforced in code (bunny.net's API doesn't honor it as a strict limit).
 - **Chapters** _(admin)_ — a timestamped chapter list per video (`24:15 Sermon`), shown under the player as clickable jump links. Accepts `M:SS`/`MM:SS`/`H:MM:SS`, sorts on save so they needn't be typed in order, and reports any line it couldn't read instead of dropping it. Degrades to plain text if the player library doesn't load.
 - **Sermon notes** _(admin)_ — free text per video (passage, series, speaker), shown on the watch page and **matched by search**, so a talk is findable by its content and not just its title. Searching notes never surfaces a video the viewer's groups or its publish window would hide.
+- **Public links** _(admin only)_ — mark a single video viewable without a login and send the link to someone who has no account. Off unless explicitly ticked, served by its own route that exposes nothing but that one video, still bound by the publish/expiry window and a signed time-limited token, and it fails *closed* if Redis is unreachable rather than guessing.
+- **Personal podcast feed** — each approved viewer gets their own podcast link from the Activity page for Apple Podcasts, Spotify or any other app. The token identifies them; approval, groups and publish windows are all re-checked on every fetch, so removing a viewer ends their feed on the next poll. Viewers can rotate their own link, and it's marked so it never shows up in Apple's directory. Requires two bunny.net settings to be confirmed before playback works — see the README.
 - **Scheduled publish/expiry** _(admin)_ — an optional publish time and/or expiry time per video. Outside the window a viewer can't see it in the library, in search, in a collection, or by opening its direct link; admins and managers always can, with a badge on the row so "scheduled" never reads as "broken". Additive: a video with no schedule is unaffected.
 - **Custom ordering** _(admin)_ — drag-to-reorder; newly uploaded videos float to the top (newest first) until placed.
 - **Pagination** — 10 per page with Previous/Next.
@@ -131,5 +133,4 @@ Current as of **v1.22.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Verified email addresses in practice** — the enforcement toggle exists, but the Auth0 tenant still has no mail server, so no account can actually verify. Adding a mail provider is the prerequisite for the toggle to be usable rather than just available.
 - **Per-video group grants at upload time** — a new video is only visible to a group once it's ticked into that group (or into a collection the group already has); there's no "default group" for new uploads.
 - **Captions/transcripts, comments/ratings** — not implemented.
-- **Audio-only / podcast feed** — not implemented. Podcast apps can't sign in, so this needs a deliberate decision about tokenised feed URLs or public audio before it can be built.
-- **Public or unlisted videos** — not implemented. Everything still requires a login; the only way to widen access is a per-recipient share link, which needs the recipient's email up front.
+- **Audio-only podcast renditions** — the feed links whichever Bunny rendition `PODCAST_MEDIA_FILE` names, defaulting to a video file. Whether the library exposes an audio-only rendition, and whether the pull zone serves referrer-less token requests, are both unconfirmed — see the README's podcast section.

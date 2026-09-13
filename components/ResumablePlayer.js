@@ -9,7 +9,11 @@ import Watermark from './Watermark';
 // to render chapters as buttons or as plain text — if player.js never loads,
 // playback still works and the chapter list degrades instead of offering dead
 // controls.
-export default function ResumablePlayer({ embedUrl, title, videoId, watermarkText, onSeekAvailable }) {
+// `trackProgress` false attaches player.js for chapter seeking but skips both
+// the resume lookup and the progress saves. The public watch page uses it:
+// there is no signed-in viewer, so /api/progress would 401 on every tick and
+// there is no email to key a position against anyway.
+export default function ResumablePlayer({ embedUrl, title, videoId, watermarkText, onSeekAvailable, trackProgress = true }) {
   const iframeRef = useRef(null);
 
   useEffect(() => {
@@ -21,6 +25,7 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
     let lastSaved = 0;
 
     const save = (seconds) => {
+      if (!trackProgress) return;
       fetch('/api/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -53,12 +58,14 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
       if (cancelled || !iframeRef.current) return;
 
       // Load the saved position before the player is ready so we can seek immediately.
-      try {
-        const r = await fetch(`/api/progress?videoId=${encodeURIComponent(videoId)}`);
-        const p = r.ok ? await r.json() : null;
-        if (p && typeof p.seconds === 'number') savedSeconds = p.seconds;
-        if (p && p.duration) duration = p.duration;
-      } catch (e) {}
+      if (trackProgress) {
+        try {
+          const r = await fetch(`/api/progress?videoId=${encodeURIComponent(videoId)}`);
+          const p = r.ok ? await r.json() : null;
+          if (p && typeof p.seconds === 'number') savedSeconds = p.seconds;
+          if (p && p.duration) duration = p.duration;
+        } catch (e) {}
+      }
 
       try {
         player = new Player(iframeRef.current);
@@ -109,7 +116,7 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
     // useCallback, and including it would re-run setup (and re-create the
     // player) on every parent render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoId, title]);
+  }, [videoId, title, trackProgress]);
 
   return (
     <div className="watch-player">

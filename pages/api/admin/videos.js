@@ -6,6 +6,7 @@ import { maybeAnnounceReady } from '../../../lib/push';
 import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/watermark';
 import { listSchedules, setSchedule, scheduleState } from '../../../lib/schedule';
 import { listVideoMeta, setVideoMeta, clearVideoMeta } from '../../../lib/videoMetaStore';
+import { listPublicVideos, clearPublicVideo } from '../../../lib/publicVideos';
 import { formatChaptersText } from '../../../lib/videoMeta';
 import { withMonitorApi } from '../../../lib/monitor';
 
@@ -29,6 +30,7 @@ async function handler(req, res) {
     const watermarkModes = await listVideoWatermarkModes();
     const schedules = await listSchedules();
     const meta = await listVideoMeta();
+    const publicIds = new Set(await listPublicVideos());
 
     // Best-effort: notify viewers about any newly-ready video. This admin poll is
     // the natural trigger (admins watch the library refresh while encoding). It
@@ -55,6 +57,7 @@ async function handler(req, res) {
         notes: meta[v.guid]?.notes || '',
         chapters: meta[v.guid]?.chapters || [],
         chaptersText: formatChaptersText(meta[v.guid]?.chapters),
+        isPublic: publicIds.has(v.guid),
       }))
     );
   }
@@ -175,7 +178,11 @@ async function handler(req, res) {
     // Drop every successfully-deleted id from the saved custom order so it doesn't linger.
     const okIds = new Set(results.filter((r) => r.ok).map((r) => r.id));
     // Don't leave chapters/notes behind for a video that no longer exists.
-    for (const id of okIds) await clearVideoMeta(id);
+    for (const id of okIds) {
+      await clearVideoMeta(id);
+      // A deleted guid must not linger in the public set.
+      await clearPublicVideo(id);
+    }
     if (okIds.size > 0) {
       const order = await getOrder();
       const pruned = order.filter((x) => !okIds.has(x));

@@ -136,3 +136,9 @@ Chapters: give a video a timestamped chapter list and viewers get clickable jump
 Chapter lines can be typed in any order and any unreadable line is reported back instead of silently dropped
 Sermon notes per video, shown on the watch page and searchable, so a talk is findable by its content rather than only its title
 Access requests now notify everyone who can approve them, by email and push, naming the requester and their note — only once per request, never on a re-ask
+v1.23.0
+Public links: mark a single video viewable without a login and send it to someone who has no account — off unless you tick it, and it shows that one video and nothing else about the library
+Public videos still respect their publish/expiry window, and still play through a signed time-limited token
+Personal podcast feed: every approved viewer gets their own link for Apple Podcasts, Spotify or any podcast app, from the Activity page
+Feed access is re-checked on every fetch, so removing a viewer ends their feed; viewers can replace their own link if it leaks
+Note: podcast playback needs two bunny.net settings confirmed first — see the README

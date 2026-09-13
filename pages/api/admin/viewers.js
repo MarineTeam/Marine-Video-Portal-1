@@ -3,6 +3,7 @@ import { redis, k } from '../../../lib/redis';
 import { logAudit } from '../../../lib/audit';
 import { withMonitorApi } from '../../../lib/monitor';
 import { removeUserFromAllGroups } from '../../../lib/groups';
+import { clearTokenForEmail } from '../../../lib/feedTokens';
 
 const MAX_EMAIL_LENGTH = 254; // RFC 5321 practical limit
 const MAX_TAGS_PER_VIEWER = 20;
@@ -107,6 +108,10 @@ async function handler(req, res) {
     // Drop their group memberships too, so removal doesn't leave an orphan
     // entry that would silently re-restrict them if they're ever re-added.
     await removeUserFromAllGroups(e);
+    // Their podcast feed token dies with their access. The feed route also
+    // re-checks the approved set on every fetch, so this is belt-and-braces
+    // rather than the only thing stopping them.
+    await clearTokenForEmail(e);
     await logAudit(actor, 'viewer.remove', e);
     return res.json({ ok: true });
   }

@@ -56,6 +56,7 @@ pages/
     [shareId].js          Individual private-link watch page (view + playback tracking)
     bundle/[bundleId].js  Consolidated listing of everything currently shared with one recipient
     video/[id].js         Watch page for approved viewers (by video GUID)
+    public/[id].js        The one route that serves a video with no login at all
   api/
     auth/[auth0].js       Auth0 login/logout/callback
     videos.js             Page of videos for approved viewers (search + collection filter, rate-limited)
@@ -63,6 +64,8 @@ pages/
     progress.js           Per-viewer playback progress / watch history
     me.js                 Current user's role + capabilities (any logged-in user)
     manifest.js           PWA manifest, generated so it carries the admin-set portal name
+    feed-url.js           A viewer's own podcast feed URL (get / rotate)
+    feed/[token].js       Per-subscriber podcast RSS — no session, token-identified
     access-request.js     Submit/read your own access request (any logged-in user)
     theme.js              Public GET palette + portal name; admin POST to update either
     share/[shareId]/track.js  Records player.js playback events (play/progress/completed) for a share link
@@ -87,6 +90,7 @@ pages/
       roles.js            Grant/revoke the Admin and Manager roles (admin-only)
       groups.js           Viewer groups — CRUD, membership, collection/video grants
       access-requests.js  Review access requests — approve (adds the viewer) / deny / dismiss
+      public-videos.js    Mark a single video viewable without a login (admin-only)
       verification.js     Optional email_verified enforcement toggle + blast-radius report
 components/
   AppShell.js             Header/layout shell
@@ -113,6 +117,11 @@ lib/
   videoMeta.js            Chapter parsing/formatting + note cleaning (pure, client-safe)
   videoMetaStore.js       Chapters and notes Redis read/write (server only)
   accessRequestNotify.js  Best-effort email/push when an access request arrives
+  publicVideos.js         Which videos are viewable without a login (fails CLOSED)
+  publicWatch.js          The whole access decision behind the public watch route
+  feedTokens.js           Per-subscriber podcast feed tokens (mint/rotate/revoke)
+  podcastFeed.js          RSS 2.0 + iTunes feed generation (pure)
+  podcastConfig.js        Whether the podcast feed is configured at all (pure)
   brandingStore.js        Portal name Redis read/write (server only)
   audit.js                Append-only admin action log (capped)
   push.js                 Web Push helpers (VAPID send, announce-once guard, self-pruning)
@@ -412,6 +421,42 @@ Note the counts only cover accounts the portal has actually seen sign in since t
 
 ---
 
+## Public links
+
+An admin can mark a **single video** viewable without a login, from the Videos tab. It gets a link at `/watch/public/<id>` you can send to someone who has no account — "watch this, then come along on Sunday".
+
+The design is deliberately narrow:
+
+- **Off unless explicitly ticked.** A missing setting always means private; access never widens by omission.
+- **Its own route, not a relaxed existing one.** The invite-only watch page is untouched, so there is exactly one file to audit when asking what a stranger can see — and the answer is one video. No search, no collection list, no video count, nothing hinting another video exists.
+- **It fails closed.** If Redis is unreachable the page says "not available" rather than guessing. This is the opposite of everything else here (the rate limiter, groups, schedules all fail *open*) and it is deliberate: a public link being briefly down beats publishing the library during an outage.
+- **Still time-bounded.** A public video honours its publish/expiry window — something scheduled for next Sunday doesn't leak early just because it's also public — and playback still uses a signed, time-limited token. "Public" means no login, never an unsigned or permanent URL.
+- **No per-viewer anything.** No watermark, no resume position, no activity record — all of those are keyed by email, and there is no email.
+- Marking a video public needs **admin** rights, not just video-management rights. Publishing to the open internet is a different decision from curating the library.
+
+Refusals are deliberately identical whether the video is private, missing, or out of its window, so probing the route tells you nothing.
+
+---
+
+## Podcast feed
+
+Each approved viewer gets a **personal podcast link** from the Activity page, which they can add to Apple Podcasts, Spotify, Overcast or anything else. New recordings then arrive automatically.
+
+Podcast apps can't sign in — they fetch an RSS URL with no session — so the link carries a 256-bit random token that identifies the viewer. Importantly, **the token is only an identity claim**: every fetch re-applies the approved-viewer check, their group narrowing and the publish/expiry windows against live data. Removing someone from the approved list kills their feed on the next poll, with no separate revocation step. Viewers can rotate their own link if it leaks, and the link is revoked outright when they're removed.
+
+The feed is marked `itunes:block`, so it never appears in Apple's public directory.
+
+### Before this will actually play — two things to check at bunny.net
+
+This is the part that could not be verified from the code, so check it before telling anyone the feed works:
+
+1. **Which rendition exists.** Enclosures point at a direct CDN media file named by `PODCAST_MEDIA_FILE` (default `play_480p.mp4`). This app had never referenced direct media files before, so which renditions your library generates is unknown here. If your library exposes an audio-only rendition, set `PODCAST_MEDIA_FILE` to it — a podcast of 90-minute *video* files is a punishing download.
+2. **Referrer-less requests must be allowed.** Bunny's hotlink protection is **referrer-based** — it's why a signed thumbnail URL 403s when pasted into an address bar while working fine in the app. A podcast app sends no `Referer`, so it lands on exactly that path. URL Token Authentication and referrer hotlink protection are independent toggles in Bunny; the feed needs the pull zone to accept a **valid-token request with no referrer**.
+
+Until both are confirmed against the live library, treat feed playback as unproven. The feed itself is inert unless `BUNNY_CDN_HOSTNAME` is set — without it there would be no enclosures, and a podcast that never has episodes is worse than no podcast.
+
+---
+
 ## Security notes
 
 - **Access is by email identity.** Role, approved-viewer, group, and share-recipient checks all compare `session.user.email`. Because of this, keep Auth0 **sign-ups disabled** so nobody can self-register as an approved/admin address. Role resolution lives in `lib/roles.js` — the single place that decides what a caller may do — and `lib/auth.js`'s `isAdmin()` is the `ADMIN_EMAILS` floor it builds on.
@@ -422,6 +467,8 @@ Note the counts only cover accounts the portal has actually seen sign in since t
 - **No middleware, by design.** The bundle page and the share-tracking API each carry their own `getSession` + email-match check via `getServerSideProps` / handler code, the same pattern every other page/route in this app uses. There is deliberately no `middleware.js` gating routes centrally; adding one would expand the app's Next.js attack surface (Pages Router only, no App Router/middleware — see "Architecture at a glance" above).
 - **Thumbnails** are served from the CDN and, when a token key is present, are **signed** so they keep working with "Block Direct URL File Access" enabled. Requests from the app carry the site's `Referer`, so hotlink protection still blocks direct/off-site access.
 - **Optional email verification is opt-in and cannot self-lock.** Off by default, staff unconditionally exempt, env bypass list, fails open, and an absent claim admits — see "Optional email verification" above. Never write a bare `email_verified` check anywhere; go through `lib/verification.js`.
+- **Public videos are opt-in, admin-only, and fail closed.** A missing flag means private; a Redis error means private. Only `lib/publicWatch.js` decides anonymous access — see "Public links" above.
+- **A podcast feed token grants nothing on its own.** It identifies a viewer; the approved-viewer, group and schedule checks all re-run on every fetch against live data.
 - **Access requests can't self-approve.** The viewer-facing endpoint only records a request; the approved-viewer set is written in exactly one capability-gated place.
 - **Groups narrow, they never widen.** Group gating runs *after* the approved-viewer check, so it can only reduce what an already-approved viewer sees. A viewer in no group is unrestricted, and if Redis is unavailable group resolution degrades to unrestricted rather than blanking the library — the same fail-open posture as the rate limiter, and for the same availability reason.
 - **Rate limiting** guards the video list, upload, and share-creation endpoints (fails open if the limiter backend is unavailable).

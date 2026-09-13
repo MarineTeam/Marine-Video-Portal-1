@@ -101,6 +101,7 @@ export default function Admin({ isAdminRole }) {
   const [metaDrafts, setMetaDrafts] = useState({});
   const [metaBusy, setMetaBusy] = useState({});
   const [metaIgnored, setMetaIgnored] = useState({});
+  const [publicBusy, setPublicBusy] = useState({});
   const [siteNameDraft, setSiteNameDraft] = useState('');
   const [siteNameSaved, setSiteNameSaved] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -783,6 +784,26 @@ export default function Admin({ isAdminRole }) {
     });
     if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Failed to update'); return; }
     setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, collectionId } : x)));
+  }
+
+  async function toggleVideoPublic(v, isPublic) {
+    if (isPublic && !confirm(
+      `Make "${v.title || 'this video'}" viewable by anyone with the link, without signing in?\n\n` +
+      'It stays out of the library and out of search — only people you send the link to will find it.'
+    )) return;
+    setPublicBusy((prev) => ({ ...prev, [v.id]: true }));
+    try {
+      const res = await fetch('/api/admin/public-videos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: v.id, isPublic }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Failed to update'); return; }
+      setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, isPublic: data.isPublic } : x)));
+    } finally {
+      setPublicBusy((prev) => ({ ...prev, [v.id]: false }));
+    }
   }
 
   function metaDraft(v, field) {
@@ -2538,6 +2559,33 @@ export default function Admin({ isAdminRole }) {
                     </label>
                   </div>
                 </details>
+
+                {isAdminRole && (
+                  <div className="admin-video-collection">
+                    <label className="collection-label">Public link</label>
+                    <label className="admin-row" style={{ gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(v.isPublic)}
+                        disabled={Boolean(publicBusy[v.id])}
+                        onChange={(e) => toggleVideoPublic(v, e.target.checked)}
+                      />
+                      <span className="text-muted">
+                        {v.isPublic ? 'Anyone with the link can watch — no sign-in' : 'Sign-in required'}
+                      </span>
+                    </label>
+                    {v.isPublic && (
+                      <button
+                        onClick={() => copyLink(`${window.location.origin}/watch/public/${v.id}`)}
+                        className="btn btn-sm"
+                        style={{ marginTop: 6 }}
+                      >
+                        <IconCopy />
+                        Copy public link
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 <details className="video-schedule">
                   <summary>
