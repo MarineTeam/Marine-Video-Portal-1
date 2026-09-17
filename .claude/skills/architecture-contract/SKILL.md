@@ -7,7 +7,7 @@ description: The load-bearing design decisions, invariants, and known-weak point
 
 This skill is the contract between you and the people who built this system. Every decision below is load-bearing: it was made for a reason, it has already survived at least one incident or security review, and violating it breaks something specific. Read the decision, the rationale, and the failure mode before touching related code.
 
-The app: a private, invite-only video portal. Next.js 14 **Pages Router** + React 18, deployed on Vercel from GitHub `main` (MarineTeam/Marine-Video-Portal-1), bunny.net Stream for video, Auth0 for login (`@auth0/nextjs-auth0` v3), Upstash Redis as the only mutable store. Repo root: `C:\Users\fs_of\OneDrive\Documents\GitHub\Marine-Video-Portal-1`.
+The app: a private, invite-only video portal. Next.js 15 **Pages Router** + React 18, deployed on Vercel from GitHub `main` (MarineTeam/Marine-Video-Portal-1), bunny.net Stream for video, Auth0 for login (`@auth0/nextjs-auth0` v3), Upstash Redis as the only mutable store. Repo root: `C:\Users\fs_of\OneDrive\Documents\GitHub\Marine-Video-Portal-1`.
 
 ## When NOT to use this skill
 
@@ -147,7 +147,7 @@ The app: a private, invite-only video portal. Next.js 14 **Pages Router** + Reac
 
 ### 12. Sentry is opt-in/inert; CI builds on dummy env vars
 
-**Decision.** `withSentryConfig` wraps the build in `next.config.js`, but runtime reporting is inert until `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN` are set (`sentry.client.config.js`, `sentry.server.config.js`, `sentry.edge.config.js`), and source-map upload only happens when `SENTRY_AUTH_TOKEN`/org/project exist. CI (`.github/workflows/ci.yml`) builds with a block of **dummy** env values (`AUTH0_*`, `BUNNY_*`, `ADMIN_EMAILS`, `KV_REST_API_*`).
+**Decision.** `withSentryConfig` wraps the build in `next.config.js`, but runtime reporting is inert until `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN` are set (`instrumentation-client.js` for the browser; `sentry.server.config.js` / `sentry.edge.config.js`, loaded per runtime by `instrumentation.js`), and source-map upload only happens when `SENTRY_AUTH_TOKEN`/org/project exist. CI (`.github/workflows/ci.yml`) builds with a block of **dummy** env values (`AUTH0_*`, `BUNNY_*`, `ADMIN_EMAILS`, `KV_REST_API_*`).
 
 **Why.** The Redis client (`lib/redis.js`) and Auth0 SDK construct at module load — a Next.js build imports API routes, so a build with missing env vars throws before it compiles anything. CI only needs values that are *present and well-formed*, not valid; real values live in Vercel. Sentry stays wired but silent so enabling it later is one env var, not a code change.
 

@@ -5,7 +5,7 @@ description: Operations runbook for Marine Video Portal — load when deploying 
 
 # Run & Operate: Marine Video Portal
 
-Deploy, release, observe, and recover this system. Everything here is verified against the repo at `C:\Users\fs_of\OneDrive\Documents\GitHub\Marine-Video-Portal-1` (as of 2026-07-10). The stack: Next.js 14 Pages Router on Vercel, GitHub `MarineTeam/Marine-Video-Portal-1`, GitHub Actions CI, bunny.net Stream, Auth0, Upstash Redis.
+Deploy, release, observe, and recover this system. Everything here is verified against the repo at `C:\Users\fs_of\OneDrive\Documents\GitHub\Marine-Video-Portal-1` (as of 2026-07-10). The stack: Next.js 15 Pages Router on Vercel, GitHub `MarineTeam/Marine-Video-Portal-1`, GitHub Actions CI, bunny.net Stream, Auth0, Upstash Redis.
 
 The `gh` CLI on the maintainer machine is off-PATH. Always invoke it as:
 
@@ -60,7 +60,7 @@ Never push-and-walk-away. A red CI run means production is probably already serv
 | Lint, test, or build failure after a push | GitHub Actions logs (`run view <id> --log-failed`) | CI runs the same `npm run build` Vercel does, but with dummy env vars |
 | Vercel build failed / which deploy is live | Vercel dashboard → project → **Deployments** (build logs per deploy) | The Vercel build can fail even when CI passes (real env vars differ from CI dummies) |
 | Runtime API errors in production (5xx from `/api/*`) | Vercel dashboard → **Functions** / **Logs** | This is the only place server-side runtime errors land today |
-| Application error monitoring | **Sentry — currently INERT** (as of 2026-07-10) | Code is wired (`sentry.client.config.js`, `sentry.server.config.js`, `sentry.edge.config.js`) but no DSN is set. Activation = set `SENTRY_DSN` (server/edge) + `NEXT_PUBLIC_SENTRY_DSN` (client) in Vercel + redeploy (Section 4) |
+| Application error monitoring | **Sentry — currently INERT** (as of 2026-07-10) | Code is wired (`instrumentation-client.js` for the browser; `sentry.server.config.js` / `sentry.edge.config.js` loaded per runtime by `instrumentation.js`) but no DSN is set. Activation = set `SENTRY_DSN` (server/edge) + `NEXT_PUBLIC_SENTRY_DSN` (client) in Vercel + redeploy (Section 4) |
 | Client-side issues: upload progress, `/api/progress` beacons, ResumablePlayer warnings | Browser DevTools console + Network tab | Nothing client-side is reported server-side while Sentry is inert |
 | CodeQL / Dependabot findings | GitHub repo → **Security** tab | Owned by `security-currency-campaign` — do not freelance fixes from here |
 

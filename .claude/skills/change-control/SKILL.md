@@ -7,7 +7,7 @@ description: Load before committing, pushing, reverting, releasing, tagging, or 
 
 How changes are classified, gated, reviewed, released, and rolled back in this repo. Written for someone with zero context on this project. Follow it as a runbook.
 
-**One-paragraph orientation.** This is a private, invite-only video portal: Next.js 14 (Pages Router) + React 18, deployed on Vercel straight from GitHub `main` (`MarineTeam/Marine-Video-Portal-1`). Videos live on **bunny.net Stream** ("Bunny") — a video CDN the browser talks to directly via **TUS** (a resumable-upload protocol) and tokenized iframe embeds. Sign-in is **Auth0**; data is Upstash Redis. Node is NOT installed on the maintainer's Windows machine — all verification happens through GitHub Actions CI. The GitHub CLI is installed but off PATH; always call it as `& "C:\Program Files\GitHub CLI\gh.exe"` (as of 2026-07-10).
+**One-paragraph orientation.** This is a private, invite-only video portal: Next.js 15 (Pages Router) + React 18, deployed on Vercel straight from GitHub `main` (`MarineTeam/Marine-Video-Portal-1`). Videos live on **bunny.net Stream** ("Bunny") — a video CDN the browser talks to directly via **TUS** (a resumable-upload protocol) and tokenized iframe embeds. Sign-in is **Auth0**; data is Upstash Redis. Node is NOT installed on the maintainer's Windows machine — all verification happens through GitHub Actions CI. The GitHub CLI is installed but off PATH; always call it as `& "C:\Program Files\GitHub CLI\gh.exe"` (as of 2026-07-10).
 
 ## When NOT to use this skill
 

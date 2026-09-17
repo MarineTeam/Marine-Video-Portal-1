@@ -145,3 +145,7 @@ Note: podcast playback needs two bunny.net settings confirmed first — see the 
 v1.23.1
 Security: the portal now tells browsers it may never be shown inside a frame on another site, closing a click-jacking route to the one-click destructive actions on the admin page
 Security: added the standard companion headers (no MIME sniffing, a referrer policy that still lets bunny.net thumbnails load, and camera/microphone/location switched off)
+v1.24.0
+Upgraded the site to Next.js 15 (from 14), closing the 14 security alerts that had been waiting on that major version
+Error reporting moved to the current Sentry release, which Next 15 requires; browser setup now lives in instrumentation-client.js
+No change to how anyone signs in: the Auth0 library and React were both already new enough, so neither was touched
