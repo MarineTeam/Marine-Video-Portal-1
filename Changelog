@@ -142,3 +142,6 @@ Public videos still respect their publish/expiry window, and still play through 
 Personal podcast feed: every approved viewer gets their own link for Apple Podcasts, Spotify or any podcast app, from the Activity page
 Feed access is re-checked on every fetch, so removing a viewer ends their feed; viewers can replace their own link if it leaks
 Note: podcast playback needs two bunny.net settings confirmed first — see the README
+v1.23.1
+Security: the portal now tells browsers it may never be shown inside a frame on another site, closing a click-jacking route to the one-click destructive actions on the admin page
+Security: added the standard companion headers (no MIME sniffing, a referrer policy that still lets bunny.net thumbnails load, and camera/microphone/location switched off)
