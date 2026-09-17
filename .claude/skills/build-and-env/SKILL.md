@@ -76,6 +76,8 @@ npm run build      # next build
 
 Package scripts (verified in `package.json`): `dev` = `next dev`, `build` = `next build`, `start` = `next start`, `lint` = `next lint`, `test` = `vitest run`.
 
+**npm 11+ is required to install this repo.** npm 10.9.x's arborist crashes with `Cannot read properties of null (reading 'edgesOut')` while resolving this project's peer graph from scratch — and since no lockfile is committed, every install *is* from scratch, so it fails every time rather than intermittently. Node 22 bundles npm 10.9.x and is therefore NOT usable as-is; Node 24 bundles npm 11.19.0 and works. CI pins `node-version: '24'` for exactly this reason. If you must use Node 22 locally, run `npm install -g npm@11` (or newer) first. Symptom to recognise: `npm install` dies in ~20s with `edgesOut` and no package list.
+
 Key dependency versions (verified in `package.json`, as of 2026-09-17): `next ^15.5.25`, `react 18.3.1` (pinned — Next 15 Pages Router does NOT require React 19, see security-currency-campaign Phase 3 G1), `@auth0/nextjs-auth0 ^3.5.0` (v3 still peers Next 15; v4 would be needed only for Next 16), `@upstash/redis ^1.34.0`, `@upstash/ratelimit ^2.0.5`, `@sentry/nextjs ^10.75.0`, `tus-js-client ^4.1.0`, `player.js ^0.1.0`, `web-push ^3.6.7` (added v1.7.0, server-side only — push notifications); dev: `eslint ^8.57.1`, `eslint-config-next ^15.5.25`, `vitest ^3.2.6`.
 
 ### .env.local for running against real services

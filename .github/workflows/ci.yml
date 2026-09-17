@@ -18,10 +18,18 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Node 24, not 22, and the reason is load-bearing: Node 22 bundles
+      # npm 10.9.x, whose arborist crashes with "Cannot read properties of
+      # null (reading 'edgesOut')" while resolving THIS repo's peer graph from
+      # scratch. Because no lockfile is committed, every CI install resolves
+      # from scratch, so it hit that crash every time (run 35183400110).
+      # Node 24 bundles npm 11.19.0, which resolves the same tree cleanly.
+      # Verified locally on node v24.21.0 / npm 11.19.0: clean install, lint,
+      # 294 tests and build all pass. Do not drop to 22 without pinning npm>=11.
       - name: Set up Node
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install
