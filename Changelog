@@ -149,3 +149,5 @@ v1.24.0
 Upgraded the site to Next.js 15 (from 14), closing the 14 security alerts that had been waiting on that major version
 Error reporting moved to the current Sentry release, which Next 15 requires; browser setup now lives in instrumentation-client.js
 No change to how anyone signs in: the Auth0 library and React were both already new enough, so neither was touched
+Test runner and CI runner brought up to date alongside the Next 15 upgrade; the only security finding left is one that needs Next 16
+Lint now catches a call to something that was never imported, in server code — the class of mistake that only shows up as a 500 at runtime
