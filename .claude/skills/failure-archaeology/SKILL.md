@@ -182,7 +182,7 @@ Switching to bcrypt/scrypt/argon2 is impossible: Bunny verifies the signature se
 
 **What was deliberately NOT done** | The remaining 14 alerts are only fixed in Next 15 — a major-version migration. Before deferring, the commit verified (greps recorded in the `739c54f` commit message) that **none of the vulnerable code paths exist in this app**: no `middleware.js`, no `app/` directory, no i18n config, no `next/image`, no `next/script`, no WebSocket handling, no `rewrites()`.
 
-**Status** | **RESOLVED 2026-09-17 — the Next 15 migration shipped.** `next ^14.2.35 → ^15.5.25` (+ `eslint-config-next`, and `@sentry/nextjs ^7.120.3 → ^10.75.0`, which Next 15 forces). The 14 deferred alerts are closed by the bump. React stayed 18.3.1 and `@auth0/nextjs-auth0` stayed v3 — both verified sufficient for Next 15 Pages Router, so this was a far smaller change than the deferral assumed. `npm audit` 9 → 3 (the 3 are one postcss advisory counted along `postcss → next → @auth0/nextjs-auth0`). **A successor deferral now exists**: `postcss` (high) is bundled by `next` through `16.3.0-preview.10` and is only fixed by **Next 16**, which needs Auth0 v4, which is middleware-based — fence 5 territory. That is an architecture decision, not a bump, and it is the new entry in `security-currency-campaign`. The rest of this entry is kept as the record of why the deferral was correct while it held.
+**Status** | **RESOLVED — the Next 15 migration shipped 2026-09-17 and merged 2026-09-18 as `5235b70` (PR #26).** Note the unusual order: production ran Next 15 for ~16 hours *before* the merge, because the branch deployment was promoted (see entry 11 and run-and-operate §5). `next ^14.2.35 → ^15.5.25` (+ `eslint-config-next`, and `@sentry/nextjs ^7.120.3 → ^10.75.0`, which Next 15 forces). The 14 deferred alerts are closed by the bump. React stayed 18.3.1 and `@auth0/nextjs-auth0` stayed v3 — both verified sufficient for Next 15 Pages Router, so this was a far smaller change than the deferral assumed. `npm audit` 9 → 3 (the 3 are one postcss advisory counted along `postcss → next → @auth0/nextjs-auth0`). **A successor deferral now exists**: `postcss` (high) is bundled by `next` through `16.3.0-preview.10` and is only fixed by **Next 16**, which needs Auth0 v4, which is middleware-based — fence 5 territory. That is an architecture decision, not a bump, and it is the new entry in `security-currency-campaign`. The rest of this entry is kept as the record of why the deferral was correct while it held.
 
 **Superseded status** | **DEFERRED — owned by the `security-currency-campaign` skill.** Do not bundle a Next 15 migration into an unrelated change, and do not re-verify the greps from scratch without checking that skill first — but DO re-run the absence checks if the app has since grown any of those features, because the deferral rationale expires the moment one appears.
 
@@ -212,6 +212,26 @@ Switching to bcrypt/scrypt/argon2 is impossible: Bunny verifies the signature se
 
 ---
 
+## 11. The forward-promotion divergence (near-miss)
+
+*Caught before it bit, like entry 2. Logged because the failure would have been silent and nobody would have connected cause to effect.*
+
+**Symptom** | None — this never fired. It was a live hazard for ~16 hours on 2026-09-17/18.
+
+**What happened** | The Next 15 migration (PR #26) was validated on a branch, then **promoted straight to production from the Vercel dashboard** rather than merged. Production served `65e177a` (Next 15) while `main` stayed on `e1c1f45` (`next ^14.2.35`).
+
+**Why that is dangerous** | run-and-operate §1: *a push to `main` triggers the Vercel production deployment*. So for as long as the two disagree, the **next push to `main` — including a completely unrelated one — silently overwrites production** with whatever `main` holds. Here that meant reverting production to Next 14 and reopening a critical advisory. The regression would have been triggered by a commit that had nothing to do with Next, which is exactly what makes it hard to diagnose: the cause and the effect share no code.
+
+**How it was noticed** | Not by anyone watching `main`. The Vercel bot edited its PR comment and the reported URL changed from the branch host to the project's primary domain (`marine-video-1.vercel.app`), which is the signature of a promotion. Verified by checking that the primary domain answered 200 with no SSO gate while the branch host still 302'd to `vercel.com/sso-api`, and that `git merge-base --is-ancestor 65e177a origin/main` still failed.
+
+**Resolution** | Merged PR #26 (`5235b70`), reconciling `main` with the live state.
+
+**Status** | **RESOLVED, and designed out in run-and-operate §5** — the rollback table's Rules now carry a forward-promotion rule and the one-liner check.
+
+**DO-NOT** | Do not treat a forward promotion as "deployed and done". It is a deploy plus a debt: `main` does not contain what production runs, and the clock is until the next push to `main` by anyone. Reconcile the same day. Check with `git merge-base --is-ancestor <promoted-sha> origin/main` — non-zero exit means the debt is still open. Also do not assume a chunk-hash comparison between CI output and a Vercel build identifies which commit production runs; those hashes come from different builds and do not match. Use the deployment's own dashboard entry, or ask.
+
+---
+
 ## Index
 
 | # | Incident | Status | One-line takeaway |
@@ -224,8 +244,12 @@ Switching to bcrypt/scrypt/argon2 is impossible: Bunny verifies the signature se
 | 6 | SHA256 "weak hash" false positives | SETTLED (dismissals pending) | Vendor-mandated signatures, not password hashes; never change the algorithms |
 | 7 | Thumbnail direct-URL 403 | SETTLED | Referrer-based hotlink protection working as designed — a feature, not a bug |
 | 8 | Admin gate revert/reapply | SETTLED | The `getServerSideProps` gate stays; revert-the-revert is the sanctioned undo |
-| 9 | Dependabot Next-15 deferral | RESOLVED 2026-09-17 (migration shipped; successor postcss/Next-16 deferral opened) | 14 alerts need Next 15; vulnerable features verified absent; owned by security-currency-campaign |
+| 9 | Dependabot Next-15 deferral | RESOLVED 2026-09-18 (merged `5235b70`; successor postcss/Next-16 deferral opened) | 14 alerts need Next 15; vulnerable features verified absent; owned by security-currency-campaign |
 | 10 | OneDrive git locks | OPEN | "Permission denied ... loose object" on push = OneDrive lock; retry, don't re-clone |
+| 11 | Forward-promotion divergence (near-miss) | RESOLVED 2026-09-18 (designed out in run-and-operate §5) | Promoting a branch build leaves `main` behind; the next push to `main` silently reverts production |
+
+---
+
 
 ---
 

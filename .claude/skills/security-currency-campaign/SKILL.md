@@ -163,7 +163,18 @@ Closing the 14 deferred Dependabot alerts requires the Next 15 major. This is th
 
 **G3 — Runtime gate:** deploy a branch preview. Vercel auto-previews non-main branches — **verify this is enabled before relying on it**: push the branch, then check the Vercel dashboard for a preview deployment attached to `next-15`. On the preview URL, run the FULL validation-and-qa E2E checklists: upload, playback, resume, share, thumbnails, admin gate, palette. All pass or G3 fails.
 
+**WHAT ACTUALLY HAPPENED (2026-09-17/18) — this gate did not run as written, and the record should say so rather than imply otherwise.**
+
+- Branch previews ARE enabled (confirmed — a preview attached to the branch within seconds of each push). But **Vercel Deployment Protection SSO-gates preview URLs**, so an agent cannot probe one from outside: every request 302s to `vercel.com/sso-api`. A human logged into Vercel browses it normally. Plan for that: preview-based G3 is a human step here, not an automatable one.
+- Rather than run the checklists on the preview, the maintainer **promoted the branch deployment straight to production** (see run-and-operate §5, rank 1, and its forward-promotion rule). Next 15 then served production for ~16 hours before the merge, which is stronger evidence that the major works than any preview could give — but it inverted the gate: the change shipped first and was validated after.
+- What that made verifiable, and was verified against live production: **deny-by-default holds on the Next 15 build.** `/admin` → 307 to `/api/auth/login`; `/api/videos`, `/collections`, `/progress`, `/me` → 401; `/api/admin/viewers`, `/videos`, `/settings` → 403; `/api/manifest` → 200 (public by design); `/` and `/activity` → 200 with `"pageProps":{}`, carrying no video/title/guid/email keys. Because production is not SSO-gated, this part *is* agent-checkable — reuse it.
+- **What was NOT verified, and still is not: upload (§3.1) and resume (§3.3).** Those are precisely the two documented silent-failure modes (the TUS 401 saga; the player.js interop bug where playback works but resume never attaches). They need a human on the deployed site with real content. `validation-and-qa` §3 is explicit that a `next` bump requires them, so **Phase 3 is shipped but not fully evidenced** — recorded here per that skill's own rule that unverified-and-said-so is acceptable and unverified-and-implied-verified is how those two bugs shipped.
+
+**Lesson for the next major:** the gate assumed preview → validate → merge. Reality was promote → validate-what-you-can → merge. If that is the real workflow, rewrite G3 around production rather than the preview, and keep the E2E items as an explicit human checklist instead of a gate an agent can claim to have passed.
+
 **G4 — Ship:** maintainer approval (change-control) → merge to main → watch CI and the prod deploy → **EXPECTED: Phase 0 Dependabot count drops from 14 to 0 `next` alerts** → tag the release per run-and-operate.
+
+**DONE 2026-09-18:** PR #26 squash-merged as `5235b70`. Note the ordering was inverted — production already ran Next 15 via the forward promotion, so the merge's job was reconciling `main` with the live state and closing the divergence, not shipping. Re-run Phase 0 to confirm the 14 `next` alerts are actually gone; that number has not been re-checked since the merge.
 
 **ROLLBACK (if prod breaks post-merge):** `git revert` the merge commit and push, AND/OR promote the previous deployment in the Vercel dashboard (instant, no build). Then reopen at G1 with the new failure recorded.
 

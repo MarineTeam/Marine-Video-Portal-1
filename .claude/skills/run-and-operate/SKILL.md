@@ -130,12 +130,14 @@ Special case — activating Sentry: set both `SENTRY_DSN` and `NEXT_PUBLIC_SENTR
 
 | Rank | Method | Speed | Status |
 |---|---|---|---|
-| 1 | Vercel dashboard → Deployments → pick the last good deployment → **Promote to Production** | Minutes, no git | Standard Vercel capability — **candidate procedure, not yet exercised on this project** (as of 2026-07-10) |
+| 1 | Vercel dashboard → Deployments → pick the last good deployment → **Promote to Production** | Minutes, no git | **EXERCISED 2026-09-17** — and not for rollback. The maintainer promoted a *branch* deployment (the Next 15 migration, PR #26) to ship it FORWARD ahead of the merge. It worked, and production served it for ~16 hours. Read the forward-promotion rule below before using it that way again |
 | 2 | `git revert <bad-sha>` + `git push origin main` | One CI/deploy cycle | **Proven pattern here**: the admin-gate change went through exactly this — `71f3aff` (add) → `be51f05` (revert) → `b7f3f8d` (reapply). History-preserving and re-appliable |
 
 Rules:
 
 - Option 1 buys time; it does not fix `main`. After promoting, still revert the bad commit so the next push doesn't re-ship the breakage.
+- **The same gap exists in the forward direction, and it is the more dangerous one.** Promoting a *branch* deployment ships code that `main` does not contain. Section 1 says a push to `main` triggers the Vercel production deployment — so after a forward promotion the NEXT push to `main`, *even a completely unrelated one*, silently overwrites production with whatever `main` holds. Nobody connects the two events, because the push that causes the regression has nothing to do with the code that regresses. This happened on 2026-09-17: the Next 15 build was promoted while `main` was still on `next ^14.2.35`, leaving a ~16-hour window in which any merge would have quietly reverted production to Next 14 and reopened a critical advisory. Resolved by merging PR #26 (`5235b70`).
+- So: **a forward promotion is not a deploy, it is a deploy plus a debt.** Reconcile it the same day by merging the branch, and treat the window between promotion and merge as an outage risk, not a normal state. To check: `git merge-base --is-ancestor <promoted-sha> origin/main` — a non-zero exit means the debt is still open.
 - The revert-then-reapply chain is the sanctioned way to un-ship and later re-ship a change — the fix returns as a fresh commit on top.
 - **NEVER `git push --force` or `git reset` shared history on `main`.** No exceptions. If history looks wrong, revert forward.
 
