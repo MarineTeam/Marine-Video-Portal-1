@@ -32,9 +32,27 @@ These are not style preferences. Each fence exists because the path is known-des
 
 ## Campaign state (as of 2026-07-10, verified in-session)
 
-**CodeQL:** 6 findings fixed across commits 40f4feb and eb4bcdd — inline GUID validation in `lib/bunny.js` (must stay inline, see fence 3), ReDoS-prone email regex replaced with string operations (`indexOf`/`lastIndexOf`) in `pages/api/admin/viewers.js`, and `permissions: contents: read` scoped in `.github/workflows/ci.yml`. **4 alerts remain open intentionally** — #7, #8, #9 (rule ~"insufficient hash effort", false positives on the three vendor-mandated SHA256 signing formulas), plus **#10** (rule ~SSRF, `components/SharePlayer.js:22`, added ~2026-07-20, triaged 2026-07-22). All four are pending **manual dismissal in the GitHub UI** (maintainer declined automated dismissal).
+**CodeQL:** 6 findings fixed across commits 40f4feb and eb4bcdd — inline GUID validation in `lib/bunny.js` (must stay inline, see fence 3), ReDoS-prone email regex replaced with string operations (`indexOf`/`lastIndexOf`) in `pages/api/admin/viewers.js`, and `permissions: contents: read` scoped in `.github/workflows/ci.yml`. **Open alerts, re-checked 2026-09-18: five — #7, #8, #9, #11, #12.** All triaged false positives; all pending **manual dismissal in the GitHub UI** (maintainer declined automated dismissal).
 
-Dismissal text for #7/#8/#9, verbatim: reason **"False positive"**, note **"HMAC-style API signing token required by bunny.net, not a password hash."**
+- **#7, #8, #9, and now #12** — rule ~"insufficient hash effort", all in `lib/bunny.js` (lines 86, 212, 263, 291). Four instances of the same vendor-mandated SHA256 signing family, not password hashes. Fence 2 governs: never "fix" these.
+- **#11** — rule ~"Polynomial regular expression used on uncontrolled data", `lib/videoMeta.js:83`. Triaged 2026-09-18, see below.
+- **#10** (rule ~SSRF, `components/SharePlayer.js:22`) — **no longer listed as of 2026-09-18**, so the maintainer has dismissed it. Its rationale is kept in this file in case the rule re-fires.
+
+Dismissal text for #7/#8/#9 **and #12**, verbatim: reason **"False positive"**, note **"HMAC-style API signing token required by bunny.net, not a password hash."**
+
+#12 (`lib/bunny.js:263`, added ~2026-09-14, triaged 2026-09-18) is the CDN thumbnail token — `sha256(key + path + expires)` base64-encoded, byte-identical in shape to the one already flagged at line 212. It is a fourth instance of a formula family already triaged, not a new problem, and fence 2 forbids "fixing" it.
+
+Dismissal text for #11, verbatim: reason **"False positive"**, note **"Measured linear, not polynomial: 400,000 characters parse in ~1ms with flat scaling. The ambiguous `\s*[-–—:]?\s*` is never backtracked into because the pattern ends `(.*)$`, which cannot fail; the timestamp prefix is bounded to ~8 characters. Reachable only via POST /api/admin/videos, gated by requireCapability('videos:manage'), and bounded by the 1mb body limit."**
+
+Rationale, and the method worth reusing (`lib/videoMeta.js:83`, rule ~polynomial regex, added ~2026-09-14, triaged 2026-09-18). The regex is
+`/^(\d{1,2}(?::\d{1,2}){1,2})\s*[-–—:]?\s*(.*)$/` and the flag is *understandable* — `\s*[-–—:]?\s*` is two unbounded runs around an optional character, which is quadratically ambiguous in isolation. It is nonetheless unreachable, for two independent reasons:
+
+1. **Measured, not reasoned.** Timed at 1k / 10k / 100k / 400k characters across five input shapes chosen to exploit the ambiguity (timestamp + long whitespace + label; whitespace with no label; whitespace either side of the dash; a failing prefix with a long tail; all whitespace). Flat linear throughout — ~0.8-1.5ms at 400,000 characters, a 400x size increase. **Do not skip this step and argue from the pattern alone**; the same reasoning applied to fable-video's `isValidEmail` regex in the same session produced a confident wrong answer twice before measurement settled it.
+2. **Mechanism that explains the measurement.** The pattern ends `(.*)$`, which cannot fail, so once the bounded timestamp prefix matches the remainder matches on the first attempt and the engine never backtracks into the ambiguous region. The prefix `\d{1,2}(?::\d{1,2}){1,2}` is fully bounded (~8 characters), so a non-matching prefix fails immediately.
+
+**Not "uncontrolled data" either.** The only production path is `lib/videoMetaStore.js:52` <- `pages/api/admin/videos.js:76`, whose first statement is `requireCapability(req, res, 'videos:manage')`. CodeQL treats `req.body` as untrusted without modelling the guard. Input is further bounded by Next's default 1mb body limit, output by `MAX_CHAPTERS = 100` and `MAX_CHAPTER_LABEL = 120`.
+
+**If you do decide to change it anyway**, note that the sanctioned local precedent is the one in the Campaign state above: the ReDoS-prone email regex in `pages/api/admin/viewers.js` was replaced with `indexOf`/`lastIndexOf` string operations, not with a "cleverer" regex.
 
 Dismissal text for #10, verbatim: reason **"False positive"**, note **"Client-side fetch() to a fixed-prefix same-origin relative path (`/api/share/` + shareId); shareId cannot redirect the request to another host, and server-side it's only ever used as a Redis lookup key, never to construct an outbound request."** Rationale: the flagged `fetch()` runs in the browser (a `useEffect` in a React component), not on the server, so "server-side request forgery" doesn't apply by definition; and even read as a generic untrusted-URL check, the literal `/api/share/` prefix means `shareId` is confined to a path segment and can never turn the string into a protocol-relative or cross-origin URL. Checked the server counterpart (`pages/api/share/[shareId]/track.js`) too — `shareId` is only ever used as a Redis lookup key (`getShare(shareId)`), never to build an outbound request. No code changed; this is the same class of scanner noise as #7-#9, just a different rule.
 
@@ -67,11 +85,14 @@ Get the current alert picture before touching anything.
 & "C:\Program Files\GitHub CLI\gh.exe" api "repos/MarineTeam/Marine-Video-Portal-1/code-scanning/alerts?state=open&per_page=100" --paginate --jq '.[] | [.number, .rule.id, .rule.severity, .most_recent_instance.location.path] | @tsv'
 ```
 
-**EXPECTED (as of 2026-07-22):** exactly **4 rows** — alerts #7, #8, #9 (rule ~insufficient hash effort, all in `lib/bunny.js`) and #10 (rule ~SSRF, `components/SharePlayer.js:22`) — **or fewer** as the maintainer completes manual dismissals. Any subset of these four is healthy; anything else is new.
+**EXPECTED (as of 2026-09-18):** exactly **5 rows** — #7, #8, #9, #12 (rule ~insufficient hash effort, all in `lib/bunny.js` at lines 86, 212, 291, 263) and #11 (rule ~polynomial regex, `lib/videoMeta.js:83`) — **or fewer** as the maintainer completes manual dismissals. Any subset of these five is healthy; anything else is new.
 
-- **If #7-#9 are still open** → remind the maintainer of the pending UI dismissal (reason "False positive", note "HMAC-style API signing token required by bunny.net, not a password hash."). Do NOT dismiss via API — maintainer declined automation here.
-- **If #10 is still open** → same treatment, dismissal text in Campaign state above (reason "False positive", note re: client-side same-origin fetch).
-- **If you see a NEW rule id or a new file path beyond these four** → stop; triage via Phase 1 before anything else.
+Note how the count moved, because it is the shape to expect again: #10 came off the list (dismissed), and #11 and #12 appeared ~2026-09-14. **A rising count is not automatically a regression** — CodeQL periodically flags additional instances of a formula family it already flagged, which is exactly what #12 is. Check whether a new alert is a new *location of a known pattern* before treating it as a new *problem*.
+
+- **If #7, #8, #9, or #12 are still open** → remind the maintainer of the pending UI dismissal (reason "False positive", note "HMAC-style API signing token required by bunny.net, not a password hash."). Do NOT dismiss via API — maintainer declined automation here.
+- **If #11 is still open** → same treatment, dismissal text in Campaign state above (reason "False positive", note re: measured-linear regex behind `videos:manage`).
+- **If a NEW alert appears on a rule id already listed here, at a new line inside `lib/bunny.js`** → it is almost certainly a fifth instance of the vendor-signing family. Confirm the flagged expression is a bunny.net signing formula (compare it against the four at lines 86, 212, 263, 291), then treat it exactly like #7/#8/#9/#12 — same dismissal text, no code change, fence 2 applies.
+- **If you see a NEW rule id, or a file path outside `lib/bunny.js` and `lib/videoMeta.js`** → stop; triage via Phase 1 before anything else.
 
 **Gate P0:** you can state the exact open counts and account for every line. Anything unexplained → Phase 1 now.
 
@@ -99,7 +120,7 @@ All seven clean (as of 2026-07-10, verified). If an alert's vulnerable feature i
 
 **Q3 — Patched only in the next major?** → **Document and defer.** Record here (in this skill, under Campaign state): alert number, package, why unreachable (cite the specific grep from Q1 as evidence), and which future migration closes it (usually Phase 3). A deferral without a reachability argument is not a deferral, it's neglect.
 
-**Q4 — False positive?** Especially anything touching the three signing formulas in `lib/bunny.js` → dismiss with a recorded reason (see the exact dismissal text in Campaign state / Phase 0.2). **NEVER "fix" a hash-strength finding by changing the algorithm** — fence 2, hard rule #2. That breaks upload and playback against the bunny.net contract.
+**Q4 — False positive?** Especially anything touching the four signing formulas in `lib/bunny.js` (lines 86, 212, 263, 291) → dismiss with a recorded reason (see the exact dismissal text in Campaign state / Phase 0.2). **NEVER "fix" a hash-strength finding by changing the algorithm** — fence 2, hard rule #2. That breaks upload and playback against the bunny.net contract.
 
 **Gate P1:** after triage, every open alert count from Phase 0 must be explained line-by-item: fixed, deferred-with-evidence, or dismissed-with-reason. No "misc".
 
@@ -209,7 +230,7 @@ None of these are commitments; each needs its own change-control approval. Ranke
 1. **Activate Sentry** — code already shipped and inert (`next.config.js` wraps `withSentryConfig`; runtime reporting waits on `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`, verified 2026-07-10). Set the DSN pair in the env mirrors and redeploy. Cheapest observability win available.
 2. **Rate-limit `/api/progress`** — the only unlimited write path (`@upstash/ratelimit` ^2.0.5 is already a dependency; reuse the existing limiter pattern).
 3. **Redis backup/export routine** — Upstash backup features or a scheduled export. **VERIFY Upstash's current backup offering for this plan tier before promising anything** (as of 2026-07-10, unverified).
-4. **Dismiss-the-4-FPs housekeeping** — the pending manual CodeQL dismissals from Phase 0.2 (#7-#9 hash, #10 SSRF); pure hygiene, maintainer-driven.
+4. **Dismiss-the-FPs housekeeping** — the pending manual CodeQL dismissals from Phase 0.2 (#7, #8, #9, #12 hash; #11 polynomial regex); pure hygiene, maintainer-driven. Count is five as of 2026-09-18; #10 is already done.
 5. **Branch protection requiring the CI check on `main`** — closes the "Vercel deploy races CI" gap (Vercel deploys on push; CI green is currently advisory). Needs maintainer approval — it changes the maintainer's own push workflow.
 
 ---
@@ -220,4 +241,6 @@ None of these are commitments; each needs its own change-control approval. Ranke
 - **Session-record facts** (maintainer statements, alert counts, the near-lockout, the declined automated dismissal) are attributed "(session record, 2026-07-10, maintainer-confirmed)" and cannot be re-derived from the repo — treat them as authoritative until the maintainer says otherwise.
 - **Update triggers:** re-stamp the expected numbers in Phase 0 whenever alerts are fixed/dismissed/added; record the G1 research answers (React requirement, Sentry compatibility) in Phase 3 the moment they are learned; mark Phase 3 complete and rewrite the Campaign state block when Next 15 ships; strike Phase 4 options once one is chosen.
 - **2026-07-22 update:** CodeQL alert #10 (SSRF, `components/SharePlayer.js:22`) triaged as a false positive — see Campaign state and Phase 0.2 for the reasoning and dismissal text. No code changed. Expected CodeQL row count in Phase 0.2 moved from 3 to 4 accordingly.
+- **2026-09-18 update:** alert list re-read from the GitHub UI. #10 is gone (maintainer dismissed it); #11 (polynomial regex, `lib/videoMeta.js:83`) and #12 (insufficient hash effort, `lib/bunny.js:263`) appeared ~2026-09-14. Both triaged false positives — #12 is a fourth instance of the vendor-signing family already covered by fence 2; #11 was **measured**, not argued (1k chars → 0.09ms, 400k chars → 0.81ms across five input shapes: flat linear, not polynomial). Expected CodeQL row count in Phase 0.2 moved from 4 to 5. No code changed.
+- **Re-verified against the repo on 2026-09-18**, after the Next 15 major shipped: `package.json` now reads next ^15.5.25, eslint-config-next ^15.5.25, @sentry/nextjs ^10.75.0, vitest ^4.1.11; react/react-dom stay 18.3.1 and @auth0/nextjs-auth0 stays ^3.5.0 (both deliberate — see Phase 3). `.github/workflows/ci.yml` now pins **Node 24** on checkout@v5/setup-node@v5; Node 20 ships npm 10.9.x, whose arborist crashes with `Cannot read properties of null (reading 'edgesOut')` on this tree — do not lower it. `lib/bunny.js` now has **four** SHA256 signing formulas (a CDN thumbnail token was added at line 263 ~2026-09-14). The 2026-07-11 stamp above is kept as the historical record; where the two disagree, this one is current.
 - **Siblings:** change-control (approval gates referenced throughout), validation-and-qa (the G3/Phase-4 E2E checklists), diagnostics-and-tooling (alert commands and scripts), config-and-data (the three env mirrors), failure-archaeology (the full stories behind the fence box), architecture-contract (the invariants the fences protect).
