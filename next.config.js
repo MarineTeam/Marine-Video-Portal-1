@@ -1,4 +1,6 @@
-const { withSentryConfig } = require('@sentry/nextjs');
+// Imported from the /config entry point: @sentry/nextjs 10 deprecated the
+// root-level `withSentryConfig` export and drops it in v11.
+const { withSentryConfig } = require('@sentry/nextjs/config');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

@@ -38,7 +38,7 @@ Archive convention (established at `bf66707` "Promote rewritten README and FEATU
 
 - **Its watch-page sample leaks the recipient email**: the guide's `pages/watch/[shareId].js` mismatch error interpolates `share.email` and the visitor's email into the message. Current `pages/watch/[shareId].js` deliberately returns a generic "This link isn't valid for your account" message — the intended recipient's address is never revealed (this is a listed security property in README.md and FEATURES.md).
 - **Its homepage embeds videos directly** in iframes ("latest 2 videos"). Current `pages/index.js` renders a thumbnail grid / title list linking to `/watch/video/[id]` watch pages; no iframe on the homepage.
-- **It pins `next` 14.2.5**. Current `package.json` has `next ^14.2.35` (bumped at `739c54f` for Dependabot alerts).
+- **It pins `next` 14.2.5**. Current `package.json` has `next ^15.5.25` (bumped to ^14.2.35 at `739c54f` for Dependabot alerts, then to ^15.5.25 in the Phase 3 Next 15 migration).
 - **Its Redis samples use raw keys** (`share:${shareId}`). Current code namespaces every key through the `k()` helper in `lib/redis.js` with the `pvp:` prefix. Copying a guide snippet writes to the wrong keyspace and silently misses all real data.
 - **Its share API has no rate limiting and no audit logging**. Current `pages/api/admin/share.js` rate-limits via `lib/ratelimit.js` and appends to the audit log via `logAudit()`.
 

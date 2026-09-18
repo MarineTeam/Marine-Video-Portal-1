@@ -7,7 +7,7 @@ description: Environment-variable and Redis-key dictionaries for the Marine Vide
 
 This skill is the single source of truth for **what configuration exists and where data lives**: every environment variable, every Redis key, the three places env values must be mirrored, and the checklists for adding new ones. Every row below was derived by grepping the code on 2026-07-10 — file citations are the proof. If code has changed since, re-derive per "Provenance & maintenance" at the bottom.
 
-Architecture in one line: Next.js 14 Pages Router on Vercel; Auth0 for login (`@auth0/nextjs-auth0`); bunny.net Stream for video storage/playback; Upstash Redis via Vercel KV for all app state. All Redis keys go through `k()` in `lib/redis.js`, which prepends the `pvp:` prefix.
+Architecture in one line: Next.js 15 Pages Router on Vercel; Auth0 for login (`@auth0/nextjs-auth0`); bunny.net Stream for video storage/playback; Upstash Redis via Vercel KV for all app state. All Redis keys go through `k()` in `lib/redis.js`, which prepends the `pvp:` prefix.
 
 ## When NOT to use this skill
 
@@ -37,7 +37,7 @@ All values live in **Vercel project settings** (production truth). None are comm
 | `KV_REST_API_URL` | Yes | `lib/redis.js:7` | Upstash Redis REST endpoint | Redis client constructed at **module load** with undefined URL → every route touching Redis errors / returns empty | Auto-injected by Vercel when a Storage database is connected. If your dashboard shows `UPSTASH_REDIS_REST_URL` instead, the names don't match — see `lib/redis.js:3-5` comment |
 | `KV_REST_API_TOKEN` | Yes | `lib/redis.js:8` | Upstash Redis REST token | Same as above | Same as above |
 | `SENTRY_DSN` | No | `sentry.server.config.js:3`, `sentry.edge.config.js:3` | Server/edge error capture | Inert — Sentry stays disabled | |
-| `NEXT_PUBLIC_SENTRY_DSN` | No | `sentry.client.config.js:3` | Browser error capture | Inert | `NEXT_PUBLIC_` = baked in at build time; changing it requires a rebuild, not just a restart |
+| `NEXT_PUBLIC_SENTRY_DSN` | No | `instrumentation-client.js:5` | Browser error capture | Inert | `NEXT_PUBLIC_` = baked in at build time; changing it requires a rebuild, not just a restart |
 | `SENTRY_ORG` | No | `next.config.js:12` | Source-map upload during build | Inert — build works fine without (comment at `next.config.js:6-9`) | |
 | `SENTRY_PROJECT` | No | `next.config.js:13` | Source-map upload | Inert | |
 | `SENTRY_AUTH_TOKEN` | No | `next.config.js:14` | Source-map upload | Inert | |

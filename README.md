@@ -30,7 +30,7 @@ Videos are never public: every play uses a **signed, time-limited bunny.net toke
 
 | Layer | Choice |
 |---|---|
-| Framework | Next.js 14 (Pages Router), React 18 |
+| Framework | Next.js 15 (Pages Router), React 18 |
 | Hosting | Vercel |
 | Video | bunny.net Stream (tokenized embeds, TUS resumable upload, collections, statistics) |
 | Auth | Auth0 (`@auth0/nextjs-auth0`) |
