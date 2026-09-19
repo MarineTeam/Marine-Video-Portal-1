@@ -2694,6 +2694,17 @@ export default function Admin({ isAdminRole }) {
                       <span className="schedule-chip">{v.chapters.length} chapter{v.chapters.length === 1 ? '' : 's'}</span>
                     )}
                     {v.notes ? <span className="schedule-chip">notes</span> : null}
+                    {/* Totals only, and staff-only. The counters hold no
+                        identities, so this cannot say who rated what — see
+                        lib/ratings.js. */}
+                    {v.rating ? (
+                      <span
+                        className="schedule-chip"
+                        title={`${v.rating.up} up, ${v.rating.down} down, from ${v.rating.total} viewer(s)`}
+                      >
+                        👍 {v.rating.up} · 👎 {v.rating.down}
+                      </span>
+                    ) : null}
                   </summary>
 
                   <p className="text-muted" style={{ margin: '8px 0' }}>
