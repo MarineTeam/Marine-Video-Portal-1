@@ -1393,3 +1393,16 @@ details.group-section > summary { cursor: pointer; }
   white-space: nowrap;
   border: 0;
 }
+
+/* Save-to-my-list toggle on the watch page. Beside the title, wrapping rather
+   than pushing a long title off its line. */
+.watch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.save-wrap { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.btn.is-saved { border-color: var(--accent-1); color: var(--accent-1); }
+.save-error { color: var(--danger, #f87171); font-size: 13px; }

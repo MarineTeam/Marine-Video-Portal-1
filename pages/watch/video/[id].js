@@ -13,6 +13,9 @@ import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWa
 import AppShell from '../../../components/AppShell';
 import ResumablePlayer from '../../../components/ResumablePlayer';
 import TranscriptPanel from '../../../components/TranscriptPanel';
+import SaveToListButton from '../../../components/SaveToListButton';
+import { getMyList } from '../../../lib/mylistStore';
+import { isSaved } from '../../../lib/mylist';
 import { IconChevronLeft } from '../../../components/icons';
 import { withMonitorPage } from '../../../lib/monitor';
 
@@ -82,6 +85,10 @@ async function getServerSidePropsInner({ req, res, params }) {
   }
 
   const meta = await getVideoMeta(video.guid);
+  // Read server-side so the toggle never paints 'Save' on a video already
+  // saved. getMyList swallows read failures into {}, so an unreadable list
+  // starts it unsaved — which one click corrects.
+  const saved = isSaved(await getMyList(email), video.guid);
 
   const [globalDefault, videoMode, exempt] = await Promise.all([
     getGlobalWatermark(),
@@ -98,6 +105,7 @@ async function getServerSidePropsInner({ req, res, params }) {
       adminUser: staff,
       watermarkText: watermark ? email : null,
       chapters: meta?.chapters || [],
+      saved,
       notes: meta?.notes || '',
     },
   };
@@ -105,7 +113,7 @@ async function getServerSidePropsInner({ req, res, params }) {
 
 export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
 
-export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText, chapters = [], notes = '' }) {
+export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText, chapters = [], notes = '', saved = false }) {
   // Set once player.js attaches. Until then (and forever, if it fails to load)
   // chapters render as plain text rather than buttons that would do nothing.
   const [seek, setSeek] = useState(null);
@@ -126,7 +134,10 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser,
         </div>
       ) : (
         <>
-          <h1 className="watch-title">{title}</h1>
+          <div className="watch-head">
+            <h1 className="watch-title">{title}</h1>
+            <SaveToListButton videoId={videoId} initialSaved={saved} />
+          </div>
           <ResumablePlayer
             embedUrl={embedUrl}
             title={title}
