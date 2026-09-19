@@ -18,7 +18,13 @@ async function handler(req, res) {
 
   if (req.method === 'POST') {
     const { name } = req.body || {};
-    if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
+    // typeof, not truthiness: a wrong-typed name (array, number, object) is
+    // truthy, so it used to reach .trim() and throw a TypeError that surfaced
+    // as a 500. Reject the TYPE rather than coercing it — String(['x']) would
+    // have quietly become 'x', a name nobody sent.
+    if (typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'name required' });
+    }
     try {
       const collection = await createCollection(name.trim());
       await logAudit(actor, 'collection.create', name.trim());
