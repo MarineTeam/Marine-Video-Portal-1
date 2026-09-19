@@ -147,7 +147,10 @@ async function handler(req, res) {
       return res.json({ results });
     }
 
-    if (title && title.trim()) {
+    // typeof, not truthiness — see pages/api/admin/collections.js. A
+    // wrong-typed title threw on .trim() and became a 500; it now falls
+    // through to the 400 below, which is what "no valid action" means.
+    if (typeof title === 'string' && title.trim()) {
       try {
         await updateVideoTitle(ids[0], title.trim());
         await logAudit(actor, 'video.rename', `${ids[0]} → ${title.trim()}`);
