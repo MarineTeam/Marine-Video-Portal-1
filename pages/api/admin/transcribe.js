@@ -5,11 +5,15 @@ import { parseVtt } from '../../../lib/captions';
 import { setTranscript } from '../../../lib/captionsStore';
 import { logAudit } from '../../../lib/audit';
 import { withMonitorApi } from '../../../lib/monitor';
+import { suggestedChapters } from '../../../lib/aiChapters';
 
 // Queues bunny.net Transcribe AI for one video, and ingests the result.
 //
-//   POST { videoId }          -> queue transcription (COSTS MONEY, see below)
-//   POST { videoId, ingest }  -> pull the finished captions into Redis
+//   POST { videoId }               -> queue transcription (COSTS MONEY, below)
+//   POST { videoId, chapters }     -> ...and ask bunny for chapter suggestions
+//   POST { videoId, ingest }       -> pull the finished captions into Redis
+//   POST { videoId, suggestions }  -> read the suggested chapters back (writes
+//                                     NOTHING — see lib/aiChapters.js)
 //
 // THIS ROUTE SPENDS MONEY. bunny bills $0.10 per minute of video, per
 // language, so a 90-minute service is $9 from one request. It therefore uses
@@ -45,6 +49,10 @@ async function handler(req, res) {
   // the limiter that guards the paid half.
   if (body.ingest === true) return ingest(res, auth, videoId);
 
+  // Reading suggestions back is cheaper still: one GET, no write anywhere, so
+  // it sits in front of the money limiter too.
+  if (body.suggestions === true) return suggestions(res, videoId);
+
   // requireCapability already resolved the session; calling getSession again
   // would be a second round trip whose two answers could disagree.
   if (!(await allowCostly(callerId(req, auth.session, 'transcribe')))) {
@@ -63,15 +71,49 @@ async function handler(req, res) {
     return res.status(400).json({ error: 'Bad source language' });
   }
 
+  // Chapter suggestions ride along with the same job — no extra per-minute
+  // charge — but they are opt-in all the same: a video whose chapters an admin
+  // has already typed has no use for a second opinion, and asking keeps "what
+  // did this job produce" a question with an answer. Strict true, like force.
+  const chapters = body.chapters === true;
+
   try {
-    await transcribeVideo(videoId, { sourceLanguage: sourceLanguage || undefined, force });
+    await transcribeVideo(videoId, {
+      sourceLanguage: sourceLanguage || undefined,
+      force,
+      generateChapters: chapters,
+    });
   } catch (e) {
     console.error('Could not queue transcription:', e);
     return res.status(502).json({ error: 'Could not queue transcription' });
   }
 
-  await logAudit(auth.email, force ? 'video.retranscribe' : 'video.transcribe', videoId);
-  return res.json({ ok: true, queued: true });
+  await logAudit(
+    auth.email,
+    force ? 'video.retranscribe' : 'video.transcribe',
+    chapters ? `${videoId} (with chapter suggestions)` : videoId
+  );
+  return res.json({ ok: true, queued: true, chapters });
+}
+
+// Reads bunny's generated chapters back as a proposal. READ-ONLY on purpose:
+// this never touches the video-meta entry, so a transcription job can never
+// replace a list an admin typed. The admin accepts by loading it into the
+// textarea and saving through PUT /api/admin/videos — the same path a typed
+// list takes. Not audit-logged, because nothing changed; the acceptance is
+// what gets logged, exactly as if the lines had been typed.
+async function suggestions(res, videoId) {
+  let video;
+  try {
+    video = await getVideoById(videoId);
+  } catch (e) {
+    console.error('Could not read the video for chapter suggestions:', e);
+    return res.status(502).json({ error: 'Could not read the video' });
+  }
+  if (!video) return res.status(404).json({ error: 'Video not found' });
+
+  const { chapters, ignored } = suggestedChapters(video);
+  return res.json({ ok: true, chapters, ignored });
 }
 
 // Pulls the finished captions off bunny's CDN and stores the parsed cues.
