@@ -100,6 +100,7 @@ export default function Admin({ isAdminRole }) {
   const [themeSaved, setThemeSaved] = useState(false);
   const [metaDrafts, setMetaDrafts] = useState({});
   const [metaBusy, setMetaBusy] = useState({});
+  const [transcribeStatus, setTranscribeStatus] = useState({}); // videoId -> message
   const [metaIgnored, setMetaIgnored] = useState({});
   const [publicBusy, setPublicBusy] = useState({});
   const [siteNameDraft, setSiteNameDraft] = useState('');
@@ -803,6 +804,34 @@ export default function Admin({ isAdminRole }) {
       setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, isPublic: data.isPublic } : x)));
     } finally {
       setPublicBusy((prev) => ({ ...prev, [v.id]: false }));
+    }
+  }
+
+  // Transcription. TWO steps, not one, because bunny's Transcribe AI is
+  // asynchronous: queueing returns immediately and the captions land minutes
+  // later. Hiding that behind a poller would hide the timing and the cost
+  // from the person who pressed the button.
+  async function transcribeVideo(videoId, ingest) {
+    setTranscribeStatus((prev) => ({ ...prev, [videoId]: ingest ? 'Fetching…' : 'Queueing…' }));
+    try {
+      const res = await fetch('/api/admin/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId, ...(ingest ? { ingest: true } : {}) }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTranscribeStatus((prev) => ({ ...prev, [videoId]: data.error || 'That did not work.' }));
+        return;
+      }
+      const message = data.queued
+        ? 'Queued — bunny takes a few minutes, then press Fetch captions.'
+        : data.ready
+          ? `Fetched ${data.cues} lines (${data.language}).`
+          : 'Not ready yet — give it a minute, then press Fetch captions.';
+      setTranscribeStatus((prev) => ({ ...prev, [videoId]: message }));
+    } catch (e) {
+      setTranscribeStatus((prev) => ({ ...prev, [videoId]: 'That did not work.' }));
     }
   }
 
@@ -2633,6 +2662,31 @@ export default function Admin({ isAdminRole }) {
                     >
                       {metaBusy[v.id] ? 'Saving…' : 'Save chapters & notes'}
                     </button>
+                  </div>
+
+                  <p className="muted" style={{ marginTop: 12, marginBottom: 6 }}>
+                    Transcript — bunny.net transcribes the audio, then viewers get a
+                    searchable transcript under the player and the library can be
+                    searched by what was said. Costs about <strong>$0.10 per minute</strong>{' '}
+                    of video, charged by bunny — the price is here rather than on an
+                    invoice later.
+                  </p>
+                  <div className="admin-row">
+                    <button
+                      onClick={() => transcribeVideo(v.id, false)}
+                      className="btn btn-sm"
+                    >
+                      Transcribe
+                    </button>
+                    <button
+                      onClick={() => transcribeVideo(v.id, true)}
+                      className="btn btn-sm"
+                    >
+                      Fetch captions
+                    </button>
+                    {transcribeStatus[v.id] ? (
+                      <span className="muted">{transcribeStatus[v.id]}</span>
+                    ) : null}
                   </div>
 
                   {metaIgnored[v.id]?.length > 0 && (

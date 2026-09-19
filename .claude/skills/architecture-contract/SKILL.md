@@ -208,6 +208,7 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 **Decision (2026-09-13).**
 
 - **Per-video chapters and notes** live in `pvp:video_meta`, split across `lib/videoMeta.js` (pure — parsing, validation, formatting) and `lib/videoMetaStore.js` (Redis). A video with neither stores **no entry at all**; an entry that would be empty is deleted rather than written. Chapters render as clickable seek targets on the watch page, and notes are matched by the existing search **after** the group and schedule filters have already narrowed the list.
+- **Per-video transcripts** live in **two** keys, `pvp:transcripts` (cues with timings, read one field at a time by `/api/transcript/[id]`) and `pvp:transcript_text` (the same words as one string, read by search), split across `lib/captions.js` (pure) and `lib/captionsStore.js` (Redis). Two keys rather than one because the access patterns differ: search needs one `hgetall` and **none of the timings**, and cue arrays run ~1,500 per 90-minute service — unlike chapters and notes, which are small and always read together, hence their single hash. Transcript matching joins title and note matching in `/api/videos` **after** the group and schedule filters, so it inherits the same guarantee. Written only by `/api/admin/transcribe`, which spends money ($0.10/min of video at bunny) and therefore uses `allowCostly` rather than the shared 60-per-10s `allow`.
 - **Access-request notifications** (`lib/accessRequestNotify.js`) tell holders of `viewers:manage` — admins and managers both, since both can approve — when a request arrives. They fire **only when `submitRequest` reports the request is new**, never on a re-ask.
 
 **Why.**
@@ -273,6 +274,7 @@ Walk this list on every review that touches auth, API routes, Redis, or `lib/bun
 - [ ] `email_verified` is enforced ONLY via `lib/verification.js` (Decision 14): off by default, staff unconditionally exempt, env bypass honoured, fails open, and an absent claim admits. Never gate `/watch/[shareId]` on it.
 - [ ] An unscheduled video and an ungrouped viewer both behave exactly as they did before those features existed (Decisions 13 and 15).
 - [ ] A video with no `pvp:video_meta` entry behaves exactly as before chapters/notes existed, and note-matching in search runs only over the already-filtered list (Decision 16).
+- [ ] A video with no `pvp:transcripts` entry shows no transcript panel and no error, and `/api/transcript/[id]` performs EVERY check `pages/watch/video/[id].js` performs — approval, region, **`isVerified`**, group grants and publish window. A transcript is the whole content of a private video in text form, so a laxer gate there is a way to read a video you cannot watch.
 - [ ] `notifyNewAccessRequest` still cannot throw into the request path, and still fires only when the request is new.
 - [ ] `isPublicVideo` still fails CLOSED, the public route still refuses uniformly, and nothing outside `lib/publicWatch.js` decides anonymous access (Decision 17).
 - [ ] `pages/api/feed/[token].js` still re-checks the approved set, groups and schedules on every fetch — the token alone grants nothing.

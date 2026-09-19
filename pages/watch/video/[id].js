@@ -12,6 +12,7 @@ import { isGeoAllowed } from '../../../lib/geo';
 import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWatermark } from '../../../lib/watermark';
 import AppShell from '../../../components/AppShell';
 import ResumablePlayer from '../../../components/ResumablePlayer';
+import TranscriptPanel from '../../../components/TranscriptPanel';
 import { IconChevronLeft } from '../../../components/icons';
 import { withMonitorPage } from '../../../lib/monitor';
 
@@ -156,6 +157,11 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser,
               </ul>
             </section>
           )}
+
+          {/* Same seek and the same degradation as the chapter list above. The
+              panel fetches itself lazily, so a video nobody expands - and a
+              video that was never transcribed - costs nothing here. */}
+          <TranscriptPanel videoId={videoId} seekable={Boolean(seek)} onSeek={seek} />
 
           {notes && (
             <section className="video-notes">
