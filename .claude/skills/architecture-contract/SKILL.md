@@ -72,7 +72,13 @@ The app: a private, invite-only video portal. Next.js 15 **Pages Router** + Reac
 
 **Why.** These are bunny.net's URL Token Authentication and TUS presigning schemes — the server on the other end recomputes the exact same hash. Two hard-won details are baked in: (a) the TUS presigner and the thumbnail-CDN signer `.trim()` their env values, because a stray newline in a Vercel env var is silently dropped from the `AccessKey` HTTP header (so plain API calls keep working) but corrupts the SHA256 input → TUS returns 401 with no useful error. (The embed-view-token signer `signVideoToken` does not trim `BUNNY_TOKEN_AUTH_KEY`, and does not need to.) That was the TUS 401 saga, fixed in commit `8e81183` ("Fix TUS upload 401: revert to seconds expiry, trim env values"). (b) TUS expiry is seconds, not milliseconds — same commit.
 
-**CodeQL false positive on record.** CodeQL flags these as "use of a broken or weak cryptographic hashing algorithm on passwords." They are not password hashes; they are vendor-mandated URL token formats. The finding is dismissed with rationale on record — do not "fix" them with bcrypt/HMAC-SHA512/etc., which breaks the vendor contract outright.
+**Three formulas, more than three call sites.** The CDN-path formula (row 3) is used by
+`getThumbnailUrl`, by `getVideoFileUrl` (podcast media) and by `fetchCaptionVtt`
+(transcripts), each with its own byte-identical copy. That duplication is deliberate and
+is NOT to be refactored into a shared signer — see `failure-archaeology` entry 6 for the
+reasoning and the date it was decided.
+
+**CodeQL false positive on record.** CodeQL flags these as "use of a broken or weak cryptographic hashing algorithm on passwords." They are not password hashes; they are vendor-mandated URL token formats. The finding is dismissed with rationale on record — do not "fix" them with bcrypt/HMAC-SHA512/etc., which breaks the vendor contract outright. **Each call site raises its own alert**, so adding a feature that signs a CDN path adds an alert to dismiss; that is expected and is not a reason to change the code.
 
 **What breaks if violated.** Any deviation — reordered concatenation, milliseconds, un-trimmed input, different digest or encoding — produces tokens Bunny rejects: uploads 401, videos won't play, thumbnails 403. Failures are silent and total.
 

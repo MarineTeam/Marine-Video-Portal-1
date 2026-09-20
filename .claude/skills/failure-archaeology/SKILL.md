@@ -136,11 +136,33 @@ commit hash cited here was verified against git history on 2026-07-10; run
 - `getThumbnailUrl` (line 161) — thumbnail CDN token authentication.
 - `signVideoToken` / `getEmbedUrl` (lines 199/206) — embed view token.
 
+**The list has grown, and will keep growing** (added 2026-09-20). Every feature that
+needs a signed CDN path adds another instance of the same frozen base64url formula, and
+each one raises its own alert of this same class:
+- `getVideoFileUrl` (~line 262) — podcast media MP4, added with the feed.
+- `fetchCaptionVtt` (~line 400) — the caption file behind the transcript feature.
+
+They are the same false positive for the same reason. Note that Decision 4 in
+`architecture-contract` still calls these "three exact signing formulas" — there are
+three FORMULAS (TUS, embed, CDN-path) but now four call sites, because the CDN-path
+formula is used by thumbnails, podcast media and captions alike.
+
+**Do not "solve" this by extracting a shared signer.** It is tempting — four copies of
+one formula is ordinarily a defect — and it was considered and rejected on 2026-09-20.
+This repo's settled doctrine is that the signing code is not refactored (that is the
+warning in this skill's own description), and the sibling lesson in entry 5 is that
+extracting inline code broke CodeQL's recognition of a sanitizer. The cost of a fifth
+copy is a duplicate alert to dismiss; the cost of a bad refactor is silent, total
+playback failure. Copy the formula, byte for byte.
+
 Switching to bcrypt/scrypt/argon2 is impossible: Bunny verifies the signature server-side with SHA256. "Fixing" the alert breaks upload and playback outright. (Formula details live in the `bunny-reference` skill.)
 
 **Evidence** | The `40f4feb` commit message (2026-07-09) states the same conclusion: the three alerts "are false positives ... and should be dismissed on GitHub, not changed." Note the alert line numbers cited there (46/157/181) are pre-`eb4bcdd`; current lines are 43/161/199.
 
-**Status** | **SETTLED on the code side — never change the algorithms.** The dismissal itself (marking the alerts false-positive in the GitHub Security tab) was **still pending as of 2026-07-10** — the maintainer declined automated dismissal and will click through the UI personally. If you see these alerts open, that is expected; do not write code in response.
+**Status** | **SETTLED on the code side — never change the algorithms.** A new alert of
+this class on a NEW call site (e.g. the 2026-09-20 one on `fetchCaptionVtt`, line 401)
+is not a new problem: classify it against this entry, dismiss it, and do not write code.
+ The dismissal itself (marking the alerts false-positive in the GitHub Security tab) was **still pending as of 2026-07-10** — the maintainer declined automated dismissal and will click through the UI personally. If you see these alerts open, that is expected; do not write code in response.
 
 **Lesson** | A scanner category ("password hashing") can misfile vendor-protocol crypto. Classify the alert before treating it.
 
