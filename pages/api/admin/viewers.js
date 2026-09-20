@@ -4,8 +4,8 @@ import { logAudit } from '../../../lib/audit';
 import { withMonitorApi } from '../../../lib/monitor';
 import { removeUserFromAllGroups } from '../../../lib/groups';
 import { clearTokenForEmail } from '../../../lib/feedTokens';
+import { isLikelyEmail } from '../../../lib/auth';
 
-const MAX_EMAIL_LENGTH = 254; // RFC 5321 practical limit
 const MAX_TAGS_PER_VIEWER = 20;
 const MAX_TAG_LENGTH = 40;
 
@@ -28,20 +28,6 @@ function cleanTags(list) {
         .filter((t) => t.length > 0 && t.length <= MAX_TAG_LENGTH)
     ),
   ].slice(0, MAX_TAGS_PER_VIEWER);
-}
-
-// Plain string ops instead of a single regex: the previous
-// /^[^\s@]+@[^\s@]+\.[^\s@]+$/ didn't exclude '.' from its char classes, so
-// the boundary before the literal '.' was ambiguous — a crafted string in a
-// bulk-paste input could cause polynomial-time backtracking. This is linear.
-function isLikelyEmail(s) {
-  if (typeof s !== 'string' || s.length === 0 || s.length > MAX_EMAIL_LENGTH) return false;
-  if (/\s/.test(s)) return false;
-  const at = s.indexOf('@');
-  if (at <= 0 || at !== s.lastIndexOf('@')) return false;
-  const domain = s.slice(at + 1);
-  const dot = domain.indexOf('.');
-  return dot > 0 && dot < domain.length - 1;
 }
 
 async function handler(req, res) {

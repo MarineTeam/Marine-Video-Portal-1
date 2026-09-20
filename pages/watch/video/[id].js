@@ -12,6 +12,13 @@ import { isGeoAllowed } from '../../../lib/geo';
 import { getGlobalWatermark, getVideoWatermarkMode, isWatermarkExempt, resolveWatermark } from '../../../lib/watermark';
 import AppShell from '../../../components/AppShell';
 import ResumablePlayer from '../../../components/ResumablePlayer';
+import TranscriptPanel from '../../../components/TranscriptPanel';
+import SaveToListButton from '../../../components/SaveToListButton';
+import RatingButtons from '../../../components/RatingButtons';
+import { getMyList } from '../../../lib/mylistStore';
+import { isSaved } from '../../../lib/mylist';
+import { getRatings } from '../../../lib/ratingsStore';
+import { ratingOf } from '../../../lib/ratings';
 import { IconChevronLeft } from '../../../components/icons';
 import { withMonitorPage } from '../../../lib/monitor';
 
@@ -81,6 +88,14 @@ async function getServerSidePropsInner({ req, res, params }) {
   }
 
   const meta = await getVideoMeta(video.guid);
+  // Read server-side so the toggle never paints 'Save' on a video already
+  // saved. getMyList swallows read failures into {}, so an unreadable list
+  // starts it unsaved — which one click corrects.
+  const saved = isSaved(await getMyList(email), video.guid);
+  // Same posture: getRatings swallows read failures, so an unreadable rating
+  // starts the buttons unpressed rather than failing a page the viewer is
+  // entitled to.
+  const vote = ratingOf(await getRatings(email), video.guid);
 
   const [globalDefault, videoMode, exempt] = await Promise.all([
     getGlobalWatermark(),
@@ -97,6 +112,8 @@ async function getServerSidePropsInner({ req, res, params }) {
       adminUser: staff,
       watermarkText: watermark ? email : null,
       chapters: meta?.chapters || [],
+      saved,
+      vote,
       notes: meta?.notes || '',
     },
   };
@@ -104,7 +121,7 @@ async function getServerSidePropsInner({ req, res, params }) {
 
 export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
 
-export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText, chapters = [], notes = '' }) {
+export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText, chapters = [], notes = '', saved = false, vote = null }) {
   // Set once player.js attaches. Until then (and forever, if it fails to load)
   // chapters render as plain text rather than buttons that would do nothing.
   const [seek, setSeek] = useState(null);
@@ -125,7 +142,11 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser,
         </div>
       ) : (
         <>
-          <h1 className="watch-title">{title}</h1>
+          <div className="watch-head">
+            <h1 className="watch-title">{title}</h1>
+            <SaveToListButton videoId={videoId} initialSaved={saved} />
+            <RatingButtons videoId={videoId} initialVote={vote} />
+          </div>
           <ResumablePlayer
             embedUrl={embedUrl}
             title={title}
@@ -156,6 +177,11 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser,
               </ul>
             </section>
           )}
+
+          {/* Same seek and the same degradation as the chapter list above. The
+              panel fetches itself lazily, so a video nobody expands - and a
+              video that was never transcribed - costs nothing here. */}
+          <TranscriptPanel videoId={videoId} seekable={Boolean(seek)} onSeek={seek} />
 
           {notes && (
             <section className="video-notes">

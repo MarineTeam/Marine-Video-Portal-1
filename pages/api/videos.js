@@ -7,6 +7,8 @@ import { resolveAccess, filterVideos } from '../../lib/groups';
 import { listSchedules, filterScheduled } from '../../lib/schedule';
 import { listVideoMeta } from '../../lib/videoMetaStore';
 import { metaMatches } from '../../lib/videoMeta';
+import { matchingTranscriptGuids } from '../../lib/captions';
+import { listTranscriptText } from '../../lib/captionsStore';
 import { isVerified, recordObservation } from '../../lib/verification';
 import { allow, callerId } from '../../lib/ratelimit';
 import { isGeoAllowed } from '../../lib/geo';
@@ -72,9 +74,25 @@ async function handler(req, res) {
     // Philippians" is findable. Matching runs over `ordered`, which the group
     // and schedule filters above have already narrowed — searching can never
     // surface a video the viewer isn't allowed to see.
-    const meta = await listVideoMeta();
+    // Titles, notes AND transcripts. The transcript half is the same shape of
+    // claim as the notes half - "this video is about that" - so it is a third
+    // OR rather than a separate mechanism, and it inherits the guarantee
+    // above for free: matching still runs over `ordered`, which the group and
+    // schedule filters have already narrowed.
+    //
+    // Transcripts are read as the TEXT map, not cue arrays: search needs none
+    // of the timings, and cue bodies run ~1,500 per 90-minute service. That
+    // split is why lib/captionsStore.js keeps two hashes.
+    const [meta, transcriptText] = await Promise.all([
+      listVideoMeta(),
+      listTranscriptText(),
+    ]);
+    const spoken = new Set(matchingTranscriptGuids(transcriptText, q));
     allVideos = ordered.filter(
-      (v) => (v.title || '').toLowerCase().includes(q) || metaMatches(meta[v.guid], q)
+      (v) =>
+        (v.title || '').toLowerCase().includes(q) ||
+        metaMatches(meta[v.guid], q) ||
+        spoken.has(v.guid)
     );
   } else if (collection) {
     allVideos = ordered.filter((v) => v.collectionId === collection);

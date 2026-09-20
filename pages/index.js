@@ -14,6 +14,7 @@ export default function Home() {
   const [collection, setCollection] = useState('');
   const [collections, setCollections] = useState([]);
   const [progress, setProgress] = useState([]);
+  const [savedIds, setSavedIds] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   // Access request (shown only on the not-approved screen).
   const [accessRequest, setAccessRequest] = useState(null);
@@ -59,6 +60,13 @@ export default function Home() {
       .catch(() => {});
     fetch('/api/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
     fetch('/api/progress').then((r) => (r.ok ? r.json() : [])).then(setProgress).catch(() => {});
+    // Saved ids only — the page already holds the library it is allowed to
+    // see, so intersecting locally means a saved video that has since left the
+    // viewer's access simply matches nothing rather than needing filtering here.
+    fetch('/api/mylist')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setSavedIds(d?.ids || []))
+      .catch(() => {});
   }, [user]);
 
   async function requestAccess() {
@@ -182,6 +190,26 @@ export default function Home() {
       <div className="home-toolbar">
         <NotifyButton />
       </div>
+
+      {savedIds.length > 0 && (
+        <div className="continue-section">
+          <h2 className="section-heading">My list</h2>
+          <div className="continue-grid">
+            {/* Saved order, not library order, and no progress bar: most saved
+                videos have never been opened, and an empty bar reads as
+                "0% watched" rather than "not started". */}
+            {savedIds
+              .map((id) => data.videos.find((v) => v.id === id))
+              .filter(Boolean)
+              .slice(0, 6)
+              .map((v) => (
+                <a key={v.id} href={`/watch/video/${v.id}`} className="continue-card">
+                  <span className="continue-title">{v.title || 'Untitled'}</span>
+                </a>
+              ))}
+          </div>
+        </div>
+      )}
 
       {inProgress.length > 0 && (
         <div className="continue-section">

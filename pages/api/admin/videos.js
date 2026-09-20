@@ -6,6 +6,8 @@ import { maybeAnnounceReady } from '../../../lib/push';
 import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/watermark';
 import { listSchedules, setSchedule, scheduleState } from '../../../lib/schedule';
 import { listVideoMeta, setVideoMeta, clearVideoMeta } from '../../../lib/videoMetaStore';
+import { clearVideoRatingCounts, getRatingCounts } from '../../../lib/ratingsStore';
+import { countsByVideo, countsFor, summarize } from '../../../lib/ratings';
 import { listPublicVideos, clearPublicVideo } from '../../../lib/publicVideos';
 import { formatChaptersText } from '../../../lib/videoMeta';
 import { withMonitorApi } from '../../../lib/monitor';
@@ -41,6 +43,10 @@ async function handler(req, res) {
       // swallow — announcements are a convenience, the library must still load
     }
 
+    // Totals only — the counters hold no identity, so this cannot tell an
+    // admin WHO rated anything. See lib/ratings.js.
+    const ratings = countsByVideo(await getRatingCounts());
+
     return res.json(
       ordered.map((v) => ({
         id: v.guid,
@@ -58,6 +64,9 @@ async function handler(req, res) {
         chapters: meta[v.guid]?.chapters || [],
         chaptersText: formatChaptersText(meta[v.guid]?.chapters),
         isPublic: publicIds.has(v.guid),
+        // null when nobody has voted, so the UI shows nothing rather than a
+        // row of zeroes that reads like a bad score.
+        rating: summarize(countsFor(ratings, v.guid)),
       }))
     );
   }
@@ -185,6 +194,8 @@ async function handler(req, res) {
       await clearVideoMeta(id);
       // A deleted guid must not linger in the public set.
       await clearPublicVideo(id);
+      // ...nor carry its score over to a recycled bunny.net id.
+      await clearVideoRatingCounts(id);
     }
     if (okIds.size > 0) {
       const order = await getOrder();

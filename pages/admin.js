@@ -10,6 +10,8 @@ import { getRole, ROLE_ADMIN, ROLE_MANAGER } from '../lib/roles';
 import { isGeoAllowed } from '../lib/geo';
 import { withMonitorPage } from '../lib/monitor';
 import { resetMonitorCalls } from '../lib/monitorClient';
+import { formatChaptersText, parseChapters } from '../lib/videoMeta';
+import { sameChapters } from '../lib/aiChapters';
 
 // Server-side gate: only staff (admins and managers) can load the admin page
 // at all. The client-side checks and per-route 403s remain as defense in
@@ -100,6 +102,12 @@ export default function Admin({ isAdminRole }) {
   const [themeSaved, setThemeSaved] = useState(false);
   const [metaDrafts, setMetaDrafts] = useState({});
   const [metaBusy, setMetaBusy] = useState({});
+  const [transcribeStatus, setTranscribeStatus] = useState({}); // videoId -> message
+  // Opt-in and unticked by default: chapter suggestions ride along with the
+  // same transcription job at no extra charge, but a video whose chapters are
+  // already typed has no use for them. Nothing they produce is ever saved.
+  const [wantChapters, setWantChapters] = useState({}); // videoId -> boolean
+  const [suggestStatus, setSuggestStatus] = useState({}); // videoId -> message
   const [metaIgnored, setMetaIgnored] = useState({});
   const [publicBusy, setPublicBusy] = useState({});
   const [siteNameDraft, setSiteNameDraft] = useState('');
@@ -575,11 +583,19 @@ export default function Admin({ isAdminRole }) {
     });
     const data = await res.json();
     if (!res.ok) { setGroupError(data.error || 'Failed to add members'); return; }
-    setGroupError(null);
+    // Refusals are shown, never swallowed. An address that is not an approved
+    // viewer is simply absent otherwise, and an admin can believe somebody is
+    // in a group for months.
+    const notes = [];
+    if (data.unknown?.length) notes.push(`not approved viewers: ${data.unknown.join(', ')}`);
+    if (data.invalid?.length) notes.push(`not valid addresses: ${data.invalid.join(', ')}`);
+    setGroupError(notes.length ? notes.join(' · ') : null);
     setGroupMemberDrafts((prev) => ({ ...prev, [groupId]: '' }));
     setGroups((prev) =>
       prev.map((g) =>
-        g.id === groupId ? { ...g, members: [...new Set([...g.members, ...data.added])].sort() } : g
+        g.id === groupId
+          ? { ...g, members: [...new Set([...g.members, ...(data.added || [])])].sort() }
+          : g
       )
     );
   }
@@ -803,6 +819,98 @@ export default function Admin({ isAdminRole }) {
       setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, isPublic: data.isPublic } : x)));
     } finally {
       setPublicBusy((prev) => ({ ...prev, [v.id]: false }));
+    }
+  }
+
+  // Transcription. TWO steps, not one, because bunny's Transcribe AI is
+  // asynchronous: queueing returns immediately and the captions land minutes
+  // later. Hiding that behind a poller would hide the timing and the cost
+  // from the person who pressed the button.
+  async function transcribeVideo(videoId, ingest) {
+    setTranscribeStatus((prev) => ({ ...prev, [videoId]: ingest ? 'Fetching…' : 'Queueing…' }));
+    try {
+      const res = await fetch('/api/admin/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId,
+          ...(ingest ? { ingest: true } : { chapters: wantChapters[videoId] === true }),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTranscribeStatus((prev) => ({ ...prev, [videoId]: data.error || 'That did not work.' }));
+        return;
+      }
+      const message = data.queued
+        ? data.chapters
+          ? 'Queued with chapter suggestions — a few minutes, then Fetch captions and Suggest chapters.'
+          : 'Queued — bunny takes a few minutes, then press Fetch captions.'
+        : data.ready
+          ? `Fetched ${data.cues} lines (${data.language}).`
+          : 'Not ready yet — give it a minute, then press Fetch captions.';
+      setTranscribeStatus((prev) => ({ ...prev, [videoId]: message }));
+    } catch (e) {
+      setTranscribeStatus((prev) => ({ ...prev, [videoId]: 'That did not work.' }));
+    }
+  }
+
+  // Loads bunny's generated chapters INTO THE TEXTAREA. This is the accept
+  // step and deliberately only half of one: the suggestions sit in the box
+  // until the admin presses "Save chapters & notes", so what gets stored is
+  // still something a person chose. Replacing text they typed asks first — the
+  // AI is not allowed to overwrite someone's work on a single click.
+  async function suggestChapters(v) {
+    setSuggestStatus((prev) => ({ ...prev, [v.id]: 'Reading…' }));
+    try {
+      const res = await fetch('/api/admin/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: v.id, suggestions: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSuggestStatus((prev) => ({ ...prev, [v.id]: data.error || 'That did not work.' }));
+        return;
+      }
+      const proposed = data.chapters || [];
+      const skipped = data.ignored || [];
+      if (proposed.length === 0) {
+        setSuggestStatus((prev) => ({
+          ...prev,
+          [v.id]: skipped.length
+            ? `bunny returned ${skipped.length} chapter(s) that could not be read: ${skipped.join(' · ')}`
+            : 'bunny has not generated chapters for this video. Transcribe again with the box ticked.',
+        }));
+        return;
+      }
+      const draft = metaDraft(v, 'chaptersText');
+      const current = parseChapters(draft).chapters;
+      if (sameChapters(current, proposed)) {
+        setSuggestStatus((prev) => ({
+          ...prev,
+          [v.id]: 'The suggestions match what is already here.',
+        }));
+        return;
+      }
+      if (
+        draft.trim() &&
+        !window.confirm(
+          `Replace the ${current.length} chapter(s) in the box with ${proposed.length} suggested one(s)? Nothing is saved until you press Save.`
+        )
+      ) {
+        setSuggestStatus((prev) => ({ ...prev, [v.id]: '' }));
+        return;
+      }
+      setMetaDraft(v.id, 'chaptersText', formatChaptersText(proposed));
+      setSuggestStatus((prev) => ({
+        ...prev,
+        [v.id]: `Loaded ${proposed.length} suggestion(s)${
+          skipped.length ? `, skipped ${skipped.length}` : ''
+        } — edit, then press Save chapters & notes.`,
+      }));
+    } catch (e) {
+      setSuggestStatus((prev) => ({ ...prev, [v.id]: 'That did not work.' }));
     }
   }
 
@@ -2594,6 +2702,17 @@ export default function Admin({ isAdminRole }) {
                       <span className="schedule-chip">{v.chapters.length} chapter{v.chapters.length === 1 ? '' : 's'}</span>
                     )}
                     {v.notes ? <span className="schedule-chip">notes</span> : null}
+                    {/* Totals only, and staff-only. The counters hold no
+                        identities, so this cannot say who rated what — see
+                        lib/ratings.js. */}
+                    {v.rating ? (
+                      <span
+                        className="schedule-chip"
+                        title={`${v.rating.up} up, ${v.rating.down} down, from ${v.rating.total} viewer(s)`}
+                      >
+                        👍 {v.rating.up} · 👎 {v.rating.down}
+                      </span>
+                    ) : null}
                   </summary>
 
                   <p className="text-muted" style={{ margin: '8px 0' }}>
@@ -2633,7 +2752,56 @@ export default function Admin({ isAdminRole }) {
                     >
                       {metaBusy[v.id] ? 'Saving…' : 'Save chapters & notes'}
                     </button>
+                    <button
+                      onClick={() => suggestChapters(v)}
+                      className="btn btn-sm"
+                      title="Load bunny's suggested chapters into the box above — nothing is saved for you"
+                    >
+                      Suggest chapters
+                    </button>
                   </div>
+                  {suggestStatus[v.id] ? (
+                    <p className="muted" style={{ marginTop: 6 }}>{suggestStatus[v.id]}</p>
+                  ) : null}
+
+                  <p className="muted" style={{ marginTop: 12, marginBottom: 6 }}>
+                    Transcript — bunny.net transcribes the audio, then viewers get a
+                    searchable transcript under the player and the library can be
+                    searched by what was said. Costs about <strong>$0.10 per minute</strong>{' '}
+                    of video, charged by bunny — the price is here rather than on an
+                    invoice later.
+                  </p>
+                  <div className="admin-row">
+                    <button
+                      onClick={() => transcribeVideo(v.id, false)}
+                      className="btn btn-sm"
+                    >
+                      Transcribe
+                    </button>
+                    <button
+                      onClick={() => transcribeVideo(v.id, true)}
+                      className="btn btn-sm"
+                    >
+                      Fetch captions
+                    </button>
+                    {transcribeStatus[v.id] ? (
+                      <span className="muted">{transcribeStatus[v.id]}</span>
+                    ) : null}
+                  </div>
+                  <label className="admin-row" style={{ marginTop: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={wantChapters[v.id] === true}
+                      onChange={(e) =>
+                        setWantChapters((prev) => ({ ...prev, [v.id]: e.target.checked }))
+                      }
+                    />
+                    <span className="muted">
+                      Also suggest chapters from the transcript. Suggestions are never saved
+                      for you — press <strong>Suggest chapters</strong> above to load them into
+                      the box, then save.
+                    </span>
+                  </label>
 
                   {metaIgnored[v.id]?.length > 0 && (
                     <p className="form-error" style={{ marginTop: 8 }}>
