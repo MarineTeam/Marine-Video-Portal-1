@@ -19,10 +19,11 @@ import { getMyList } from '../../../lib/mylistStore';
 import { isSaved } from '../../../lib/mylist';
 import { getRatings } from '../../../lib/ratingsStore';
 import { ratingOf } from '../../../lib/ratings';
+import { parseTimeParam } from '../../../lib/timestampLink';
 import { IconChevronLeft } from '../../../components/icons';
 import { withMonitorPage } from '../../../lib/monitor';
 
-async function getServerSidePropsInner({ req, res, params }) {
+async function getServerSidePropsInner({ req, res, params, query }) {
   const session = await getSession(req, res);
 
   if (!session) {
@@ -114,6 +115,10 @@ async function getServerSidePropsInner({ req, res, params }) {
       chapters: meta?.chapters || [],
       saved,
       vote,
+      // Null when there is no ?t=, or when it is not a timestamp we accept.
+      // Null rather than 0 on purpose: an unparseable value must leave the
+      // saved resume position alone rather than restarting the video.
+      startAt: parseTimeParam(query?.t),
       notes: meta?.notes || '',
     },
   };
@@ -121,7 +126,7 @@ async function getServerSidePropsInner({ req, res, params }) {
 
 export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
 
-export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText, chapters = [], notes = '', saved = false, vote = null }) {
+export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText, chapters = [], notes = '', saved = false, vote = null, startAt = null }) {
   // Set once player.js attaches. Until then (and forever, if it fails to load)
   // chapters render as plain text rather than buttons that would do nothing.
   const [seek, setSeek] = useState(null);
@@ -153,6 +158,7 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser,
             videoId={videoId}
             watermarkText={watermarkText}
             onSeekAvailable={handleSeekAvailable}
+            startAt={startAt}
           />
 
           {chapters.length > 0 && (
