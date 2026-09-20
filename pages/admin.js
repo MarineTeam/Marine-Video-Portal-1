@@ -583,11 +583,19 @@ export default function Admin({ isAdminRole }) {
     });
     const data = await res.json();
     if (!res.ok) { setGroupError(data.error || 'Failed to add members'); return; }
-    setGroupError(null);
+    // Refusals are shown, never swallowed. An address that is not an approved
+    // viewer is simply absent otherwise, and an admin can believe somebody is
+    // in a group for months.
+    const notes = [];
+    if (data.unknown?.length) notes.push(`not approved viewers: ${data.unknown.join(', ')}`);
+    if (data.invalid?.length) notes.push(`not valid addresses: ${data.invalid.join(', ')}`);
+    setGroupError(notes.length ? notes.join(' · ') : null);
     setGroupMemberDrafts((prev) => ({ ...prev, [groupId]: '' }));
     setGroups((prev) =>
       prev.map((g) =>
-        g.id === groupId ? { ...g, members: [...new Set([...g.members, ...data.added])].sort() } : g
+        g.id === groupId
+          ? { ...g, members: [...new Set([...g.members, ...(data.added || [])])].sort() }
+          : g
       )
     );
   }
