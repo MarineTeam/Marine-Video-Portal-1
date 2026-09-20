@@ -10,6 +10,7 @@ import { clearVideoRatingCounts, getRatingCounts } from '../../../lib/ratingsSto
 import { countsByVideo, countsFor, summarize } from '../../../lib/ratings';
 import { listPublicVideos, clearPublicVideo } from '../../../lib/publicVideos';
 import { formatChaptersText } from '../../../lib/videoMeta';
+import { collectFinishedTranscripts } from '../../../lib/transcriptCollect';
 import { withMonitorApi } from '../../../lib/monitor';
 
 // Bulk video ops (delete, collection assignment) accept either a single `id`
@@ -41,6 +42,23 @@ async function handler(req, res) {
       await maybeAnnounceReady(ordered);
     } catch (e) {
       // swallow — announcements are a convenience, the library must still load
+    }
+
+    // Best-effort, same contract: collect any transcription bunny has finished
+    // since it was queued, so the admin does not have to remember a second
+    // click minutes later. Bounded per request by lib/transcribeQueue.js;
+    // failures are retried on the next load and age out after a day.
+    try {
+      const { collected } = await collectFinishedTranscripts();
+      for (const item of collected) {
+        await logAudit(
+          actor,
+          'video.transcript_ingest',
+          `${item.videoId} (${item.language}, ${item.cues}, collected automatically)`
+        );
+      }
+    } catch (e) {
+      // swallow — the library must still load
     }
 
     // Totals only — the counters hold no identity, so this cannot tell an
