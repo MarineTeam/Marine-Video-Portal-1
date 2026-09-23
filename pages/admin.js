@@ -1467,13 +1467,20 @@ export default function Admin({ isAdminRole }) {
         setCleanupMsg(data.error || `Failed (status ${res.status})`);
         return;
       }
-      const { bundles, shares, progress } = data;
+      const { bundles, shares, progress, ratings } = data;
       const total = bundles.removed + shares.removed + progress.removed;
+      // The recount runs every time, so its line is shown every time — a
+      // rebuilt total is a result even when nothing stale was found.
+      const ratingsLine = !ratings
+        ? ''
+        : ratings.error
+          ? ` ${ratings.error}.`
+          : ` Rating totals rebuilt from ${ratings.votes} vote(s).`;
       setCleanupMsg(
-        total === 0
+        (total === 0
           ? 'Nothing stale found — all clean.'
           : `Removed ${bundles.removed} stale bundle(s), ${shares.removed} stale share reference(s), ` +
-            `${progress.removed} orphaned progress record(s).`
+            `${progress.removed} orphaned progress record(s).`) + ratingsLine
       );
       if (shares.removed) refreshShares();
     } catch (e) {
@@ -1947,8 +1954,9 @@ export default function Admin({ isAdminRole }) {
           <h2 className="admin-section-title">Maintenance</h2>
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
             Clears data left behind after normal use — share bundles whose links have all
-            expired or been revoked, stale share references, and watch-history records for
-            viewers who were removed. Nothing currently in use is touched.
+            expired or been revoked, stale share references, and watch history, saved lists and
+            ratings for viewers who were removed — then rebuilds the 👍/👎 totals from the votes
+            that remain. Nothing currently in use is touched.
           </p>
           <div className="admin-row">
             <button
