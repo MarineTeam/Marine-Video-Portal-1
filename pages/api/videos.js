@@ -8,6 +8,7 @@ import { listSchedules, filterScheduled } from '../../lib/schedule';
 import { listVideoMeta } from '../../lib/videoMetaStore';
 import { metaMatches } from '../../lib/videoMeta';
 import { bookIndex, parsePassageQuery, parseReferences, videoMatchesPassage } from '../../lib/scripture';
+import { queryStems, stemSet, stemsMatch } from '../../lib/stem';
 import { matchingTranscriptGuids } from '../../lib/captions';
 import { listTranscriptText } from '../../lib/captionsStore';
 import { isVerified, recordObservation } from '../../lib/verification';
@@ -111,12 +112,18 @@ async function handler(req, res) {
     // 1:27-2:11'). A fourth OR over the same already-filtered `ordered`, so
     // it inherits the guarantee above, and it only adds matches.
     const passage = parsePassageQuery(q);
+    // And a fifth: the query's WORDS by stem ('baptism' finds 'baptised'),
+    // in title or notes, every word somewhere. Not for a passage query —
+    // stems would read 'philippians 2' as the word 'philippians' and widen it
+    // to the whole book, so a passage is answered by passage overlap alone.
+    const stems = passage ? [] : queryStems(q);
     allVideos = ordered.filter(
       (v) =>
         (v.title || '').toLowerCase().includes(q) ||
         metaMatches(meta[v.guid], q) ||
         spoken.has(v.guid) ||
-        videoMatchesPassage(v.title, meta[v.guid]?.notes, passage)
+        videoMatchesPassage(v.title, meta[v.guid]?.notes, passage) ||
+        stemsMatch(stemSet(`${v.title || ''}\n${meta[v.guid]?.notes || ''}`), stems)
     );
   } else if (collection) {
     allVideos = ordered.filter((v) => v.collectionId === collection);
