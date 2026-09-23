@@ -1420,3 +1420,9 @@ details.group-section > summary { cursor: pointer; }
 .upload-groups-legend { width: 100%; margin-bottom: 4px; font-size: 13px; font-weight: 600; }
 .upload-group { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 .upload-grant-warning { margin: 10px 0 0; font-size: 13px; color: var(--danger, #e5484d); }
+
+/* Homepage "Browse by book": collapsed by default so a library citing forty
+   books does not push the videos below the fold. */
+.book-browse { margin-bottom: 14px; }
+.book-browse summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
+.book-count { opacity: 0.7; margin-left: 4px; font-variant-numeric: tabular-nums; }

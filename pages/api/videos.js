@@ -7,7 +7,7 @@ import { resolveAccess, filterVideos } from '../../lib/groups';
 import { listSchedules, filterScheduled } from '../../lib/schedule';
 import { listVideoMeta } from '../../lib/videoMetaStore';
 import { metaMatches } from '../../lib/videoMeta';
-import { parsePassageQuery, videoMatchesPassage } from '../../lib/scripture';
+import { bookIndex, parsePassageQuery, parseReferences, videoMatchesPassage } from '../../lib/scripture';
 import { matchingTranscriptGuids } from '../../lib/captions';
 import { listTranscriptText } from '../../lib/captionsStore';
 import { isVerified, recordObservation } from '../../lib/verification';
@@ -70,6 +70,20 @@ async function handler(req, res) {
   // video before it goes live; for viewers an out-of-window video is simply
   // absent, exactly as if it hadn't been uploaded yet.
   if (!staff) ordered = filterScheduled(await listSchedules(), ordered);
+
+  // ?index=books — "Browse by book" on the homepage. A MODE of this route
+  // rather than a route of its own, deliberately: every check above (approval,
+  // region, verified email, groups, schedule) is the gate the answer needs,
+  // and a second route would be a second copy of that gate to keep in step.
+  // Counted over `ordered` — already narrowed — because a count is itself
+  // information: "Philippians (3)" says three videos exist.
+  if (req.query.index === 'books') {
+    const meta = await listVideoMeta();
+    const books = bookIndex(ordered, (v) =>
+      parseReferences(`${v.title || ''}\n${meta[v.guid]?.notes || ''}`)
+    );
+    return res.json({ books });
+  }
   // A search or collection filter looks across the whole library; the default
   // (unfiltered) view respects the admin's homepage cap.
   let allVideos;

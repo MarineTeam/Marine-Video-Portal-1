@@ -27,12 +27,24 @@ export default function Home() {
   const [collections, setCollections] = useState([]);
   const [progress, setProgress] = useState([]);
   const [savedIds, setSavedIds] = useState([]);
+  // "Browse by book": the books this viewer's library cites, from
+  // /api/videos?index=books (same gate, same group and schedule filters as
+  // the list). An empty or failed answer just hides the row.
+  const [books, setBooks] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   // Access request (shown only on the not-approved screen).
   const [accessRequest, setAccessRequest] = useState(null);
   const [requestNote, setRequestNote] = useState('');
   const [requestBusy, setRequestBusy] = useState(false);
   const [requestError, setRequestError] = useState(null);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch('/api/videos?index=books')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setBooks(d?.books || []))
+      .catch(() => {});
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -240,6 +252,25 @@ export default function Home() {
             ))}
           </div>
         </div>
+      )}
+
+      {books.length > 0 && (
+        <details className="book-browse">
+          <summary>Browse by book</summary>
+          <div className="collection-chips">
+            {books.map(({ book, count }) => (
+              <button
+                key={book}
+                className={`chip${query === book ? ' active' : ''}`}
+                // The name alone is read as the whole book by the passage
+                // search, so this finds exactly the videos counted here.
+                onClick={() => { setQuery(book); setPage(1); }}
+              >
+                {book} <span className="book-count">{count}</span>
+              </button>
+            ))}
+          </div>
+        </details>
       )}
 
       {collections.length > 0 && (
