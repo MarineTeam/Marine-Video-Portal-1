@@ -119,6 +119,9 @@ export default function Admin({ isAdminRole }) {
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const [uploadErrorMsg, setUploadErrorMsg] = useState('');
+  // Groups the next upload is granted to, and any the server could not grant.
+  const [uploadGroups, setUploadGroups] = useState([]);
+  const [uploadGrantMsg, setUploadGrantMsg] = useState('');
   const [bulkEmails, setBulkEmails] = useState('');
   const [videoQuery, setVideoQuery] = useState('');
   const [editingId, setEditingId] = useState(null);
@@ -249,6 +252,10 @@ export default function Admin({ isAdminRole }) {
   useEffect(() => {
     if (!user || tab !== 'videos') return;
     fetch('/api/admin/private-list').then((r) => (r.ok ? r.json() : {})).then(setPrivateLists).catch(() => {});
+    // The upload form's "also visible to groups" picker needs the group
+    // names here too, not only on the Access tab. A caller without
+    // groups:manage gets a 403 and simply sees no picker.
+    fetch('/api/admin/groups').then((r) => (r.ok ? r.json() : [])).then(setGroups).catch(() => {});
   }, [user, tab]);
 
   // While any video is still encoding (status 0–3), re-poll so progress updates.
@@ -363,11 +370,27 @@ export default function Admin({ isAdminRole }) {
       const res = await fetch('/api/admin/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: uploadTitle.trim() || uploadFile.name }),
+        body: JSON.stringify({
+          title: uploadTitle.trim() || uploadFile.name,
+          // Only sent when something is ticked, so an ordinary upload is the
+          // exact request it always was.
+          ...(uploadGroups.length ? { groupIds: uploadGroups } : {}),
+        }),
       });
       meta = await res.json();
       if (!res.ok) throw new Error(meta.error || `Create-video failed (HTTP ${res.status})`);
       if (!meta.videoId) throw new Error('Server did not return a video id');
+      // The video exists and the bytes are about to go; a group that could
+      // not be granted is said out loud rather than left for a viewer to
+      // discover by not seeing the video.
+      const failedGroups = meta.groups?.failed || [];
+      setUploadGrantMsg(
+        failedGroups.length
+          ? `Could not add this video to ${failedGroups
+              .map((id) => groups.find((g) => g.id === id)?.name || id)
+              .join(', ')} — tick it on the Groups tab.`
+          : ''
+      );
     } catch (e) {
       failUpload(`Couldn't start upload: ${e.message}`, e);
       return;
@@ -406,6 +429,7 @@ export default function Admin({ isAdminRole }) {
         setUploadErrorMsg('');
         setUploadFile(null);
         setUploadTitle('');
+        setUploadGroups([]);
         setUploadPct(0);
         if (fileInputRef.current) fileInputRef.current.value = '';
         await fetchVideos().catch(() => {});
@@ -2414,6 +2438,33 @@ export default function Admin({ isAdminRole }) {
                 {uploading ? `Uploading ${uploadPct}%` : 'Upload'}
               </button>
             </div>
+
+            {groups.length > 0 && (
+              <fieldset className="upload-groups" disabled={uploading}>
+                <legend className="upload-groups-legend">
+                  Also visible to groups <span className="text-muted">(optional)</span>
+                </legend>
+                {/* Nothing is ticked by default, deliberately: a remembered
+                    default would grant access on every upload long after
+                    anyone remembered choosing it. */}
+                {groups.map((g) => (
+                  <label key={g.id} className="upload-group">
+                    <input
+                      type="checkbox"
+                      checked={uploadGroups.includes(g.id)}
+                      onChange={(e) =>
+                        setUploadGroups((prev) =>
+                          e.target.checked ? [...prev, g.id] : prev.filter((id) => id !== g.id)
+                        )
+                      }
+                    />
+                    {g.name}
+                  </label>
+                ))}
+              </fieldset>
+            )}
+
+            {uploadGrantMsg && <p className="upload-grant-warning">{uploadGrantMsg}</p>}
 
             {uploading && (
               <div className="upload-status">

@@ -1414,3 +1414,9 @@ details.group-section > summary { cursor: pointer; }
 .rating-wrap { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 /* A pressed vote, matching .btn.is-saved next to it. */
 .btn.is-rated { border-color: var(--accent-1); color: var(--accent-1); }
+
+/* Upload form: the optional "also visible to groups" picker. */
+.upload-groups { border: 0; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.upload-groups-legend { width: 100%; margin-bottom: 4px; font-size: 13px; font-weight: 600; }
+.upload-group { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.upload-grant-warning { margin: 10px 0 0; font-size: 13px; color: var(--danger, #e5484d); }

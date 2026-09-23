@@ -7,6 +7,7 @@ import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/wat
 import { listSchedules, setSchedule, scheduleState } from '../../../lib/schedule';
 import { listVideoMeta, setVideoMeta, clearVideoMeta } from '../../../lib/videoMetaStore';
 import { clearVideoRatingCounts, getRatingCounts } from '../../../lib/ratingsStore';
+import { pruneVideosFromGroups } from '../../../lib/groups';
 import { countsByVideo, countsFor, summarize } from '../../../lib/ratings';
 import { listPublicVideos, clearPublicVideo } from '../../../lib/publicVideos';
 import { formatChaptersText } from '../../../lib/videoMeta';
@@ -215,6 +216,9 @@ async function handler(req, res) {
       // ...nor carry its score over to a recycled bunny.net id.
       await clearVideoRatingCounts(id);
     }
+    // ...nor stay granted to a group — a cancelled upload deletes its video,
+    // and the upload may already have ticked it into groups.
+    if (okIds.size > 0) await pruneVideosFromGroups([...okIds]);
     if (okIds.size > 0) {
       const order = await getOrder();
       const pruned = order.filter((x) => !okIds.has(x));
