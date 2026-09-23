@@ -1,8 +1,10 @@
 import { useUser } from '@auth0/nextjs-auth0/client';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import AppShell from '../components/AppShell';
 import NotifyButton from '../components/NotifyButton';
 import { IconPlay, IconLock, IconSearch, IconX } from '../components/icons';
+import { linkedQuery } from '../lib/searchLink';
 
 export default function Home() {
   const { user, isLoading } = useUser();
@@ -11,6 +13,16 @@ export default function Home() {
   const [geoBlocked, setGeoBlocked] = useState(false);
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
+  const router = useRouter();
+
+  // A link can open the library already searched — the watch page's passage
+  // links do (/?q=Philippians%202). Read once the router has the URL.
+  const linked = router.isReady ? linkedQuery(router.query.q) : '';
+  useEffect(() => {
+    if (!linked) return;
+    setQuery(linked);
+    setPage(1);
+  }, [linked]);
   const [collection, setCollection] = useState('');
   const [collections, setCollections] = useState([]);
   const [progress, setProgress] = useState([]);

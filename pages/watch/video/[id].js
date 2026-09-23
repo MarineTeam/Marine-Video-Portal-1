@@ -20,6 +20,8 @@ import { isSaved } from '../../../lib/mylist';
 import { getRatings } from '../../../lib/ratingsStore';
 import { ratingOf } from '../../../lib/ratings';
 import { parseTimeParam } from '../../../lib/timestampLink';
+import { compareReferences, formatReference, parseReferences } from '../../../lib/scripture';
+import { passageSearchHref } from '../../../lib/searchLink';
 import { IconChevronLeft } from '../../../components/icons';
 import { withMonitorPage } from '../../../lib/monitor';
 
@@ -127,6 +129,7 @@ async function getServerSidePropsInner({ req, res, params, query }) {
 export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
 
 export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText, chapters = [], notes = '', saved = false, vote = null, startAt = null }) {
+  const passages = error ? [] : parseReferences(`${title || ''}\n${notes || ''}`).sort(compareReferences);
   // Set once player.js attaches. Until then (and forever, if it fails to load)
   // chapters render as plain text rather than buttons that would do nothing.
   const [seek, setSeek] = useState(null);
@@ -194,6 +197,26 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser,
               <h2 className="chapters-title">Notes</h2>
               <p className="video-notes-body">{notes}</p>
             </section>
+          )}
+
+          {/* The passages the title and notes cite, each opening the library
+              searched for it — the ordinary gated search, so a link can
+              never show a viewer something new. Read from the title too,
+              because /api/videos passage-matches titles in this repo. */}
+          {passages.length > 0 && (
+            <nav className="passages" aria-label="Passages in this video">
+              <span className="passages-label">Passages</span>
+              <div className="passage-chips">
+                {passages.map((ref) => {
+                  const label = formatReference(ref);
+                  return (
+                    <a key={label} href={passageSearchHref(label)} className="chip passage-chip">
+                      {label}
+                    </a>
+                  );
+                })}
+              </div>
+            </nav>
           )}
         </>
       )}

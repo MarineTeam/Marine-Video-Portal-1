@@ -1308,6 +1308,11 @@ details.group-section > summary { cursor: pointer; }
   font-size: 14px;
 }
 .chapter-label { overflow-wrap: anywhere; }
+/* The passages a video cites, each a link into the library search. */
+.passages { margin-top: 14px; }
+.passages-label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.passage-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.passage-chip { text-decoration: none; }
 .video-notes-body {
   margin: 0;
   padding: 12px 14px;

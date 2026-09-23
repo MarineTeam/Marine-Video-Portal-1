@@ -7,6 +7,7 @@ import { resolveAccess, filterVideos } from '../../lib/groups';
 import { listSchedules, filterScheduled } from '../../lib/schedule';
 import { listVideoMeta } from '../../lib/videoMetaStore';
 import { metaMatches } from '../../lib/videoMeta';
+import { parsePassageQuery, videoMatchesPassage } from '../../lib/scripture';
 import { matchingTranscriptGuids } from '../../lib/captions';
 import { listTranscriptText } from '../../lib/captionsStore';
 import { isVerified, recordObservation } from '../../lib/verification';
@@ -52,8 +53,11 @@ async function handler(req, res) {
   const storedCount = await redis.get(k('homepage_video_count'));
   const totalLimit = storedCount ? Number(storedCount) : 2;
 
-  const q = (req.query.q || '').trim().toLowerCase();
-  const collection = (req.query.collection || '').trim();
+  // typeof, not coercion: a repeated ?q= or ?collection= arrives as an
+  // array, and calling .trim() on one threw — a 500 from a malformed URL.
+  // Now it is simply no search / no filter.
+  const q = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
+  const collection = typeof req.query.collection === 'string' ? req.query.collection.trim() : '';
   const fetched = await listVideos({ itemsPerPage: 100 });
   const order = await getOrder();
   // Group gating happens BEFORE the search/collection/cap logic below, so a
@@ -88,11 +92,17 @@ async function handler(req, res) {
       listTranscriptText(),
     ]);
     const spoken = new Set(matchingTranscriptGuids(transcriptText, q));
+    // A query that IS a scripture reference ('philippians 2') also matches a
+    // title or notes citing an OVERLAPPING passage in any spelling ('Phil
+    // 1:27-2:11'). A fourth OR over the same already-filtered `ordered`, so
+    // it inherits the guarantee above, and it only adds matches.
+    const passage = parsePassageQuery(q);
     allVideos = ordered.filter(
       (v) =>
         (v.title || '').toLowerCase().includes(q) ||
         metaMatches(meta[v.guid], q) ||
-        spoken.has(v.guid)
+        spoken.has(v.guid) ||
+        videoMatchesPassage(v.title, meta[v.guid]?.notes, passage)
     );
   } else if (collection) {
     allVideos = ordered.filter((v) => v.collectionId === collection);
