@@ -70,6 +70,9 @@ async function handler(req, res) {
     // 7 days, so an app that caches the feed for a few days still has live
     // enclosure URLs when someone finally presses play.
     mediaUrl: getVideoFileUrl(v, 7 * 86400),
+    // A stable address on this app, re-checked per fetch — see
+    // pages/api/feed/[token]/[file].js for why art is not a signed URL.
+    imageUrl: `${baseUrl}/api/feed/${encodeURIComponent(String(req.query.token))}/${v.guid}.jpg`,
     mediaType,
     publishedAt: v.dateUploaded,
   }));

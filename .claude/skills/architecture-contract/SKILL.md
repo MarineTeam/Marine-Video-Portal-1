@@ -253,6 +253,7 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 
 - The token is **only an identity claim**. `pages/api/feed/[token].js` re-applies the approved-viewer check, group narrowing and schedule filtering **on every fetch against live data**, so removing a viewer kills their feed on the next poll with no separate revocation.
 - Tokens are **rotatable** by the viewer and revoked when a viewer is removed. `resolveToken` fails closed.
+- **Episode artwork (2026-09-23)** is `pages/api/feed/[token]/[file].js` — a second session-less route. Each item's `<itunes:image>` points at `/api/feed/<token>/<videoId>.jpg` on this app, NOT at a signed CDN URL: apps cache art keyed on the URL, and a signed one changes on every refresh. That route re-makes the feed's checks per fetch (token, approved-or-staff, video exists, groups, publish window read FAILING CLOSED for non-staff), gives one bare 404 for every refusal, validates bunny's thumbnail file name, and only then 302s to a 15-minute signed URL via the unchanged `getThumbnailUrl` (`npm test -- feedArtwork podcastFeed`).
 - `lib/bunny.js` gained `getVideoFileUrl` — a NEW consumer of the SAME CDN URL-token formula `getThumbnailUrl` uses. **The three signing formulas are untouched**; the change to that file is purely additive (zero lines removed).
 
 **What breaks if violated.**
@@ -298,6 +299,7 @@ Walk this list on every review that touches auth, API routes, Redis, or `lib/bun
 - [ ] `notifyNewAccessRequest` still cannot throw into the request path, and still fires only when the request is new.
 - [ ] `isPublicVideo` still fails CLOSED, the public route still refuses uniformly, and nothing outside `lib/publicWatch.js` decides anonymous access (Decision 17).
 - [ ] `pages/api/feed/[token].js` still re-checks the approved set, groups and schedules on every fetch — the token alone grants nothing.
+- [ ] `pages/api/feed/[token]/[file].js` (episode artwork) makes the same checks, fails closed on an unreadable schedule, and signs nothing for a request it refuses.
 - [ ] `lib/bunny.js`'s three signing formulas remain byte-identical; `getVideoFileUrl` is additive and reuses the CDN-token formula unchanged.
 - [ ] `lib/accessRequests.js` never writes `pvp:approved_viewers`; only `pages/api/admin/access-requests.js` does, behind `viewers:manage`.
 - [ ] Every admin route authorizes BEFORE checking `req.method`, so an unauthorized caller gets 403 rather than 405 (`lib/__tests__/apiGates.test.js` pins this).
