@@ -81,6 +81,122 @@ function formatDuration(seconds) {
   return `${m}:${String(s % 60).padStart(2, '0')}`;
 }
 
+// Draws the chosen image, centre-cropped to a square, at one size, and returns
+// the PNG as base64. The resize happens HERE, in the browser, so the server
+// needs no image library — and it re-checks every result anyway
+// (lib/appIcon.js), so nothing about this function is trusted.
+function renderIconPng(image, size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  const side = Math.min(image.naturalWidth, image.naturalHeight);
+  const sx = (image.naturalWidth - side) / 2;
+  const sy = (image.naturalHeight - side) / 2;
+  ctx.drawImage(image, sx, sy, side, side, 0, 0, size, size);
+  return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('That file could not be read as an image'));
+    };
+    image.src = url;
+  });
+}
+
+function AppIconSetting() {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  // Changes after a save or reset, so the preview is refetched.
+  const [bust, setBust] = useState(0);
+
+  async function send(method, body) {
+    const res = await fetch('/api/admin/app-icon', {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Failed (status ${res.status})`);
+    return data;
+  }
+
+  async function choose(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setMsg('');
+    setBusy(true);
+    try {
+      const image = await loadImage(file);
+      if (Math.min(image.naturalWidth, image.naturalHeight) < 512) {
+        throw new Error('Choose an image at least 512 pixels on its shorter side');
+      }
+      const icons = {};
+      for (const size of [180, 192, 512]) icons[size] = renderIconPng(image, size);
+      await send('PUT', { icons });
+      setMsg('Saved. New installs use it now; installed apps pick it up when the browser next checks.');
+      setBust(Date.now());
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reset() {
+    setMsg('');
+    setBusy(true);
+    try {
+      await send('DELETE');
+      setMsg('Back to the built-in icon.');
+      setBust(Date.now());
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="setting-block">
+      <span className="collection-label">App icon</span>
+      <p className="text-muted" style={{ margin: '4px 0 8px' }}>
+        The picture on a phone&rsquo;s home screen when the portal is installed, and the podcast
+        cover. Any image works &mdash; it is cropped to a square from the centre. PNG output only.
+      </p>
+      <div className="admin-row">
+        <img
+          src={`/api/app-icon/192?preview=${bust}`}
+          alt="Current app icon"
+          width={48}
+          height={48}
+          className="app-icon-preview"
+        />
+        <label className="btn btn-primary btn-sm" aria-disabled={busy}>
+          {busy ? 'Working…' : 'Choose image'}
+          <input type="file" accept="image/*" hidden disabled={busy} onChange={choose} />
+        </label>
+        <button onClick={reset} className="btn btn-outline btn-sm" disabled={busy}>
+          Reset to default
+        </button>
+        {msg && <span className="text-muted">{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function Admin({ isAdminRole }) {
   const { user, isLoading } = useUser();
   const [videos, setVideos] = useState([]);
@@ -1633,6 +1749,8 @@ export default function Admin({ isAdminRole }) {
               </button>
             </div>
           </div>
+
+          <AppIconSetting />
 
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
             Choose the accent palette used across the portal for every visitor.

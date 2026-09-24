@@ -8,6 +8,7 @@ import { listVideoMeta } from '../../../lib/videoMetaStore';
 import { resolveToken } from '../../../lib/feedTokens';
 import { getSiteName } from '../../../lib/brandingStore';
 import { buildFeedXml, mimeForFile } from '../../../lib/podcastFeed';
+import { getAppIconVersion } from '../../../lib/appIconStore';
 import { withMonitorApi } from '../../../lib/monitor';
 
 // Per-subscriber podcast feed. Reachable WITHOUT a session, because podcast
@@ -77,8 +78,11 @@ async function handler(req, res) {
     publishedAt: v.dateUploaded,
   }));
 
+  // The show's cover: the app icon, the admin-set one when there is one.
+  const iconVersion = await getAppIconVersion().catch(() => null);
   const xml = buildFeedXml({
     siteName,
+    imageUrl: iconVersion ? `${baseUrl}/api/app-icon/512?v=${iconVersion}` : `${baseUrl}/icon-512.png`,
     feedUrl: `${baseUrl}/api/feed/${encodeURIComponent(String(req.query.token))}`,
     siteUrl: baseUrl,
     description: `Recordings from ${siteName}.`,

@@ -1426,3 +1426,6 @@ details.group-section > summary { cursor: pointer; }
 .book-browse { margin-bottom: 14px; }
 .book-browse summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
 .book-count { opacity: 0.7; margin-left: 4px; font-variant-numeric: tabular-nums; }
+
+/* Settings: the current app icon, shown as a phone would. */
+.app-icon-preview { border-radius: 12px; border: 1px solid var(--border-strong); }

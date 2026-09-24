@@ -305,6 +305,7 @@ Walk this list on every review that touches auth, API routes, Redis, or `lib/bun
 - [ ] Every admin route authorizes BEFORE checking `req.method`, so an unauthorized caller gets 403 rather than 405 (`lib/__tests__/apiGates.test.js` pins this).
 - [ ] `allow()` in `lib/ratelimit.js` fails open; `logAudit()` in `lib/audit.js` never throws; `ResumablePlayer` failures never block playback.
 - [ ] `BUNNY_API_KEY` never appears in any response payload or client bundle; browsers only ever receive TUS signatures.
+- [ ] The admin-set app icon (2026-09-24) is the one admin-uploaded file served from this origin to anyone, pre-login (`/api/app-icon/<size>`). `lib/appIcon.js` accepts only a PNG — by signature and IHDR header, never a declared type — of EXACTLY the size it is filed under, under a byte cap, and it is served as `image/png` with `nosniff` and `default-src 'none'`. Never widen it to SVG ("it is only an icon" is how a script ends up running on the site's origin). In `pvp:app_icon` the version is written LAST, cleared FIRST, and letter-prefixed because Upstash JSON-parses all-digit strings (`npm test -- appIcon appIconRoutes manifest podcastFeed`).
 
 ## C. Known-weak points
 
