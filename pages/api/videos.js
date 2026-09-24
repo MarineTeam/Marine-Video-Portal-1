@@ -70,7 +70,9 @@ async function handler(req, res) {
   // Scheduled publish/expiry. Staff keep seeing everything so they can check a
   // video before it goes live; for viewers an out-of-window video is simply
   // absent, exactly as if it hadn't been uploaded yet.
-  if (!staff) ordered = filterScheduled(await listSchedules(), ordered);
+  // A group's own window (lib/schedule.js) opens a video early for its
+  // members, so the viewer's group ids ride along.
+  if (!staff) ordered = filterScheduled(await listSchedules(), ordered, Date.now(), access.groupIds);
 
   // ?index=books — "Browse by book" on the homepage. A MODE of this route
   // rather than a route of its own, deliberately: every check above (approval,

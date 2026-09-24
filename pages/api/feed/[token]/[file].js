@@ -2,7 +2,7 @@ import { redis, k } from '../../../../lib/redis';
 import { getThumbnailUrl, getVideoById } from '../../../../lib/bunny';
 import { isStaffUser } from '../../../../lib/roles';
 import { resolveAccess, canSeeVideo } from '../../../../lib/groups';
-import { getSchedule, isVisibleNow } from '../../../../lib/schedule';
+import { getSchedule, isVisibleFor } from '../../../../lib/schedule';
 import { resolveToken } from '../../../../lib/feedTokens';
 import { podcastFeedEnabled } from '../../../../lib/podcastConfig';
 import { allow } from '../../../../lib/ratelimit';
@@ -79,7 +79,7 @@ async function handler(req, res) {
     } catch {
       return deny();
     }
-    if (!isVisibleNow(schedule)) return deny();
+    if (!isVisibleFor(schedule, access.groupIds)) return deny();
   }
 
   const name = String(video.thumbnailFileName || 'thumbnail.jpg');

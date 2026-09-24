@@ -3,7 +3,7 @@ import { redis, k } from '../../lib/redis';
 import { isStaffUser } from '../../lib/roles';
 import { isVerified } from '../../lib/verification';
 import { resolveAccess, canSeeVideo } from '../../lib/groups';
-import { getSchedule, isVisibleNow } from '../../lib/schedule';
+import { getSchedule, isVisibleFor } from '../../lib/schedule';
 import { isGeoAllowed } from '../../lib/geo';
 import { allow, callerId } from '../../lib/ratelimit';
 import { listVideos } from '../../lib/bunny';
@@ -89,7 +89,7 @@ async function handler(req, res) {
     const access = await resolveAccess(email, { staff });
     if (!canSeeVideo(access, video)) return res.status(404).json({ error: 'Not found' });
 
-    if (!staff && !isVisibleNow(await getSchedule(video.guid))) {
+    if (!staff && !isVisibleFor(await getSchedule(video.guid), access.groupIds)) {
       return res.status(404).json({ error: 'Not found' });
     }
 

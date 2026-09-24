@@ -4,10 +4,10 @@ import { getOrder, setOrder, applyOrder } from '../../../lib/order';
 import { logAudit } from '../../../lib/audit';
 import { maybeAnnounceReady } from '../../../lib/push';
 import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/watermark';
-import { listSchedules, setSchedule, scheduleState } from '../../../lib/schedule';
+import { listSchedules, setSchedule, scheduleState, validateGroupWindows, validateRepeat } from '../../../lib/schedule';
 import { listVideoMeta, setVideoMeta, clearVideoMeta } from '../../../lib/videoMetaStore';
 import { clearVideoRatingCounts, getRatingCounts } from '../../../lib/ratingsStore';
-import { pruneVideosFromGroups } from '../../../lib/groups';
+import { listGroupIds, pruneVideosFromGroups } from '../../../lib/groups';
 import { countsByVideo, countsFor, summarize } from '../../../lib/ratings';
 import { listPublicVideos, clearPublicVideo } from '../../../lib/publicVideos';
 import { formatChaptersText } from '../../../lib/videoMeta';
@@ -20,6 +20,20 @@ import { withMonitorApi } from '../../../lib/monitor';
 // single-id shape keeps its original response for backward compatibility.
 function idsFrom(body) {
   return Array.isArray(body.ids) ? body.ids : body.id ? [body.id] : [];
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function describeSchedule(id, entry) {
+  if (!entry) return `${id} → cleared`;
+  const when = (ts) => (ts ? new Date(ts).toISOString() : null);
+  let text = `${id} → ${when(entry.publishAt) || 'now'} … ${when(entry.expiresAt) || 'forever'}`;
+  if (entry.repeat) {
+    const { days, start, end, timeZone } = entry.repeat;
+    text += `, weekly ${days.map((d) => DAY_NAMES[d]).join('/')} ${start}–${end} ${timeZone}`;
+  }
+  if (entry.groups) text += `, group windows: ${Object.keys(entry.groups).join(', ')}`;
+  return text;
 }
 
 async function handler(req, res) {
@@ -127,18 +141,31 @@ async function handler(req, res) {
     // bounds empty clears the schedule entirely.
     if (Object.prototype.hasOwnProperty.call(body, 'publishAt') ||
         Object.prototype.hasOwnProperty.call(body, 'expiresAt')) {
+      // The weekly repeat and group windows travel with the dates: the whole
+      // entry is replaced on every save (lib/schedule.js).
+      const repeat = body.repeat ?? null;
+      const repeatError = validateRepeat(repeat);
+      if (repeatError) return res.status(400).json({ error: repeatError });
+      let groups = null;
+      if (body.groups != null) {
+        let known;
+        try {
+          known = await listGroupIds();
+        } catch {
+          return res.status(500).json({ error: 'Could not read the groups.' });
+        }
+        const checked = validateGroupWindows(body.groups, known);
+        if (checked.error) return res.status(400).json({ error: checked.error });
+        groups = checked.groups;
+      }
       try {
         const entry = await setSchedule(ids[0], {
           publishAt: body.publishAt,
           expiresAt: body.expiresAt,
+          repeat,
+          groups,
         });
-        await logAudit(
-          actor,
-          'video.schedule',
-          entry
-            ? `${ids[0]} → ${entry.publishAt ? new Date(entry.publishAt).toISOString() : 'now'} … ${entry.expiresAt ? new Date(entry.expiresAt).toISOString() : 'forever'}`
-            : `${ids[0]} → cleared`
-        );
+        await logAudit(actor, 'video.schedule', describeSchedule(ids[0], entry));
         return res.json({ ok: true, schedule: entry, scheduleState: scheduleState(entry) });
       } catch (e) {
         return res.status(400).json({ error: e.message });

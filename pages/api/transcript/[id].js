@@ -3,7 +3,7 @@ import { redis, k } from '../../../lib/redis';
 import { isStaffUser } from '../../../lib/roles';
 import { isVerified } from '../../../lib/verification';
 import { resolveAccess, canSeeVideo } from '../../../lib/groups';
-import { getSchedule, isVisibleNow } from '../../../lib/schedule';
+import { getSchedule, isVisibleFor } from '../../../lib/schedule';
 import { isGeoAllowed } from '../../../lib/geo';
 import { listVideos } from '../../../lib/bunny';
 import { getTranscript, getTranscriptLanguages } from '../../../lib/captionsStore';
@@ -22,7 +22,7 @@ import { withMonitorApi } from '../../../lib/monitor';
 //   3. region                        (isGeoAllowed)
 //   4. verified email                (isVerified)  <- this repo only
 //   5. group grants                  (resolveAccess / canSeeVideo)
-//   6. publish window, staff exempt  (isVisibleNow)
+//   6. publish window, staff exempt  (isVisibleFor, with the viewer's groups)
 //
 // Check 4 has no counterpart in the sibling repos and is easy to drop when
 // porting; dropping it would let an unverified session read transcripts it
@@ -73,7 +73,7 @@ async function handler(req, res) {
   const access = await resolveAccess(email, { staff });
   if (!canSeeVideo(access, video)) return res.status(404).json({ error: 'Not found' });
 
-  if (!staff && !isVisibleNow(await getSchedule(video.guid))) {
+  if (!staff && !isVisibleFor(await getSchedule(video.guid), access.groupIds)) {
     return res.status(404).json({ error: 'Not found' });
   }
 

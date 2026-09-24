@@ -1259,6 +1259,34 @@ details.group-section > summary { cursor: pointer; }
 .schedule-chip--scheduled { background: var(--surface-2); }
 .schedule-chip--live { background: var(--accent-soft); border-color: var(--accent-1); }
 .schedule-chip--expired { background: var(--danger-soft); border-color: var(--danger); }
+.schedule-chip--off-slot { background: var(--surface-2); border-style: dashed; }
+/* The schedule editor's weekly repeat and group windows. A group row keeps
+   the group and its remove button on one line and the two dates on the next,
+   stacking the dates on a phone. */
+.schedule-repeat,
+.schedule-groups { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 12px; }
+.schedule-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.schedule-days { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.schedule-times { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.schedule-times .input { width: auto; }
+.schedule-note { margin: 0; font-size: 12px; }
+.schedule-group-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+}
+.schedule-group-row > select { grid-column: 1 / 3; }
+.schedule-group-row > .btn { grid-column: 3; grid-row: 1; }
+@media (max-width: 480px) {
+  .schedule-group-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .schedule-group-row > select,
+  .schedule-group-row > input { grid-column: 1; }
+  .schedule-group-row > .btn { grid-column: 2; }
+}
+.schedule-error { margin: 10px 0 0; font-size: 13px; color: var(--danger); }
+.schedule-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 
 /* Email verification panel */
 .verify-warning {

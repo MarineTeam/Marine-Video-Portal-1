@@ -209,6 +209,13 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 
 **What breaks if violated.** Make an absent schedule mean "not published" → the entire library disappears on deploy. Let `lib/accessRequests.js` add the viewer directly → a self-serve endpoint reachable by anyone who can sign in becomes a self-approval endpoint.
 
+**Addendum (2026-09-24) — repeating and per-group windows.** A schedule entry may also carry `repeat` (`{days, start, end, timeZone}`, weekly slots) and `groups` (`{<groupId>: {publishAt, expiresAt}}`).
+
+- The repeat NARROWS the default window and is checked inside `scheduleState()`, so `isVisibleNow()` — and every enforcement point, the public page included — honours it with no new call site. It must stay there, and must not be applied to group windows: a group window is the documented way to preview outside the slot. A malformed stored rule reads as no rule (the same as an unusable date); `pages/api/admin/videos.js` refuses one with `validateRepeat` before it is stored.
+- Group windows only ever ADD visibility: `isVisibleFor(entry, access.groupIds)` is the default window OR a window of one of the viewer's groups. Every viewer path passes `access.groupIds` from `resolveAccess` — `pages/api/videos.js` and the podcast feed through `filterScheduled(..., groupIds)`, and the watch page, `/api/transcript`, `/api/mylist`, `/api/rating` and feed artwork through `isVisibleFor`. Group grants (`canSeeVideo`) are still checked first, so a window never reaches a viewer the video's grants exclude.
+- Why additive and why it must stay so: each of those call sites has to be handed the viewer's groups, and one will eventually be missed. Additive windows make that slip withhold an early preview; a window that could DELAY a video for a group would turn the same slip into showing it early. A window for a group that does not exist is refused when saved, and `DELETE /api/admin/groups` prunes the group's windows (`pruneGroupFromSchedules`, best-effort after the delete).
+- Verify with: `npm test -- scheduleWindows scheduleRoutes ratingRoute transcriptRoute feedArtwork`.
+
 ### 16. Chapters and notes are additive metadata; access-request notices are best-effort
 
 **Decision (2026-09-13).**

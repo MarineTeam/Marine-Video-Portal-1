@@ -59,7 +59,7 @@ async function handler(req, res) {
   // Same narrowing, same order as the library. Staff and ungrouped viewers
   // resolve to unrestricted, so this is a pass-through for them.
   let videos = filterVideos(access, applyOrder(fetched, order));
-  if (!staff) videos = filterScheduled(schedules, videos);
+  if (!staff) videos = filterScheduled(schedules, videos, Date.now(), access.groupIds);
 
   const mediaType = mimeForFile(podcastMediaFile());
   const items = videos.map((v) => ({

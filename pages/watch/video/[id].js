@@ -4,7 +4,7 @@ import { redis, k } from '../../../lib/redis';
 import { listVideos, getEmbedUrl } from '../../../lib/bunny';
 import { isStaffUser } from '../../../lib/roles';
 import { resolveAccess, canSeeVideo } from '../../../lib/groups';
-import { getSchedule, isVisibleNow } from '../../../lib/schedule';
+import { getSchedule, isVisibleFor } from '../../../lib/schedule';
 import { getVideoMeta } from '../../../lib/videoMetaStore';
 import { formatTimestamp } from '../../../lib/videoMeta';
 import { isVerified } from '../../../lib/verification';
@@ -86,7 +86,7 @@ async function getServerSidePropsInner({ req, res, params, query }) {
 
   // Scheduled publish/expiry — the direct-link half of the same gate applied
   // to the listing in /api/videos. Staff bypass so they can preview.
-  if (!staff && !isVisibleNow(await getSchedule(video.guid))) {
+  if (!staff && !isVisibleFor(await getSchedule(video.guid), access.groupIds)) {
     return { props: { error: 'This video is not currently available.', adminUser: staff } };
   }
 
