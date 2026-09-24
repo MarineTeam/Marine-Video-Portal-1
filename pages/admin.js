@@ -1,5 +1,5 @@
 import { useUser } from '@auth0/nextjs-auth0/client';
-import { getSession } from '@auth0/nextjs-auth0';
+import { getSession } from '../lib/auth0';
 import { useEffect, useRef, useState } from 'react';
 import AppShell from '../components/AppShell';
 import NotifyButton from '../components/NotifyButton';
@@ -449,6 +449,14 @@ export default function Admin({ isAdminRole }) {
   const [emails, setEmails] = useState({});
   const [shareLinks, setShareLinks] = useState({});
   const [activeShares, setActiveShares] = useState([]);
+  // When the share list was loaded. "Expired" is judged against this rather
+  // than Date.now() in render, which would make a badge flip on whatever
+  // re-render happened to cross the expiry (React's purity rule).
+  const [sharesLoadedAt, setSharesLoadedAt] = useState(() => Date.now());
+  const showShares = (list) => {
+    setActiveShares(list);
+    setSharesLoadedAt(Date.now());
+  };
   const [viewers, setViewers] = useState([]);
   const [newViewerEmail, setNewViewerEmail] = useState('');
   const [tagDrafts, setTagDrafts] = useState({});
@@ -577,7 +585,7 @@ export default function Admin({ isAdminRole }) {
       setMailEnabled(Boolean(d.mailEnabled));
       setQueryMonitorEnabled(Boolean(d.queryMonitorEnabled));
     });
-    fetch('/api/admin/shares').then((r) => r.json()).then(setActiveShares);
+    fetch('/api/admin/shares').then((r) => r.json()).then(showShares);
     fetch('/api/theme')
       .then((r) => r.json())
       .then(({ siteName, ...palette }) => {
@@ -1496,7 +1504,7 @@ export default function Admin({ isAdminRole }) {
 
   async function refreshShares() {
     const r = await fetch('/api/admin/shares');
-    setActiveShares(await r.json());
+    showShares(await r.json());
   }
 
   async function revokeShare(shareId) {
@@ -2684,7 +2692,7 @@ export default function Admin({ isAdminRole }) {
                         : <span className="badge badge-muted">Not viewed</span>}
                       {s.completed && <span className="badge badge-ok">Completed</span>}
                       {s.bundleId && <span className="badge badge-muted">Bundled</span>}
-                      {s.expiresAt < Date.now() && <span className="badge badge-muted">Expired</span>}
+                      {s.expiresAt < sharesLoadedAt && <span className="badge badge-muted">Expired</span>}
                       {s.revoked && <span className="badge badge-error">Revoked</span>}
                     </span>
                     <span className="share-meta">

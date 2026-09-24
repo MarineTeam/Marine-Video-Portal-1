@@ -47,7 +47,7 @@ changes in Vercel apply **only to new deployments** — always redeploy after ch
 | 8 | Signed-in user sees "You're signed in, but not approved" | `pvp:approved_viewers` Redis set; which email they used |
 | 9 | `429 Too many requests — slow down.` | `lib/ratelimit.js` sliding window |
 | 10 | Redis reads come back empty/nil | Missing `pvp:` prefix or wrong KV env-var names |
-| 11 | CI lint fails on `@next/next/no-html-link-for-pages` | `.eslintrc.json` — rule is intentionally off |
+| 11 | CI lint fails on `@next/next/no-html-link-for-pages` | `eslint.config.mjs` — rule is intentionally off |
 | 12 | `git push` fails: `unable to open loose object … Permission denied` | OneDrive file lock — wait and retry |
 | 13 | `gh: command not found` | Use the full path to gh.exe |
 
@@ -313,7 +313,7 @@ names; new code must always wrap keys in `k()`.
 
 ## 11. CI lint failure — `@next/next/no-html-link-for-pages`
 
-This rule is **intentionally disabled** in `.eslintrc.json`
+This rule is **intentionally disabled** in `eslint.config.mjs`
 (`"@next/next/no-html-link-for-pages": "off"`, commit `746313f`). Reason: the app links to
 `/api/auth/login` and `/api/auth/logout` with plain `<a>` tags (see `pages/index.js`,
 `pages/admin.js`). Those are **API routes** that must perform a full browser navigation —
@@ -400,6 +400,6 @@ not repo-visible. Re-verify before trusting after major refactors:
 - Approved-viewer check: `git grep -n "approved_viewers" pages/api/videos.js`
 - Rate-limit window & fail-open: `git grep -n "slidingWindow\|return true" lib/ratelimit.js`
 - Redis prefix & KV names: `git grep -n "pvp:\|KV_REST_API" lib/redis.js`
-- Lint override: `git grep -n "no-html-link-for-pages" .eslintrc.json` (rationale: `git show 746313f`)
+- Lint override: `git grep -n "no-html-link-for-pages" eslint.config.mjs` (rationale: `git show 746313f`)
 - Auth0 error docs: README.md "Common issues" section
 - CI pipeline order: `.github/workflows/ci.yml`

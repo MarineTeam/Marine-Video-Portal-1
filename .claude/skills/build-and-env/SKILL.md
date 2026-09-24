@@ -5,7 +5,7 @@ description: Load when setting up a machine to work on Marine-Video-Portal, inst
 
 # Build & Environment: Marine Video Portal
 
-Next.js 15 (Pages Router) + React 18 private video site. Repo: `MarineTeam/Marine-Video-Portal-1` on GitHub. CI: GitHub Actions (`.github/workflows/ci.yml`). Deploys: Vercel, automatically on push to `main`.
+Next.js 16 (Pages Router) + React 18 private video site. Repo: `MarineTeam/Marine-Video-Portal-1` on GitHub. CI: GitHub Actions (`.github/workflows/ci.yml`). Deploys: Vercel, automatically on push to `main`.
 
 Local repo path on the maintainer machine: `C:\Users\fs_of\OneDrive\Documents\GitHub\Marine-Video-Portal-1` (note: under OneDrive — see quirks table).
 
@@ -69,16 +69,16 @@ Then, from the repo root:
 ```powershell
 npm install        # resolves fresh every time — no lockfile is committed (see quirks)
 npm run dev        # dev server on http://localhost:3000
-npm run lint       # next lint
+npm run lint       # eslint . (Next 16 removed `next lint`)
 npm test           # vitest run
 npm run build      # next build
 ```
 
-Package scripts (verified in `package.json`): `dev` = `next dev`, `build` = `next build`, `start` = `next start`, `lint` = `next lint`, `test` = `vitest run`.
+Package scripts (verified in `package.json`): `dev` = `next dev`, `build` = `next build`, `start` = `next start`, `lint` = `eslint .`, `test` = `vitest run`.
 
 **npm 11+ is required to install this repo.** npm 10.9.x's arborist crashes with `Cannot read properties of null (reading 'edgesOut')` while resolving this project's peer graph from scratch — and since no lockfile is committed, every install *is* from scratch, so it fails every time rather than intermittently. Node 22 bundles npm 10.9.x and is therefore NOT usable as-is; Node 24 bundles npm 11.19.0 and works. CI pins `node-version: '24'` for exactly this reason. If you must use Node 22 locally, run `npm install -g npm@11` (or newer) first. Symptom to recognise: `npm install` dies in ~20s with `edgesOut` and no package list.
 
-Key dependency versions (verified in `package.json`, as of 2026-09-17): `next ^15.5.25`, `react 18.3.1` (pinned — Next 15 Pages Router does NOT require React 19, see security-currency-campaign Phase 3 G1), `@auth0/nextjs-auth0 ^3.5.0` (v3 still peers Next 15; v4 would be needed only for Next 16), `@upstash/redis ^1.34.0`, `@upstash/ratelimit ^2.0.5`, `@sentry/nextjs ^10.75.0`, `tus-js-client ^4.1.0`, `player.js ^0.1.0`, `web-push ^3.6.7` (added v1.7.0, server-side only — push notifications); dev: `eslint ^8.57.1`, `eslint-config-next ^15.5.25`, `vitest ^3.2.6`.
+Key dependency versions (verified in `package.json`, as of 2026-09-24): `next ^16.3.6`, `react 18.3.1` (pinned — Next 16 still peers React 18), `@auth0/nextjs-auth0 ^4.30.0` (v4, configured in `lib/auth0.js`; routes served by `proxy.js`), `@upstash/redis ^1.34.0`, `@upstash/ratelimit ^2.0.5`, `@sentry/nextjs ^10.75.0`, `tus-js-client ^4.1.0`, `player.js ^0.1.0`, `web-push ^3.6.7` (added v1.7.0, server-side only — push notifications); dev: `eslint ^9.39.5`, `eslint-config-next ^16.3.6`, `vitest ^4.1.11`.
 
 ### .env.local for running against real services
 
@@ -127,11 +127,12 @@ The same trick appears in `vitest.config.js` (`test.env` supplies `ADMIN_EMAILS`
 
 ## 5. Lint setup
 
-`.eslintrc.json` (verified, as of 2026-07-10) extends `next/core-web-vitals` with these downgrades:
+`eslint.config.mjs` (ESLint 9 flat config since 2026-09-24; it replaced `.eslintrc.json` when Next 16 removed `next lint`) extends `next/core-web-vitals` with these downgrades, and turns `no-undef` on for server code AND for pages/components:
 
 - `@next/next/no-html-link-for-pages`: **off** — deliberate. `/api/auth/login` and `/api/auth/logout` are API routes that require full-page `<a>` navigation; converting them to `<Link>` to satisfy the rule would break login/logout. Do not re-enable, and do not "fix" those anchors.
 - `react-hooks/exhaustive-deps`: warn (not error) — warnings won't fail CI, but don't add new ones casually.
-- `no-unused-vars`: warn.
+- `no-unused-vars`: warn, with `caughtErrors: 'none'` (ESLint 8's default — an unused `catch (e)` is this repo's best-effort idiom).
+- `react-hooks/set-state-in-effect`: off (new with eslint-config-next 16; flags the fetch-on-mount pattern every page uses).
 - `react/no-unescaped-entities`: off.
 - `@next/next/no-img-element`: off.
 

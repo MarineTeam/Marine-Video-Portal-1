@@ -184,3 +184,9 @@ The admin Videos tab lists every video and Analytics counts every video; both sa
 v1.26.2
 Fix: watch progress now only accepts a real video id and a real position, keeps titles to 200 characters, and holds at most 1,000 videos per viewer (dropping the least recently watched) — before, a signed-in viewer's progress record could grow without limit
 Fix: deleting a video now also removes its publish schedule and its watermark setting, which were left behind
+v1.27.0
+Upgraded to Next.js 16, which closes the last security advisory (PostCSS, bundled inside Next 15)
+Sign-in moved to Auth0 v4, which Next 16 requires. Nothing to change in Auth0 or Vercel: the sign-in addresses and settings are the same. Everyone will be asked to sign in once more after this deploy
+A small proxy file now serves the sign-in pages; every page and action still checks who you are itself, exactly as before
+Lint now also checks page code for names that don't exist — the mistake behind two crashes found in the sibling portals
+Fix: a share link's Expired badge was decided during drawing, so it could flip on any redraw; it now uses the time the list was loaded

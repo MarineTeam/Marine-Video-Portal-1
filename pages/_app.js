@@ -1,4 +1,4 @@
-import { UserProvider } from '@auth0/nextjs-auth0/client';
+import { Auth0Provider } from '@auth0/nextjs-auth0/client';
 import { useEffect, useState } from 'react';
 import { applyTheme } from '../lib/theme';
 import { BrandingProvider } from '../components/BrandingProvider';
@@ -33,12 +33,12 @@ export default function App({ Component, pageProps }) {
   }, []);
 
   return (
-    <UserProvider>
+    <Auth0Provider>
       <BrandingProvider siteName={siteName}>
         <IdleTimeout />
         <Component {...pageProps} />
         <QueryMonitor ssrStats={pageProps._monitor} />
       </BrandingProvider>
-    </UserProvider>
+    </Auth0Provider>
   );
 }

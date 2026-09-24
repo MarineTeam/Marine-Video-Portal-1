@@ -266,7 +266,7 @@ is not a new problem: classify it against this entry, dismiss it, and do not wri
 | 6 | SHA256 "weak hash" false positives | SETTLED (dismissals pending) | Vendor-mandated signatures, not password hashes; never change the algorithms |
 | 7 | Thumbnail direct-URL 403 | SETTLED | Referrer-based hotlink protection working as designed — a feature, not a bug |
 | 8 | Admin gate revert/reapply | SETTLED | The `getServerSideProps` gate stays; revert-the-revert is the sanctioned undo |
-| 9 | Dependabot Next-15 deferral | RESOLVED 2026-09-18 (merged `5235b70`; successor postcss/Next-16 deferral opened) | 14 alerts need Next 15; vulnerable features verified absent; owned by security-currency-campaign |
+| 9 | Dependabot Next-15 deferral | RESOLVED 2026-09-18 (merged `5235b70`); the successor postcss/Next-16 deferral CLOSED 2026-09-24 (Next 16 + Auth0 v4, sign-in-only `proxy.js`) | 14 alerts need Next 15; vulnerable features verified absent; owned by security-currency-campaign |
 | 10 | OneDrive git locks | OPEN | "Permission denied ... loose object" on push = OneDrive lock; retry, don't re-clone |
 | 11 | Forward-promotion divergence (near-miss) | RESOLVED 2026-09-18 (designed out in run-and-operate §5) | Promoting a branch build leaves `main` behind; the next push to `main` silently reverts production |
 

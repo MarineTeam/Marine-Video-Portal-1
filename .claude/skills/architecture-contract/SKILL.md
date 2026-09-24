@@ -7,7 +7,7 @@ description: The load-bearing design decisions, invariants, and known-weak point
 
 This skill is the contract between you and the people who built this system. Every decision below is load-bearing: it was made for a reason, it has already survived at least one incident or security review, and violating it breaks something specific. Read the decision, the rationale, and the failure mode before touching related code.
 
-The app: a private, invite-only video portal. Next.js 15 **Pages Router** + React 18, deployed on Vercel from GitHub `main` (MarineTeam/Marine-Video-Portal-1), bunny.net Stream for video, Auth0 for login (`@auth0/nextjs-auth0` v3), Upstash Redis as the only mutable store. Repo root: `C:\Users\fs_of\OneDrive\Documents\GitHub\Marine-Video-Portal-1`.
+The app: a private, invite-only video portal. Next.js 16 **Pages Router** + React 18, deployed on Vercel from GitHub `main` (MarineTeam/Marine-Video-Portal-1), bunny.net Stream for video, Auth0 for login (`@auth0/nextjs-auth0` v4, since 2026-09-24), Upstash Redis as the only mutable store. Repo root: `C:\Users\fs_of\OneDrive\Documents\GitHub\Marine-Video-Portal-1`.
 
 ## When NOT to use this skill
 
@@ -28,7 +28,13 @@ The app: a private, invite-only video portal. Next.js 15 **Pages Router** + Reac
 
 **Why.** The project was born as a browser-only build — see `bunny-vercel-auth0-guide.md`, the founding doc, literally titled "Browser-Only Build": no local tooling, code written in the GitHub web editor, Vercel does the installs. Pages Router was the simple, well-trodden path. That accident became a security posture: many Next.js CVEs target the App Router (RSC payloads), middleware, or i18n routing — surface this app does not have. **14 Dependabot alerts are deferred on exactly this reachability analysis** (session record, 2026-07-10, maintainer-confirmed; `security-currency-campaign` owns the live count — re-verify there rather than trusting this number after any Next upgrade).
 
-**What breaks if violated.** Adding a `middleware.js` file or an `app/` directory — even an empty or "harmless" one — silently activates those code paths in the Next.js runtime, expands the attack surface, and invalidates the deferral rationale for all 14 alerts at once. Nobody will notice until the next audit. Do not add either casually; if you genuinely need them, treat it as a security decision requiring re-triage of every deferred alert (see `change-control`).
+**Amended 2026-09-24 (the owner's decision): a sign-in-only `proxy.js`.** Next 16 is the only fix for the `postcss` advisory, Next 16 needs `@auth0/nextjs-auth0` v4, and v4 mounts its routes only from middleware — `proxy.js`, Next 16's name for it. The owner chose to take that. What keeps the original reasoning intact:
+- **It is on a patched Next.** The 14 alerts deferred on "no middleware" were fixed by the Next 15 upgrade (2026-09-18); nothing is deferred on middleware's absence any more.
+- **It makes no access decision.** `proxy.js` calls `auth0.middleware(request)` and nothing else: it serves `/api/auth/login`, `/logout`, `/callback` and `/auth/profile`, and refreshes rolling sessions. Every page and route still checks the session and role itself, so a request that skipped the proxy would meet the same checks. Never put a guard in it — see invariant below.
+- **Nothing outside the repo changed.** `lib/auth0.js` keeps the v3 URLs (`/api/auth/*`, so the Auth0 dashboard's callback URL still matches) and reads the v3 env names (`AUTH0_ISSUER_BASE_URL`, `AUTH0_BASE_URL`). One visible effect: v4's session cookie has a new name, so everyone signs in once more after the deploy.
+- **Still no `app/` directory**, and still no `i18n`, `next/image`, `next/script` or `rewrites()`.
+
+**What breaks if violated.** Adding an `app/` directory, or any access decision to `proxy.js` — even an empty or "harmless" one — silently activates those code paths in the Next.js runtime, expands the attack surface, and invalidates the deferral rationale for all 14 alerts at once. Nobody will notice until the next audit. Do not add either casually; if you genuinely need them, treat it as a security decision requiring re-triage of every deferred alert (see `change-control`).
 
 ### 2. Access model = email string matching, and email_verified is NEVER checked
 
@@ -318,7 +324,7 @@ Walk this list on every review that touches auth, API routes, Redis, or `lib/bun
 - [ ] `pages/admin.js` imports from `lib/roles.js` ONLY inside `getServerSideProps` (it reaches `lib/redis.js` → `async_hooks`; referencing an export in the component body pulls that into the client bundle and fails the build).
 - [ ] `pages/admin.js` still has its `getServerSideProps` gate (redirect non-session → login, non-staff → `/`).
 - [ ] Every Redis key goes through `k()` (`lib/redis.js`); no raw string keys anywhere, including limiter prefixes.
-- [ ] No `middleware.js` file, no `app/` directory (Decision 1 — this is a security posture, not a style choice).
+- [ ] No `app/` directory; no `middleware.js`; `proxy.js` does nothing but `return auth0.middleware(request)` and its matcher skips `api/cron/` (Decision 1, amended 2026-09-24 — a security posture, not a style choice). Every page and API route still reads the session (`getSession` from `lib/auth0.js`) and decides access itself.
 - [ ] The three signing formulas in `lib/bunny.js` are byte-exact per Decision 4; TUS expiry in Unix **seconds**; the TUS and thumbnail-CDN signers `.trim()` their env inputs (the embed-view-token signer `signVideoToken` does NOT trim — not a bug, don't "fix" it).
 - [ ] `getEmbedUrl` output ends with `autoplay=false`.
 - [ ] `GET /api/theme` is public; `POST /api/theme` is admin-only; all color values hex-validated on write AND in the `_document.js` pre-paint script.

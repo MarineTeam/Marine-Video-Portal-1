@@ -1,4 +1,4 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { getSession } from '../../lib/auth0';
 import { getEmbedUrl } from '../../lib/bunny';
 import { isStaffUser } from '../../lib/roles';
 import { isGeoAllowed } from '../../lib/geo';
@@ -86,7 +86,7 @@ export default function Watch({ embedUrl, title, shareId, watermarkText, error }
       {error ? (
         <div className="card watch-error">
           <p style={{ margin: '0 0 1rem' }}>{error}</p>
-          <a href="/api/auth/logout?returnTo=/" className="btn btn-outline btn-sm">
+          <a href="/api/auth/logout" className="btn btn-outline btn-sm">
             Log out and try a different account
           </a>
         </div>

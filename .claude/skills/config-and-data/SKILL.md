@@ -7,7 +7,7 @@ description: Environment-variable and Redis-key dictionaries for the Marine Vide
 
 This skill is the single source of truth for **what configuration exists and where data lives**: every environment variable, every Redis key, the three places env values must be mirrored, and the checklists for adding new ones. Every row below was derived by grepping the code on 2026-07-10 — file citations are the proof. If code has changed since, re-derive per "Provenance & maintenance" at the bottom.
 
-Architecture in one line: Next.js 15 Pages Router on Vercel; Auth0 for login (`@auth0/nextjs-auth0`); bunny.net Stream for video storage/playback; Upstash Redis via Vercel KV for all app state. All Redis keys go through `k()` in `lib/redis.js`, which prepends the `pvp:` prefix.
+Architecture in one line: Next.js 16 Pages Router on Vercel; Auth0 for login (`@auth0/nextjs-auth0`); bunny.net Stream for video storage/playback; Upstash Redis via Vercel KV for all app state. All Redis keys go through `k()` in `lib/redis.js`, which prepends the `pvp:` prefix.
 
 ## When NOT to use this skill
 

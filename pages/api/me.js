@@ -1,4 +1,4 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { getSession } from '../../lib/auth0';
 import { redis, k } from '../../lib/redis';
 import { getRole, capabilitiesForRole, ROLE_ADMIN, ROLE_MANAGER } from '../../lib/roles';
 import { withMonitorApi } from '../../lib/monitor';

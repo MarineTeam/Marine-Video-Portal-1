@@ -14,7 +14,7 @@ export default function IdleTimeout() {
     if (!user) return;
 
     const logout = () => {
-      window.location.href = '/api/auth/logout?returnTo=/';
+      window.location.href = '/api/auth/logout';
     };
 
     const reset = () => {

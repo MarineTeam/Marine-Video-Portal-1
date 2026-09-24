@@ -1,4 +1,4 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { getSession } from '../../lib/auth0';
 import { getThumbnailUrl } from '../../lib/bunny';
 import { listAllVideos } from '../../lib/videoLibrary';
 import { redis, k } from '../../lib/redis';

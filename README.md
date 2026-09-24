@@ -46,10 +46,10 @@ The short version; [FEATURES.md](FEATURES.md) has the detail and the known gaps.
 
 | Layer | Choice |
 |---|---|
-| Framework | Next.js 15 (Pages Router), React 18 |
+| Framework | Next.js 16 (Pages Router), React 18 |
 | Hosting | Vercel |
 | Video | bunny.net Stream (tokenized embeds, TUS resumable upload, collections, statistics) |
-| Auth | Auth0 (`@auth0/nextjs-auth0`) |
+| Auth | Auth0 (`@auth0/nextjs-auth0` v4 — `lib/auth0.js`, routes served by `proxy.js`) |
 | Data | Upstash Redis (`@upstash/redis`) via Vercel Storage |
 | Rate limiting | `@upstash/ratelimit` |
 | Push | Web Push / VAPID (`web-push`), opt-in |
@@ -63,6 +63,7 @@ The short version; [FEATURES.md](FEATURES.md) has the detail and the known gaps.
 ## Project structure
 
 ```
+proxy.js                  Next 16 proxy: serves the Auth0 sign-in routes and refreshes sessions — no access decisions
 pages/
   _app.js                 Session provider, theme bootstrap, idle-timeout mount
   _document.js            No-flash palette script (applies cached theme pre-paint)
@@ -75,7 +76,6 @@ pages/
     video/[id].js         Watch page for approved viewers — resume, chapters, passages, transcript, rating, comments
     public/[id].js        The one route that serves a video with no login at all
   api/
-    auth/[auth0].js       Auth0 login/logout/callback
     videos.js             Page of videos for approved viewers (search incl. passages, word forms and transcripts;
                           collection filter; ?index=books for Browse by book; rate-limited)
     collections.js        Collection list for the homepage filter (approved viewers)
@@ -139,6 +139,7 @@ components/
   QueryMonitor.js         Opt-in floating performance panel
   icons.js                Inline SVG icons
 lib/
+  auth0.js                Auth0 v4 client: keeps /api/auth/* URLs and the AUTH0_ISSUER_BASE_URL / AUTH0_BASE_URL env names
   auth.js                 isAdmin(email) — the ADMIN_EMAILS floor check
   roles.js                Roles + capability map; requireCapability() guard for every admin route
   groups.js               Viewer groups and the access resolution that gates the library
@@ -196,7 +197,7 @@ sentry.{server,edge}.config.js   Opt-in Sentry init (inert without a DSN)
 next.config.js            Wrapped with withSentryConfig; security headers
 vercel.json               The daily scheduled job (/api/cron/transcripts)
 vitest.config.js          Test config (node env + dummy env)
-.eslintrc.json            next/core-web-vitals
+eslint.config.mjs         ESLint 9 flat config (next/core-web-vitals + no-undef on server AND page code)
 .github/workflows/ci.yml  Lint + test + build on push/PR to main
 ```
 
@@ -560,7 +561,7 @@ Until both are confirmed against the live library, treat feed playback as unprov
 - **`/admin` is gated server-side** via `getServerSideProps` (redirects anyone who isn't an admin or manager), and every `/api/admin/*` route independently checks its own **capability** and returns `403`. Hiding a tab from a manager is presentation only — the route behind it enforces the same rule again.
 - **Playback is always tokenized** — signed, time-limited embed URLs generated per request; no permanent public URL is used or exposed.
 - **Share-link mismatches don't reveal** the intended recipient's email — the bundle page and the playback-tracking endpoint use the exact same generic mismatch message.
-- **No middleware, by design.** The bundle page and the share-tracking API each carry their own `getSession` + email-match check via `getServerSideProps` / handler code, the same pattern every other page/route in this app uses. There is deliberately no `middleware.js` gating routes centrally; adding one would expand the app's Next.js attack surface (Pages Router only, no App Router/middleware — see "Architecture at a glance" above).
+- **The proxy signs people in; it decides nothing.** Next 16 needs Auth0 v4, which serves its routes (`/api/auth/login`, `/logout`, `/callback`, `/auth/profile`) from `proxy.js` and refreshes rolling sessions there. That is all `proxy.js` does. The bundle page, the share-tracking API and every other page and route still carry their own `getSession` + access check via `getServerSideProps` / handler code, so nothing depends on a request passing through the proxy. Still no App Router.
 - **The portal refuses to be framed.** `next.config.js` sends `X-Frame-Options: DENY` and CSP `frame-ancestors 'none'` on every response, plus `X-Content-Type-Options: nosniff`, a `Referrer-Policy` and a `Permissions-Policy`. `/admin` has one-click destructive actions, so being embeddable by any origin was a click-jacking route. This is a `headers()` block, **not** middleware — the "no middleware, by design" rule above still holds. The policy is deliberately only `frame-ancestors`, not a full script CSP: the pre-paint theme script in `pages/_document.js` and Next's own bootstrap are inline and would need nonces. `Referrer-Policy` is `strict-origin-when-cross-origin` rather than `no-referrer` on purpose — the thumbnail hotlink protection below depends on the `Referer` being sent.
 - **Thumbnails** are served from the CDN and, when a token key is present, are **signed** so they keep working with "Block Direct URL File Access" enabled. Requests from the app carry the site's `Referer`, so hotlink protection still blocks direct/off-site access.
 - **Optional email verification is opt-in and cannot self-lock.** Off by default, staff unconditionally exempt, env bypass list, fails open, and an absent claim admits — see "Optional email verification" above. Never write a bare `email_verified` check anywhere; go through `lib/verification.js`.
