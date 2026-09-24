@@ -274,6 +274,19 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 
 ---
 
+### 18. A scheduled-job route has no session; CRON_SECRET is its whole gate, and it is inert without one
+
+**Decision (2026-09-24).** Finished transcriptions used to be collected only when an admin opened the Videos tab. `pages/api/cron/transcripts.js` now runs the same collector on a schedule (`vercel.json` `crons`, daily).
+
+- **The caller is Vercel's cron runner, not a person.** There is no session and no middleware in this repo, so nothing upstream guards the route. `lib/cronAuth.js` is the gate: no `CRON_SECRET`, a blank one, or one under 16 characters → **404**, as if the route did not exist; anything but `Authorization: Bearer <CRON_SECRET>` → **401**, compared in constant time over digests; GET only. The secret is trimmed, because HTTP strips whitespace from the header Vercel sends.
+- **Safe to repeat.** Vercel may deliver a run twice, and an admin page load may overlap one. A lock (`pvp:transcribe_collecting`, SET NX EX 300, released by a compare-and-delete script so a run that outlived its lock never frees a newer holder's) makes the second skip, and a collected video is no longer pending.
+- **Counts only** in the response; each collected video is audited as `scheduled job`. A run checks up to 25 videos (an admin page load, 3).
+- **Daily, and the pending limit is three days.** Vercel's Hobby plan refuses to deploy a cron more frequent than daily and may run it up to 59 minutes late; with the old 24-hour limit a job queued just after one run could be dropped before the next. On Pro the schedule can be every 15 minutes.
+
+**What breaks if violated.** Skip the secret → anyone can trigger bunny calls and audit writes. Run when no secret is configured → the job is open on every deployment that has not set one. Put a middleware in front of it without excluding `/api/cron/` → the runner is refused (no session, possibly no country) and collection silently stops. Drop the lock → overlapping runs fetch and audit the same video twice.
+
+---
+
 ## B. Invariants checklist
 
 Walk this list on every review that touches auth, API routes, Redis, or `lib/bunny.js`. Every line must hold:
@@ -297,7 +310,8 @@ Walk this list on every review that touches auth, API routes, Redis, or `lib/bun
 - [ ] Deleting a video clears it from every group that granted it (`pruneVideosFromGroups`, 2026-09-23) — cancelling an upload deletes its half-made video, which an upload may already have ticked into groups. `/api/admin/upload` grants groups only for a caller holding `groups:manage` (checked even though every uploading role holds it today), refuses unknown groups BEFORE `createVideo`, and never fails the upload for a grant that fails after it (`npm test -- uploadRoute uploadGrants groupGrants videoDeleteRoute`). There is no stored default group, by design. A grant naming a collection that no longer exists is clutter at best and a grant a reused id inherits at worst — the same no-orphans rule the per-viewer keys follow.
 - [ ] Only approved viewers can be added to a group: `planGroupAdditions` refuses an address outside `pvp:approved_viewers` and REPORTS it, and a failure to read that set means "could not check" rather than "refuse everybody" (`lib/__tests__/groupMembership.test.js`).
 - [ ] `groups:manage` and `viewers:manage` still hold the SAME roles in `lib/roles.js`. The sibling repos gate group membership on a viewer-read capability as well, because their roles are delegated per capability; here the two are granted together, so that split would be ceremony. If they ever diverge, `/api/admin/groups` needs that check — the membership list and the per-address "not an approved viewer" answer are both the viewer list. A test fails when they diverge.
-- [ ] `pvp:transcribe_pending` is keyed by VIDEO, not viewer, and so is correctly absent from `VIEWER_KEY_PREFIXES`. It cannot accumulate orphans: every marker is cleared on ingest or by its own 24-hour deadline (`lib/transcribeQueue.js`), and nothing runs it — the admin video list collects on a request that was happening anyway.
+- [ ] `pvp:transcribe_pending` is keyed by VIDEO, not viewer, and so is correctly absent from `VIEWER_KEY_PREFIXES`. It cannot accumulate orphans: every marker is cleared on ingest or by its own three-day deadline (`lib/transcribeQueue.js`); the admin video list and the scheduled job (Decision 18) do the collecting.
+- [ ] `pages/api/cron/*` answer 404 without a `CRON_SECRET` of 16+ characters and 401 without the matching bearer — nothing else guards them in this repo (no middleware), and `cronTranscriptsRoute.test.js` fails if a middleware is ever added that does not skip them.
 - [ ] Every per-viewer key family is listed in `lib/maintenance.js`'s `VIEWER_KEY_PREFIXES` (progress, mylist, ratings). A family added without that line recreates weak point #3 and nothing will ever collect it (Decision 16; `lib/__tests__/ratings.test.js` pins the list).
 - [ ] `pvp:rating_counts` holds integers and no email, `/api/rating` returns no totals to a viewer, a vote reaches storage as ONE `recordRating` call (one Redis script, vote and counters together), and `/api/admin/maintenance` recounts only after the per-viewer sweep (Decision 16; `npm test -- ratingRoute ratingScripts ratingsStore.redis maintenanceRoute` — the two `redis` suites need `redis-server`: skipped locally without it, FAILING under CI without it).
 - [ ] Nothing on the transcription path writes chapters: `lib/aiChapters.js` imports only `lib/videoMeta.js`, and the `suggestions` branch of `/api/admin/transcribe` calls no store, no audit and no paid API, and is handled before `allowCostly` (Decision 16; `lib/__tests__/aiChapters.test.js` pins all four).

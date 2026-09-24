@@ -62,7 +62,8 @@ async function handler(req, res) {
     // Best-effort, same contract: collect any transcription bunny has finished
     // since it was queued, so the admin does not have to remember a second
     // click minutes later. Bounded per request by lib/transcribeQueue.js;
-    // failures are retried on the next load and age out after a day.
+    // failures are retried on the next load (and by the scheduled job,
+    // pages/api/cron/transcripts.js) and age out after three days.
     try {
       const { collected } = await collectFinishedTranscripts();
       for (const item of collected) {
