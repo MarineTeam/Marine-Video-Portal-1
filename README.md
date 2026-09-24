@@ -9,7 +9,7 @@ Videos are never public: every play uses a **signed, time-limited bunny.net toke
 - **No video bytes touch this server.** Uploads stream from the admin's browser straight to bunny.net over resumable TUS, authorized by a server-signed ticket — the Bunny API key stays server-side and never reaches the client.
 - **Playback is always tokenized.** Each play uses a short-lived signed Bunny embed URL, so a raw, shareable video URL is never exposed.
 - **Access is by email identity.** Admin, approved-viewer, and share-recipient checks all compare `session.user.email` against admin-managed lists.
-- **All state lives in Redis.** Approved viewers, collections, custom ordering, share links, watch progress, push subscriptions, the theme, and the audit log are stored in Upstash Redis under the `pvp:` key prefix — editable live from `/admin`, no redeploy.
+- **All state lives in Redis.** Approved viewers, collections, custom ordering, share links, watch progress, My List, ratings, comments, transcripts, chapters, notes, schedules, roles, groups, push subscriptions, the theme, and the audit log are stored in Upstash Redis under the `pvp:` key prefix — editable live from `/admin`, no redeploy.
 
 ---
 
@@ -23,6 +23,22 @@ Videos are never public: every play uses a **signed, time-limited bunny.net toke
 - Admins manage everything from a tabbed **`/admin`** panel: upload videos, organize the library, manage viewers and share links, adjust the site's color palette, and view analytics and an activity log.
 - `/admin` is gated **server-side** (redirects non-admins before any UI is sent) and every `/api/admin/*` route independently returns `403` for non-admins.
 - The portal is an **installable PWA** — it can be installed as a standalone app on Windows, Mac, Android, and iOS off the same deployment. Admins get the full admin panel in the installed app too (the Admin button is shown for admin accounts everywhere, standalone or browser tab).
+
+### What viewers get
+
+The short version; [FEATURES.md](FEATURES.md) has the detail and the known gaps.
+
+- **Watching** — resume where you left off, chapters that seek, a transcript
+  in every language bunny.net produced, and a link to any moment (`?t=`).
+- **Finding** — search across titles, notes and what was said (in every
+  transcript language); by passage ("Philippians 2" finds "Phil 1:27–2:11"),
+  by word form ("baptism" finds "baptized"), and **Browse by book**.
+- **Keeping** — My List, continue-watching, a full watch history, and a
+  private podcast feed.
+- **Responding** — rate a video (only you see your vote) and **comment** under
+  it (others see your account name, never your email).
+- **When** — videos can be scheduled, repeat weekly ("Sundays 09:00–13:00"),
+  or open early for one group.
 
 ---
 
@@ -50,22 +66,33 @@ Videos are never public: every play uses a **signed, time-limited bunny.net toke
 pages/
   _app.js                 Session provider, theme bootstrap, idle-timeout mount
   _document.js            No-flash palette script (applies cached theme pre-paint)
-  index.js                Homepage — thumbnail grid/list, search, collections, continue-watching
+  index.js                Homepage — thumbnail grid/list, search, collections, continue-watching, My List, Browse by book
+  activity.js             Watch history — your own, or (admin) any approved viewer's
   admin.js                Tabbed admin panel (server-gated) — Videos/Viewers/Access/Shares/Settings/Activity/Analytics
   watch/
     [shareId].js          Individual private-link watch page (view + playback tracking)
     bundle/[bundleId].js  Consolidated listing of everything currently shared with one recipient
-    video/[id].js         Watch page for approved viewers (by video GUID)
+    video/[id].js         Watch page for approved viewers — resume, chapters, passages, transcript, rating, comments
     public/[id].js        The one route that serves a video with no login at all
   api/
     auth/[auth0].js       Auth0 login/logout/callback
-    videos.js             Page of videos for approved viewers (search + collection filter, rate-limited)
+    videos.js             Page of videos for approved viewers (search incl. passages, word forms and transcripts;
+                          collection filter; ?index=books for Browse by book; rate-limited)
     collections.js        Collection list for the homepage filter (approved viewers)
     progress.js           Per-viewer playback progress / watch history
+    mylist.js             The viewer's own saved queue
+    rating.js             The viewer's own rating of one video
+    comments.js           Comments under a video — list / add / delete (author or comments:manage)
+    transcript/[id].js    One video's transcript (?lang= for another language)
+    app-icon/[size].js    The app icon at 180 / 192 / 512 (admin-set, or redirects to the built-in file)
+    monitor.js            Query Monitor process stats
+    cron/
+      transcripts.js      Scheduled job: collect finished transcriptions (CRON_SECRET-gated, 404 without it)
     me.js                 Current user's role + capabilities (any logged-in user)
     manifest.js           PWA manifest, generated so it carries the admin-set portal name
     feed-url.js           A viewer's own podcast feed URL (get / rotate)
     feed/[token].js       Per-subscriber podcast RSS — no session, token-identified
+    feed/[token]/[file].js  One episode's artwork
     access-request.js     Submit/read your own access request (any logged-in user)
     theme.js              Public GET palette + portal name; admin POST to update either
     share/[shareId]/track.js  Records player.js playback events (play/progress/completed) for a share link
@@ -73,15 +100,20 @@ pages/
       subscribe.js        Store a viewer's Web Push subscription
       unsubscribe.js      Remove a Web Push subscription
     admin/
-      videos.js           List (ordered, with watermark mode) / rename / set-collection / set-watermark-mode / delete (single or bulk)
+      videos.js           List (ordered, with watermark mode) / rename / set-collection / set-watermark-mode /
+                          schedule / chapters / notes / delete (single or bulk)
       viewers.js          List (with last-seen) / add (single or bulk) / remove
-      settings.js         Homepage video count
+      settings.js         Homepage video count, portal name
+      geo.js              Geo whitelist enforcement toggles (lists are env-only)
+      maintenance.js      Clean up stale data + rebuild rating totals
+      transcribe.js       Queue bunny.net Transcribe AI (optionally with chapter suggestions) / ingest the result
+      app-icon.js         Set or reset the app icon (admin-only)
       watermark.js        Global watermark default + exemption list (add/remove)
       order.js            Custom homepage video order
       share.js            Bulk share creation — N videos × M recipients, optional watermark override (rate-limited)
       shares.js           List / bulk resend / bulk revoke / extend expiry (single or bulk)
       private-list.js     Per-video private access list — list / diff-add (share + optional email) / remove (revoke)
-      upload.js           Create Bunny video + signed TUS auth (rate-limited)
+      upload.js           Create Bunny video + signed TUS auth, optionally granted to groups (rate-limited)
       collections.js      Create / list / delete collections
       audit.js            Recent admin actions
       analytics.js        Views, watch time, 30-day chart, most-watched
@@ -100,13 +132,19 @@ components/
   Watermark.js            Tiled, non-interactive viewer-email overlay shown when the layered setting resolves "on"
   NotifyButton.js         Per-device push opt-in/out toggle
   BrandingProvider.js     Supplies the portal name to every page (localStorage-seeded)
+  TranscriptPanel.js      Searchable, seekable transcript with a language picker
+  Comments.js             Comments under a video
+  RatingButtons.js        The viewer's own 👍/👎
+  SaveToListButton.js     Add to / remove from My List
+  QueryMonitor.js         Opt-in floating performance panel
   icons.js                Inline SVG icons
 lib/
   auth.js                 isAdmin(email) — the ADMIN_EMAILS floor check
   roles.js                Roles + capability map; requireCapability() guard for every admin route
   groups.js               Viewer groups and the access resolution that gates the library
   accessRequests.js       Self-serve access requests (never grants — the admin route does)
-  schedule.js             Per-video publish/expiry windows
+  schedule.js             Per-video publish/expiry windows, weekly repeat, per-group windows
+  uploadGrants.js         Which groups a new upload is granted to
   verification.js         Opt-in email_verified enforcement (off by default, staff-exempt, fails open)
   bunny.js                Bunny API: list/create/update/delete videos, collections, TUS signing,
                           signed embed URLs, thumbnail URLs (token-signed), statistics
@@ -116,6 +154,22 @@ lib/
   branding.js             Portal name default + validation (pure, client-safe)
   videoMeta.js            Chapter parsing/formatting + note cleaning (pure, client-safe)
   videoMetaStore.js       Chapters and notes Redis read/write (server only)
+  aiChapters.js           bunny.net's AI chapter suggestions, in this repo's chapter shape
+  captions.js / captionsStore.js       WebVTT parsing + transcript search; stored transcripts (every language), collect lock
+  transcribeQueue.js      Which queued transcriptions to check, and when to give up
+  transcriptCollect.js    Collects finished transcriptions (admin list + scheduled job)
+  cronAuth.js             CRON_SECRET check for scheduled-job routes (constant-time)
+  scripture.js            Scripture references in titles and notes ("Phil 2:1-11")
+  stem.js                 Word stems for search ("baptism" ~ "baptized")
+  searchLink.js           Links that open the library already searched
+  timestampLink.js        Links that start a video at a moment (?t=)
+  mylist.js / mylistStore.js           My List
+  ratings.js / ratingsStore.js / ratingScripts.js   Per-viewer ratings; Lua keeps totals equal to votes
+  comments.js / commentsStore.js       Comments: rules (pure) and storage (atomic per-video cap)
+  appIcon.js / appIconStore.js         The admin-set app icon (validated, stored as PNGs)
+  maintenance.js          Sweeps for stale per-viewer and share data
+  geo.js                  GEO_WHITELIST / ADMIN_GEO_WHITELIST enforcement
+  monitor.js / monitorClient.js        Query Monitor, server and browser halves (opt-in)
   accessRequestNotify.js  Best-effort email/push when an access request arrives
   publicVideos.js         Which videos are viewable without a login (fails CLOSED)
   publicWatch.js          The whole access decision behind the public watch route
@@ -127,17 +181,20 @@ lib/
   push.js                 Web Push helpers (VAPID send, announce-once guard, self-pruning)
   mail.js                 Resend email helper for share/bundle emails (inert without RESEND_API_KEY)
   shareBundle.js          Share-record helpers, grace-period TTL/expiry, and per-recipient bundling
-  ratelimit.js            Sliding-window limiter (fails open)
+  ratelimit.js            Sliding-window limiters — flood guard, costly (10/h), writing (30/h); all fail open
   watermark.js            Layered watermark resolution (exemption > share > video > global default)
-  __tests__/              Vitest tests (auth, roles, groups, schedule, verification, order, theme,
-                          push, shareBundle, watermark, geo, monitor) + apiGates.test.js, which proves
-                          every pages/api/admin/* route rejects callers without its capability
+  __tests__/              Vitest suite — pure logic, every API route's gate (apiGates.test.js proves each
+                          pages/api/admin/* route rejects callers without its capability), and the Lua
+                          scripts against a real redis-server (CI installs one)
 public/
   sw.js                   Service worker (caches only icons)
-  icon-192.png / icon-512.png / apple-touch-icon.png / icon.svg   App icons
+  icon-192.png / icon-512.png / apple-touch-icon.png / icon.svg   Default app icons
 styles/globals.css        Design system (dark glassmorphism, gradient accents, Inter)
-sentry.{client,server,edge}.config.js   Opt-in Sentry init (inert without a DSN)
-next.config.js            Wrapped with withSentryConfig
+instrumentation.js        Sentry server/edge init hook (opt-in)
+instrumentation-client.js Sentry browser init (opt-in)
+sentry.{server,edge}.config.js   Opt-in Sentry init (inert without a DSN)
+next.config.js            Wrapped with withSentryConfig; security headers
+vercel.json               The daily scheduled job (/api/cron/transcripts)
 vitest.config.js          Test config (node env + dummy env)
 .eslintrc.json            next/core-web-vitals
 .github/workflows/ci.yml  Lint + test + build on push/PR to main
@@ -202,7 +259,7 @@ Node/npm are **not required** to deploy (Vercel installs everything), but they'r
 npm install       # install dependencies
 npm run dev       # local dev server at http://localhost:3000
 npm run lint      # ESLint (next/core-web-vitals)
-npm test          # Vitest smoke tests
+npm test          # Vitest suite (unit + real-Redis script tests)
 npm run build     # production build
 ```
 
@@ -218,11 +275,11 @@ Every push / PR to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci
 
 Tabbed layout, gated server-side to admins and managers:
 
-- **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, a per-video **watermark override** (Default/Always/Never), a collapsible **per-video analytics** panel, a per-video quick private share form (any number of recipient emails at once, a viewer-**tag** picker to add a whole tagged group in one click, its own watermark selector, and an optional **"email the link(s) to the recipient(s)"** checkbox when email is configured), and a collapsible **Private list** panel per video (a persistent, editable access list, also with a tag picker — see below). Multi-select checkboxes for **bulk delete** and **bulk collection assignment**. Also a Collections manager (create/delete).
+- **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, a per-video **watermark override** (Default/Always/Never), a collapsible **per-video analytics** panel, a per-video quick private share form (any number of recipient emails at once, a viewer-**tag** picker to add a whole tagged group in one click, its own watermark selector, and an optional **"email the link(s) to the recipient(s)"** checkbox when email is configured), and a collapsible **Private list** panel per video (a persistent, editable access list, also with a tag picker — see below). a **Schedule** panel (publish/expiry, an optional **weekly repeat**, and **per-group windows** — see "Scheduled publish and expiry"), **Chapters** and **Notes** editors, and a **Transcribe** button (bunny.net Transcribe AI, optionally with **suggested chapters** to review before saving; the price is shown beside it). The upload form lets you tick which **groups** can see the new video. Multi-select checkboxes for **bulk delete** and **bulk collection assignment**. Also a Collections manager (create/delete).
 - **Viewers** — add/remove approved emails, **bulk add** (paste a list), per-viewer **tags** (e.g. "Team A") for grouping, and each viewer's **last-seen** time.
 - **Access** — **Access Requests** (approve or deny people who asked to be let in), **Roles** (admin-only: grant Admin or Manager to an email, revoke back to viewer) and **Viewer Groups** (create a group, add/remove members, tick the collections and individual videos it grants). See "Roles and groups" below. The tab badge shows pending requests.
 - **Shares** — a **bulk-share** form (pick any number of videos × any number of recipients — every pair gets its own link, one email per recipient, with its own watermark selector); every active private link with recipient, expiry, **view count/last-viewed**, **playback status** (plays, furthest % watched, completed), and a durable **"Copy bundle link"** button when the link is part of a bundle; multi-select checkboxes for **bulk resend / bulk revoke / bulk un-revoke / bulk extend / bulk delete permanently**; and per-link **extend**, **un-revoke** (restore a revoked link in place), and **delete permanently** (only allowed once a link is already revoked).
-- **Settings** (admin-only) — **email verification** (off by default, with a panel showing exactly who enabling it would block — see "Optional email verification" below), homepage video count, the site **color palette** (7 presets + custom, applied to all visitors), the **watermark global default** and its exemption list, the **geo location whitelist** on/off toggles (viewer and admin, each off by default, country lists shown read-only), a **push broadcast** composer, and a content-protection info panel.
+- **Settings** (admin-only) — **email verification** (off by default, with a panel showing exactly who enabling it would block — see "Optional email verification" below), homepage video count, the **portal name** and **app icon**, the site **color palette** (7 presets + custom, applied to all visitors), the **watermark global default** and its exemption list, the **geo location whitelist** on/off toggles (viewer and admin, each off by default, country lists shown read-only), a **push broadcast** composer, **Clean up stale data** (sweeps expired bundles, dead share entries and removed viewers' leftovers, and rebuilds the 👍/👎 totals from the votes), and a content-protection info panel.
 - **Activity** — the most recent admin actions (add/remove viewer, role grant/revoke, group create/update/delete and membership changes, share create/revoke/un-revoke/delete, video rename/delete/reorder, settings, palette, collections).
 - **Analytics** — total views, 30-day views, watch time, video count, a 30-day views chart, a most-watched list, and a **per-video analytics** list (shares, recipients, views, started, completed + rate, avg progress) rolled up from existing share data.
 
@@ -328,7 +385,9 @@ Two deliberate details:
 - The name is **not** part of the no-flash pre-paint script in `_document.js`. That script stays colors-only and hex-validated — it's the app's only `dangerouslySetInnerHTML`, and interpolating an admin-supplied string into it would make it an XSS gadget on every page load. The name is cached under its own `localStorage` key and rendered through React, which escapes it.
 - `MAIL_FROM` still wins for the email sender when it's set; the portal name only supplies the default display name.
 
-The app icon is a **play mark** (`public/icon.svg`, with PNGs rendered from it at 192/512/180). It's deliberately generic rather than themed to any particular name, since the name is adjustable. If you regenerate the PNGs after editing the SVG, note the content sits inside the central ~62% maskable safe zone, and the Apple touch icon is rendered full-bleed because iOS applies its own rounding.
+The default app icon is a **play mark** (`public/icon.svg`, with PNGs rendered from it at 192/512/180). It's deliberately generic rather than themed to any particular name, since the name is adjustable.
+
+**You can replace it without a redeploy** from the same Appearance section: choose any image and the browser crops and resizes it to 180/192/512 PNGs. The server trusts none of that — it accepts only a PNG of exactly the size it's filed under, under a byte cap, and never SVG — and serves it at `/api/app-icon/<size>`, falling back to the built-in files when none is set. The manifest, the iOS touch icon, push notifications and the podcast feed's cover all use it; **Reset to default** removes it. Installed apps pick up a new icon the next time the device refreshes them. If you regenerate the PNGs after editing the SVG, note the content sits inside the central ~62% maskable safe zone, and the Apple touch icon is rendered full-bleed because iOS applies its own rounding.
 
 ---
 
@@ -341,7 +400,7 @@ Three tiers, managed from **Admin → Access → Roles** (admin-only):
 | Role | Can do |
 |---|---|
 | **Admin** | Everything, including portal settings (palette, geo, watermark, maintenance, push broadcast) and granting roles. |
-| **Manager** | Upload and organise videos, manage collections and ordering, manage approved viewers and groups, create and revoke shares, read analytics and the audit log. **Cannot** change portal settings or grant roles. |
+| **Manager** | Upload and organise videos, manage collections and ordering, manage approved viewers and groups, create and revoke shares, remove any viewer's comment, read analytics and the audit log. **Cannot** change portal settings or grant roles. |
 | **Viewer** | Watch whatever their groups allow (everything, if they're in no group). |
 
 Grants are stored in Redis (`pvp:role_admins`, `pvp:role_managers`), so an admin can promote someone from the UI without a redeploy. **`ADMIN_EMAILS` remains an always-wins floor**: those addresses are admins regardless of Redis and cannot be demoted from the UI — that's the lockout-recovery path. The API also refuses any change that would leave zero admins.
@@ -377,6 +436,36 @@ Recordings of a service run long, so each video can carry a **chapter list** and
 
 Both are additive: a video with neither behaves exactly as it did before the feature existed, and clearing both removes the record entirely. If `player.js` fails to load, the chapter list degrades to plain text rather than offering buttons that do nothing.
 
+**Search understands passages and word forms.** Searching "Philippians 2" finds a title or notes citing an overlapping passage in any spelling ("Phil 1:27-2:11", "Php 2:5"), and the watch page lists a video's passages as links that run that search. "baptism" also finds "baptised", "baptized" and "baptizing". The homepage has a collapsed **Browse by book** row: every book the viewer's library cites, in Bible order, one click to its videos. All of it runs over the list the viewer may already see.
+
+**Link to a moment.** A *Copy link* button under the player copies the address with the current position (`?t=`), and opening such a link starts there — ahead of the viewer's own resume point, since they followed a link to that moment.
+
+---
+
+## Transcripts
+
+**Transcribe** on a video's row sends it to bunny.net's Transcribe AI (about **$0.10 per minute** of video, shown beside the button; limited to 10 an hour per admin). Viewers then get the spoken text under the player: collapsed by default, each line clickable to jump there, with a search box, and a language picker when bunny produced more than one. **Library search matches what was said** in every language, over the same group- and schedule-filtered list as everything else.
+
+Transcription is asynchronous and bunny has no webhook, so the finished result is collected afterwards — whenever an admin opens the Videos tab, and daily by a scheduled job if `CRON_SECRET` is set (see below). *Fetch captions* still does it on demand.
+
+Tick **suggest chapters** when transcribing and bunny proposes chapters from what was said; **Suggest chapters** loads them into the chapter editor for review, and nothing is saved until you press Save.
+
+### Scheduled transcript collection (opt-in)
+
+- **Switch it on** by setting `CRON_SECRET` (16+ random characters). Vercel sends it to `/api/cron/transcripts` as `Authorization: Bearer …`; unset, blank or too short → the route answers 404.
+- **Schedule** — `vercel.json`, **daily** at `0 6 * * *` UTC, because Vercel's Hobby plan refuses to deploy a cron that runs more often (and may run it up to an hour late). On Pro, change it to `*/15 * * * *`.
+- **Bounded and safe to repeat** — each run collects at most 25 videos, gives up on a request still pending after 3 days, and holds a 5-minute Redis lock so an overlapping or doubled run does nothing.
+
+---
+
+## My List, ratings and comments
+
+- **My List** — a **+ Save to my list** toggle on the watch page, and a "My list" row on the homepage. Only videos the viewer can still see are shown.
+- **Ratings** — 👍 or 👎 beside the title; pressing your vote again clears it. Each viewer sees only their own vote; admins and managers see the totals on the Videos tab. A vote and its totals are written in one Redis script, so they can't drift apart.
+- **Comments** — a discussion under each video. Everyone who can watch the video can read and add comments; others see the author's **account name, never their email**. A comment appears at once; its author can delete it, and so can admins and managers (`comments:manage`). Up to 1,000 characters, 500 per video, and 30 an hour per person. Comments are flat — no replies, editing or notifications.
+
+Deleting a video removes its transcript and comments with it.
+
 ---
 
 ## Access requests
@@ -395,7 +484,13 @@ The request grants nothing by itself: `lib/accessRequests.js` never writes to th
 
 Each video can carry an optional **publish time**, an optional **expiry time**, or both, set from a **Schedule** panel on its row in the Videos tab. Outside that window a viewer can't see the video in the library, in search results, in a collection filter, or by opening its direct `/watch/video/<guid>` link.
 
-Admins and managers always see it — with a badge on the row (*Not yet published* / *Scheduled · live* / *Expired*) so a deliberately hidden video never reads as a broken one.
+Admins and managers always see it — with a badge on the row (*Not yet published* / *Scheduled · live* / *Weekly · on now* / *Weekly · off now* / *Expired*) so a deliberately hidden video never reads as a broken one.
+
+- **Repeating weekly** — tick the days and a daily time range ("Sundays 09:00–13:00") and the video is visible only inside those slots, within its publish/expiry window. The rule keeps the timezone of the browser that set it.
+- **Per-group windows** — give a group its own publish/expiry, so it can see a video earlier (or later) than everyone else. A viewer sees the video when the default window **or** a window of any group they're in is open. Group grants are still checked first, so a window never reaches someone outside them, and deleting a group removes its windows.
+- **Choose groups at upload** — the upload form lists your groups, and ticked ones are granted the video as it's created, so a restricted group doesn't miss it.
+
+Times are converted in the admin's browser, so a typed 09:00 means 09:00 where the admin is.
 
 This is **additive**: a video with no schedule set behaves exactly as it always has. Setting an expiry that falls at or before the publish time is rejected rather than stored, since it would hide the video forever with no explanation.
 
@@ -473,7 +568,7 @@ Until both are confirmed against the live library, treat feed playback as unprov
 - **A podcast feed token grants nothing on its own.** It identifies a viewer; the approved-viewer, group and schedule checks all re-run on every fetch against live data.
 - **Access requests can't self-approve.** The viewer-facing endpoint only records a request; the approved-viewer set is written in exactly one capability-gated place.
 - **Groups narrow, they never widen.** Group gating runs *after* the approved-viewer check, so it can only reduce what an already-approved viewer sees. A viewer in no group is unrestricted, and if Redis is unavailable group resolution degrades to unrestricted rather than blanking the library — the same fail-open posture as the rate limiter, and for the same availability reason.
-- **Rate limiting** guards the video list, upload, and share-creation endpoints (fails open if the limiter backend is unavailable).
+- **Rate limiting** guards the video list, upload, and share-creation endpoints, with tighter limits on transcription (10 an hour, since it costs money) and comments (30 an hour per person). All limiters fail open if the backend is unavailable; the capability and viewer checks in front of them are the access control.
 - **Idle sign-out** logs users out after 30 minutes of inactivity.
 - **Geo location whitelist is optional and off by default.** When an admin turns it on, it's an additional gate on top of email identity, not a replacement for it — and admins are gated by their *own* separate whitelist/toggle (`ADMIN_GEO_WHITELIST`), not an automatic bypass. See "Geo location whitelist" above for the lockout-recovery path.
 - Direct bunny.net CDN file URLs (`*.b-cdn.net/.../playlist.m3u8`, `play_720p.mp4`) are never used by the app; if you want them fully locked down, enable **Block Direct URL File Access** on the library's Security tab.

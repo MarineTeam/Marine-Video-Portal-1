@@ -1,6 +1,6 @@
 # Marine Video Portal — Features
 
-Current as of **v1.23.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
+Current as of **v1.26.0**. Grouped by area; items marked _(admin)_ live in the `/admin` panel.
 
 ## Authentication & access control
 - Login required for every page via Auth0.
@@ -24,7 +24,7 @@ Current as of **v1.23.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Adjustable app icon** _(admin, Settings → Appearance)_ — choose any image and it becomes the home-screen icon for new installs, the iOS icon and the podcast cover, with no redeploy. It is cropped to a square from the centre and resized in the browser; the server re-checks every size is a PNG of exactly that size before storing it — never an SVG, which could carry script. **Reset to default** brings the built-in icon back. Installed apps pick it up when their browser next re-checks the manifest. Push notifications show it too; the notification badge (drawn by Android as a one-colour silhouette) and the browser-tab icon stay built-in, and a custom icon is offered to Android as a plain icon rather than a "maskable" one, since an arbitrary image has no guaranteed safe zone.
 - **Admin-adjustable color palette** _(admin)_ — 7 presets plus custom hex colors, applied to **all** visitors; cached client-side with a no-flash pre-paint script so returning visitors never see a color flicker.
 - **Video thumbnails** — the homepage upgrades to a responsive **thumbnail grid** (16:9 cards with a play overlay) when thumbnails are configured, and falls back to a clean title list otherwise. The admin library shows thumbnails too. Thumbnail URLs are **CDN token-signed** so they work with "Block Direct URL File Access" enabled.
-- **Search** — viewers can search the whole library by title (debounced).
+- **Search** — viewers can search the whole library (debounced): titles, notes and transcripts in every language, by passage and by word form (see the search, Transcript and notes entries below).
 - **Collections / categories** — filter the homepage by collection via chips.
 - **Resume playback & Continue-watching** — videos remember where each viewer left off (via player.js); the homepage shows a Continue-watching strip with progress bars. Degrades gracefully if the player protocol is unavailable.
 - **Watch history ("Activity" page)** — a viewer can see their own full watch history (title, furthest position, last-watched time), reusing the same progress data behind Continue-watching — no new tracking added. Admins get an extra lookup dropdown to view any approved viewer's history by email.
@@ -61,7 +61,7 @@ Current as of **v1.23.0**. Grouped by area; items marked _(admin)_ live in the `
 - **Choose who can see a video as you upload it** — the upload form lists your groups, and ticking any of them grants the new video to those groups at the moment it is created. Before this, a new video was live for everyone *except* the people in a restricted group it was meant for, until someone remembered to tick it in on the Access tab. Nothing is ticked by default, and there is deliberately **no stored "default group"**: a default would grant access on every upload long after anyone remembered choosing it. Granting a group is a `groups:manage` act wherever it happens, so the picker only appears for someone who holds it. A group that no longer exists is refused before the video is created (no orphan upload), and a grant that fails after creation does not stop the upload — the form names the groups that still need ticking. Deleting a video — including cancelling an upload — now also clears it from every group that granted it.
 - **Encoding status** — per-video "Processing %" / "Failed" badges, auto-refreshing while anything is encoding.
 - **Rename** videos inline.
-- **Delete** videos (removes from bunny.net and prunes them from the saved order).
+- **Delete** videos — removes them from bunny.net and forgets what this portal stored about them (saved order, chapters and notes, public flag, rating totals, transcript in every language, comments, group grants), singly or in bulk, so a recycled bunny.net id never inherits another video's data.
 - **Drag-to-reorder** the library.
 - **Search/filter** the library.
 - **Collections** — create/delete collections and assign each video to one.
@@ -123,11 +123,12 @@ Current as of **v1.23.0**. Grouped by area; items marked _(admin)_ live in the `
 
 ## Platform, quality & observability
 - Hosted on Vercel; dependencies install automatically during deploy (no local Node/npm required to ship).
-- Settings, viewers, order, collections, share records, watch history, push subscriptions, and the audit log are stored in Upstash Redis (via Vercel Storage), editable live from `/admin` without redeploying. All keys are namespaced with a `pvp:` prefix.
-- **Opt-in Sentry error monitoring** — client/server/edge configs; inert until `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` are set.
+- Settings, viewers, order, collections, share records, watch history, My List, ratings, comments, transcripts, chapters, notes, schedules, roles, groups, push subscriptions, and the audit log are stored in Upstash Redis (via Vercel Storage), editable live from `/admin` without redeploying. All keys are namespaced with a `pvp:` prefix.
+- **Opt-in Sentry error monitoring** — `instrumentation.js` / `instrumentation-client.js` with server/edge configs; inert until `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` are set.
 - **Opt-in Query Monitor / performance panel** — a floating widget (bottom-right, every page, logged-in users) showing Redis query count & timing, outbound bunny.net API count & timing, per-instance memory/uptime, and render time, in the spirit of WordPress's Query Monitor plugin. Off by default; toggled by the single `QUERY_MONITOR_ENABLED` env var _(admin, Settings tab shows current on/off state)_, with no rebuild needed. Counts are attributed per view — including the admin panel's tabs, which aren't route changes — alongside a cumulative since-page-load total, so the drop between a screen's first visit (which includes the page's one-time bootstrap fetches) and a later revisit reads as arithmetic rather than a bug. Effectively zero overhead when disabled: instrumentation is one env-var check on the hot path, and the browser stops recording as soon as the server reports it's off.
 - **CI pipeline** — GitHub Actions runs lint + tests + build on every push/PR to `main`, catching breakage before Vercel deploys.
-- **Smoke tests** — Vitest coverage for the auth and role checks, group access resolution, video-ordering logic, schedule windows, theme helpers, watermark layering, share bundling, geo, and push logic.
+- **Tests** — over 800 Vitest tests: the pure rules (search, scripture, stems, schedules, comments, ratings, captions), the auth, role and group checks, and the Lua scripts run against a **real redis-server** (CI installs one; locally those suites skip without it). New tests are checked by breaking the code they cover and confirming they fail.
+- **Scheduled jobs** — a Vercel cron (`vercel.json`) runs the transcript collector daily; off until `CRON_SECRET` is set, and gated by that secret alone (see Configuration).
 - **Route authorization tests** — a table-driven suite over every `pages/api/admin/*` route proving each one rejects a signed-out caller, an approved viewer, and (for admin-only routes) a manager. It reads the directory at test time, so a newly added admin route is covered automatically and an ungated one fails the build.
 
 ## Configuration knobs (environment)
