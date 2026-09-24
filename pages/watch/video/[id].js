@@ -15,6 +15,7 @@ import ResumablePlayer from '../../../components/ResumablePlayer';
 import TranscriptPanel from '../../../components/TranscriptPanel';
 import SaveToListButton from '../../../components/SaveToListButton';
 import RatingButtons from '../../../components/RatingButtons';
+import Comments from '../../../components/Comments';
 import { getMyList } from '../../../lib/mylistStore';
 import { isSaved } from '../../../lib/mylist';
 import { getRatings } from '../../../lib/ratingsStore';
@@ -218,6 +219,8 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser,
               </div>
             </nav>
           )}
+
+          <Comments videoId={videoId} />
         </>
       )}
     </AppShell>

@@ -285,6 +285,16 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 
 **What breaks if violated.** Skip the secret → anyone can trigger bunny calls and audit writes. Run when no secret is configured → the job is open on every deployment that has not set one. Put a middleware in front of it without excluding `/api/cron/` → the runner is refused (no session, possibly no country) and collection silently stops. Drop the lock → overlapping runs fetch and audit the same video twice.
 
+### 19. Comments are gated like watching; the author's email never reaches another viewer
+
+**Decision (2026-09-24, the owner's choices).** Anyone who can watch a video can read and add comments; a comment is live at once; its author, or an admin or manager (`comments:manage`), can delete it; other viewers see the author's account name.
+
+- **The same gate as the watch page**, in the same order (`pages/api/comments.js`): approved or staff, region, verified email, the video exists (`getVideoById`), group grants (`canSeeVideo`), and — for reading and writing, staff exempt — the publish window (`isVisibleFor` with the viewer's groups). Every refusal after sign-in is the same 404. Deleting your own comment skips only the window.
+- **Identity is the session.** No request field names a person; the stored email decides "mine". `commentView` (`lib/comments.js`) sends other viewers a display name only — an email-shaped profile name is cut to its local part — and adds the email only for `viewers:manage` holders.
+- **Moderation** by `comments:manage` (admins and managers) is audited as `comment.delete`. Writes go through a dedicated limiter, 30 an hour (`allowWriting`), not the 60-per-10-seconds flood guard. Text is refused past 1,000 characters and stripped of control, zero-width and bidi-override characters. At most 500 per video, enforced by a Lua script; removed with the video.
+
+**What breaks if violated.** Skip the scope or window check → the route becomes a way to talk about, and probe for, videos a viewer cannot see. Show the email → the approved viewer list is published to every viewer, one comment at a time. Use the flood guard → one person can bury a sermon under sixty comments in ten seconds.
+
 ---
 
 ## B. Invariants checklist
