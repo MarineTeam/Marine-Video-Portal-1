@@ -5,7 +5,7 @@ import { getOrder, setOrder, applyOrder } from '../../../lib/order';
 import { logAudit } from '../../../lib/audit';
 import { maybeAnnounceReady } from '../../../lib/push';
 import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/watermark';
-import { listSchedules, setSchedule, scheduleState, validateGroupWindows, validateRepeat } from '../../../lib/schedule';
+import { clearSchedule, listSchedules, setSchedule, scheduleState, validateGroupWindows, validateRepeat } from '../../../lib/schedule';
 import { listVideoMeta, setVideoMeta, clearVideoMeta } from '../../../lib/videoMetaStore';
 import { clearVideoRatingCounts, getRatingCounts } from '../../../lib/ratingsStore';
 import { listGroupIds, pruneVideosFromGroups } from '../../../lib/groups';
@@ -256,6 +256,14 @@ async function handler(req, res) {
       await clearTranscript(id);
       // ...nor open a recycled id with the previous video's conversation.
       await clearComments(id).catch((e) => console.error('Could not clear comments:', e));
+      // ...nor keep its publish window — clearSchedule existed and nothing
+      // called it, so every deleted video's schedule stayed in
+      // pvp:video_schedule for good...
+      await clearSchedule(id).catch((e) => console.error('Could not clear schedule:', e));
+      // ...nor its watermark override ('default' is how one is removed).
+      await setVideoWatermarkMode(id, 'default').catch((e) =>
+        console.error('Could not clear watermark mode:', e)
+      );
     }
     // ...nor stay granted to a group — a cancelled upload deletes its video,
     // and the upload may already have ticked it into groups.

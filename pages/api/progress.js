@@ -3,6 +3,9 @@ import { redis, k } from '../../lib/redis';
 import { isStaffUser, hasCapability } from '../../lib/roles';
 import { allow, callerId } from '../../lib/ratelimit';
 import { withMonitorApi } from '../../lib/monitor';
+import { isVideoId } from '../../lib/bunny';
+import { progressTitle } from '../../lib/progress';
+import { saveProgress } from '../../lib/progressStore';
 
 // Per-viewer playback progress / watch history.
 // Stored as a Redis hash per user: field = videoId, value = { seconds, duration, title, at }.
@@ -48,16 +51,18 @@ async function handler(req, res) {
 
   if (req.method === 'POST') {
     const { videoId, seconds, duration, title } = req.body || {};
-    if (!videoId || typeof seconds !== 'number') {
+    // A bunny video id, a real position, and a bounded title — see
+    // lib/progress.js for what this used to accept.
+    if (!isVideoId(videoId) || typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) {
       return res.status(400).json({ error: 'videoId and seconds are required' });
     }
-    await redis.hset(key, {
-      [videoId]: {
-        seconds: Math.floor(seconds),
-        duration: Math.floor(duration || 0),
-        title: title || '',
-        at: Date.now(),
-      },
+    const length = Number(duration);
+    // At most MAX_PROGRESS_ENTRIES videos per viewer (lib/progressStore.js).
+    await saveProgress(email, videoId, {
+      seconds: Math.floor(seconds),
+      duration: Number.isFinite(length) && length > 0 ? Math.floor(length) : 0,
+      title: progressTitle(title),
+      at: Date.now(),
     });
     return res.json({ ok: true });
   }

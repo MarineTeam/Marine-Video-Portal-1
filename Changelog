@@ -181,3 +181,6 @@ Fix: libraries of more than 100 videos — older videos could not be found, watc
 The watch page, ratings, My List, transcripts and public links look each video up directly, so an older video opens from its own link instead of saying "Video not found."
 Search, collection filters and Browse by book cover the whole library, and a group granted an older collection sees it on the homepage and in the podcast feed
 The admin Videos tab lists every video and Analytics counts every video; both say so if a library is ever larger than they can read
+v1.26.2
+Fix: watch progress now only accepts a real video id and a real position, keeps titles to 200 characters, and holds at most 1,000 videos per viewer (dropping the least recently watched) — before, a signed-in viewer's progress record could grow without limit
+Fix: deleting a video now also removes its publish schedule and its watermark setting, which were left behind
