@@ -12,6 +12,7 @@ import { countsByVideo, countsFor, summarize } from '../../../lib/ratings';
 import { listPublicVideos, clearPublicVideo } from '../../../lib/publicVideos';
 import { formatChaptersText } from '../../../lib/videoMeta';
 import { collectFinishedTranscripts } from '../../../lib/transcriptCollect';
+import { clearTranscript } from '../../../lib/captionsStore';
 import { withMonitorApi } from '../../../lib/monitor';
 
 // Bulk video ops (delete, collection assignment) accept either a single `id`
@@ -243,6 +244,9 @@ async function handler(req, res) {
       await clearPublicVideo(id);
       // ...nor carry its score over to a recycled bunny.net id.
       await clearVideoRatingCounts(id);
+      // ...nor leave its transcript behind, in any language — cues, search
+      // text and the language index. Best-effort: it reports, never throws.
+      await clearTranscript(id);
     }
     // ...nor stay granted to a group — a cancelled upload deletes its video,
     // and the upload may already have ticked it into groups.

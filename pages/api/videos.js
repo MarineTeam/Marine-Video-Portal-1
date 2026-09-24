@@ -10,7 +10,7 @@ import { metaMatches } from '../../lib/videoMeta';
 import { bookIndex, parsePassageQuery, parseReferences, videoMatchesPassage } from '../../lib/scripture';
 import { queryStems, stemSet, stemsMatch } from '../../lib/stem';
 import { matchingTranscriptGuids } from '../../lib/captions';
-import { listTranscriptText } from '../../lib/captionsStore';
+import { listTranscriptText, matchingTranslatedGuids } from '../../lib/captionsStore';
 import { isVerified, recordObservation } from '../../lib/verification';
 import { allow, callerId } from '../../lib/ratelimit';
 import { isGeoAllowed } from '../../lib/geo';
@@ -104,11 +104,17 @@ async function handler(req, res) {
     // Transcripts are read as the TEXT map, not cue arrays: search needs none
     // of the timings, and cue bodies run ~1,500 per 90-minute service. That
     // split is why lib/captionsStore.js keeps two hashes.
-    const [meta, transcriptText] = await Promise.all([
+    //
+    // Every LANGUAGE, too: translations are matched inside Redis and arrive as
+    // ids only (lib/captionsStore.js), so they join `spoken` without every
+    // search loading every translation — and, like every other match here,
+    // they can only mark videos already in `ordered`.
+    const [meta, transcriptText, translatedIds] = await Promise.all([
       listVideoMeta(),
       listTranscriptText(),
+      matchingTranslatedGuids(q),
     ]);
-    const spoken = new Set(matchingTranscriptGuids(transcriptText, q));
+    const spoken = new Set([...matchingTranscriptGuids(transcriptText, q), ...translatedIds]);
     // A query that IS a scripture reference ('philippians 2') also matches a
     // title or notes citing an OVERLAPPING passage in any spelling ('Phil
     // 1:27-2:11'). A fourth OR over the same already-filtered `ordered`, so
