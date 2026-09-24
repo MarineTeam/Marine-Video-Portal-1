@@ -151,3 +151,28 @@ Error reporting moved to the current Sentry release, which Next 15 requires; bro
 No change to how anyone signs in: the Auth0 library and React were both already new enough, so neither was touched
 Test runner and CI runner brought up to date alongside the Next 15 upgrade; the only security finding left is one that needs Next 16
 Lint now catches a call to something that was never imported, in server code — the class of mistake that only shows up as a 500 at runtime
+v1.24.1
+Fix: a video title or collection name sent as something other than text is now refused instead of causing an error page
+v1.25.0
+Transcripts: queue bunny.net Transcribe AI from the Videos tab (the price is shown beside it) and viewers get the spoken text under the player — searchable, and click a line to jump there
+My List: viewers save videos to watch later, from the watch page, and see them in a row on the homepage
+Suggested chapters: transcription can also propose chapters from what was said; they fill the chapter editor for review and are never saved without an admin pressing Save
+Ratings: 👍 or 👎 on the watch page; each viewer sees only their own vote, admins see the totals on the Videos tab
+Groups only accept approved viewers as members, and any address that was refused is named instead of silently dropped
+Fix: a transcript line with a malformed tag could keep part of the tag in the text
+v1.26.0
+Comments under every video: everyone who can watch a video can read and add comments, others see your account name (never your email), and you can delete your own; admins and managers can remove anyone's
+Repeating schedules: show a video only at set times each week ("Sundays 09:00–13:00")
+Per-group schedules: let one group see a video earlier or later than everyone else
+Choose which groups can see a video when you upload it, so a restricted group sees it straight away
+Search finds other forms of a word ("baptism" finds "baptized"), searches by Bible passage ("Philippians 2" finds "Phil 1:27–2:11"), and matches what was said in every transcript language
+Browse by book: a homepage row of every book your library cites, one click to its videos
+Link to a moment: a Copy link button under the player, and a link with ?t= starts the video there
+Transcripts keep every language bunny.net produced, with a language picker
+Finished transcriptions are collected automatically — when an admin opens the Videos tab, and daily by a scheduled job once CRON_SECRET is set
+Adjustable app icon: upload any image in Settings for the home-screen app and push notifications; Reset returns to the default
+Podcast feed: episode artwork and a show cover
+Ratings: a vote and its totals are now saved together, so they can't disagree; Clean up stale data also rebuilds the totals
+Deleting a video now also removes its transcript and comments; deleting a collection removes it from every group that granted it
+Fix: schedule times were read in the server's timezone (UTC), so a saved time could shift by the admin's offset; they now mean the time where the admin is
+Fix: a search with a repeated query parameter returned an error page
