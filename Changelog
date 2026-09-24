@@ -176,3 +176,8 @@ Ratings: a vote and its totals are now saved together, so they can't disagree; C
 Deleting a video now also removes its transcript and comments; deleting a collection removes it from every group that granted it
 Fix: schedule times were read in the server's timezone (UTC), so a saved time could shift by the admin's offset; they now mean the time where the admin is
 Fix: a search with a repeated query parameter returned an error page
+v1.26.1
+Fix: libraries of more than 100 videos — older videos could not be found, watched, rated, saved, managed or counted; the whole library is now read (up to 1,000 videos)
+The watch page, ratings, My List, transcripts and public links look each video up directly, so an older video opens from its own link instead of saying "Video not found."
+Search, collection filters and Browse by book cover the whole library, and a group granted an older collection sees it on the homepage and in the podcast feed
+The admin Videos tab lists every video and Analytics counts every video; both say so if a library is ever larger than they can read

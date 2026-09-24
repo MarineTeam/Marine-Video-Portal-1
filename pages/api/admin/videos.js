@@ -1,5 +1,6 @@
 import { requireCapability } from '../../../lib/roles';
-import { listVideos, deleteVideo, updateVideoTitle, setVideoCollection, getThumbnailUrl } from '../../../lib/bunny';
+import { deleteVideo, updateVideoTitle, setVideoCollection, getThumbnailUrl } from '../../../lib/bunny';
+import { listAllVideos } from '../../../lib/videoLibrary';
 import { getOrder, setOrder, applyOrder } from '../../../lib/order';
 import { logAudit } from '../../../lib/audit';
 import { maybeAnnounceReady } from '../../../lib/push';
@@ -44,7 +45,9 @@ async function handler(req, res) {
   const actor = auth.email;
 
   if (req.method === 'GET') {
-    const videos = await listVideos({ itemsPerPage: 100 });
+    // The whole library, not bunny's newest 100 — a video past the first
+    // page used to have no row here. See lib/videoLibrary.js.
+    const { videos, truncated } = await listAllVideos();
     const order = await getOrder();
     const ordered = applyOrder(videos, order);
     const watermarkModes = await listVideoWatermarkModes();
@@ -83,6 +86,9 @@ async function handler(req, res) {
     // admin WHO rated anything. See lib/ratings.js.
     const ratings = countsByVideo(await getRatingCounts());
 
+    // A header rather than a field, so the list keeps its shape: set only when
+    // the library is larger than one read, and the tab says so.
+    if (truncated) res.setHeader('X-Library-Truncated', '1');
     return res.json(
       ordered.map((v) => ({
         id: v.guid,

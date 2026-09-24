@@ -64,7 +64,8 @@ Every call sends header `AccessKey: BUNNY_API_KEY`. Every wrapper throws
 
 | Function (lib/bunny.js) | HTTP call | Body / params | Returns | Consumers |
 |---|---|---|---|---|
-| `listVideos` (11–19) | `GET /videos?page=1&itemsPerPage={n}&orderBy=date` | `itemsPerPage` default 100 | `data.items \|\| []` (raw Bunny video objects) | pages/api/videos.js, pages/api/admin/videos.js, pages/api/admin/analytics.js, pages/watch/video/[id].js |
+| `listVideosPage` | `GET /videos?page={p}&itemsPerPage={n}&orderBy=date` | `page` default 1, `itemsPerPage` default 100 | `{ items, totalItems }` (raw Bunny video objects + the whole library's count) | `lib/videoLibrary.js` ONLY — everything else reads the library through `listAllVideos()` there (every page, up to 1,000) or one video through `findVideo()` |
+| `isVideoId` | — | — | whether a value is a bunny GUID (same `GUID_RE`) | `lib/videoLibrary.js` `findVideo` |
 | `createVideo` (23–39) | `POST /videos` | `{ title }` | new video's `guid` — creates an **empty record**; bytes arrive later via TUS | pages/api/admin/upload.js |
 | `updateVideoTitle` (57–75) | `POST /videos/{id}` | `{ title }` | `true` | pages/api/admin/videos.js |
 | `deleteVideo` (77–87) | `DELETE /videos/{id}` | — | `true` | pages/api/admin/videos.js |
@@ -224,7 +225,7 @@ Bunny's embed iframe speaks the open **player.js** protocol.
 |---|---|---|
 | Whitespace in env values | TUS 401 while management API works (see 3a); or bad embed/thumbnail tokens | Trim on paste; `signTusUpload` and `getThumbnailUrl` trim defensively, `signVideoToken` does not |
 | Seconds vs milliseconds expiry | Instant 401/403 on everything signed | All three formulas use Unix **seconds** (`Math.floor(Date.now()/1000)`). Never `Date.now()` raw (that was wrong-fix 54d1bcc) |
-| `itemsPerPage` is not a strict result cap | More/fewer videos shown than expected | The app fetches up to 100 and slices manually — homepage cap in pages/api/videos.js:42, pagination at :45–48. Change limits there, not by trusting Bunny's paging |
+| `itemsPerPage` is not a strict result cap | More/fewer videos shown than expected | `listAllVideos()` counts pages in the size bunny actually served on page 1, not the size it asked for; the homepage cap and pagination are applied afterwards in pages/api/videos.js. Change limits there, not by trusting Bunny's paging |
 | Env change didn't apply | Old behavior persists after editing Vercel env | Env changes need a **Vercel redeploy** (as of 2026-07-10) |
 | Thumbnail 403 on direct paste | "Thumbnails are broken!" reports | Expected with "Block Direct URL File Access" ON — verify in-app first (section 5) |
 | "Fixing" the SHA256 usage | Everything signed breaks | Formulas are vendor-mandated (section 3); CodeQL weak-hash alerts here are false positives |

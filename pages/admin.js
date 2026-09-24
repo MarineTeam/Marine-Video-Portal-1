@@ -552,6 +552,8 @@ export default function Admin({ isAdminRole }) {
   const [verification, setVerification] = useState(null);
   const [verificationBusy, setVerificationBusy] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  // True when the library is larger than the admin list can read in full.
+  const [videosTruncated, setVideosTruncated] = useState(false);
   const [cleanupMsg, setCleanupMsg] = useState('');
   const fileInputRef = useRef(null);
   const uploadRef = useRef(null);
@@ -561,6 +563,7 @@ export default function Admin({ isAdminRole }) {
   async function fetchVideos() {
     const r = await fetch('/api/admin/videos');
     if (!r.ok) throw new Error('Forbidden — this account is not an admin');
+    setVideosTruncated(r.headers.get('X-Library-Truncated') === '1');
     setVideos(await r.json());
   }
 
@@ -2894,6 +2897,12 @@ export default function Admin({ isAdminRole }) {
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
             Drag the handle to set the order videos appear on the homepage.
           </p>
+          {videosTruncated && (
+            <p className="text-muted" style={{ marginBottom: '1rem' }}>
+              The library has more videos than this list can show — these are the newest{' '}
+              {videos.length}. Older ones still play from their links.
+            </p>
+          )}
 
           <div className="search-box">
             <IconSearch className="search-icon" />
@@ -3761,6 +3770,12 @@ export default function Admin({ isAdminRole }) {
                   <span className="stat-label">Videos</span>
                 </div>
               </div>
+              {analytics.truncated && (
+                <p className="text-muted">
+                  Total views, watch time and most-watched cover the newest{' '}
+                  {formatNumber(analytics.covered)} videos, not the whole library.
+                </p>
+              )}
 
               {analytics.chart && analytics.chart.length > 0 && (
                 <div className="analytics-chart">

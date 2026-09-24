@@ -297,6 +297,17 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 
 ---
 
+### 20. "The library" means every page; one video is looked up directly
+
+**Decision (2026-09-24).** Every list that means the library reads it through `listAllVideos()` (`lib/videoLibrary.js`); every page or route about ONE video looks it up with `findVideo()`. Neither ever asks bunny for page 1 and stops.
+
+- **Lists** — `/api/videos` (homepage, search, collection filter, Browse by book), `/api/admin/videos`, `/api/admin/analytics` and `/api/feed/[token]`. `listAllVideos` reads page 1, then the rest in parallel, counting pages in the size bunny actually served, de-duplicated by guid, up to 10 pages; past that it returns `truncated: true`, which the Videos tab (`X-Library-Truncated` header), Analytics and a search say out loud. A failed page throws rather than answer short. Filters and the custom order apply BEFORE any cut (the feed keeps 100 episodes, chosen after the filters). `/api/admin/order` accepts at most the same 1,000 ids.
+- **One video** — the watch page, `/api/rating`, `/api/mylist`, `/api/transcript/[id]` and `lib/publicWatch.js` call `findVideo(id)`: null for a malformed id (bunny is never asked) or an unknown one → 404; a THROW when bunny could not be asked → 502, as before. `getVideoById` keeps its own inline GUID check (invariants — CodeQL needs it inline).
+
+**What breaks if violated.** Read page 1 alone → everything past the newest 100 disappears without a word: search cannot find it, a group granted an older collection sees an empty homepage and feed, the admin cannot manage it, and its own link says "Video not found." That was this portal until 2026-09-24.
+
+---
+
 ## B. Invariants checklist
 
 Walk this list on every review that touches auth, API routes, Redis, or `lib/bunny.js`. Every line must hold:
@@ -331,6 +342,7 @@ Walk this list on every review that touches auth, API routes, Redis, or `lib/bun
 - [ ] `isPublicVideo` still fails CLOSED, the public route still refuses uniformly, and nothing outside `lib/publicWatch.js` decides anonymous access (Decision 17).
 - [ ] `pages/api/feed/[token].js` still re-checks the approved set, groups and schedules on every fetch — the token alone grants nothing.
 - [ ] `pages/api/feed/[token]/[file].js` (episode artwork) makes the same checks, fails closed on an unreadable schedule, and signs nothing for a request it refuses.
+- [ ] Nothing that means "the library" reads bunny's page 1 alone, and nothing looks one video up in a list: lists go through `listAllVideos()`, single videos through `findVideo()` (Decision 20; `npm test -- videoLibrary bunnyPaging wholeLibraryRoutes`).
 - [ ] `lib/bunny.js`'s three signing formulas remain byte-identical; `getVideoFileUrl` is additive and reuses the CDN-token formula unchanged.
 - [ ] `lib/accessRequests.js` never writes `pvp:approved_viewers`; only `pages/api/admin/access-requests.js` does, behind `viewers:manage`.
 - [ ] Every admin route authorizes BEFORE checking `req.method`, so an unauthorized caller gets 403 rather than 405 (`lib/__tests__/apiGates.test.js` pins this).

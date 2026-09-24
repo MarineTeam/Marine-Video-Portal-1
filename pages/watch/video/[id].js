@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { getSession } from '@auth0/nextjs-auth0';
 import { redis, k } from '../../../lib/redis';
-import { listVideos, getEmbedUrl } from '../../../lib/bunny';
+import { getEmbedUrl } from '../../../lib/bunny';
+import { findVideo } from '../../../lib/videoLibrary';
 import { isStaffUser } from '../../../lib/roles';
 import { resolveAccess, canSeeVideo } from '../../../lib/groups';
 import { getSchedule, isVisibleFor } from '../../../lib/schedule';
@@ -65,8 +66,9 @@ async function getServerSidePropsInner({ req, res, params, query }) {
 
   if (approved) await redis.hset(k('viewer_last_seen'), { [email]: Date.now() });
 
-  const videos = await listVideos({ itemsPerPage: 100 });
-  const video = videos.find((v) => v.guid === params.id);
+  // Looked up directly, not in a list: the list was bunny's newest 100, so
+  // any older video answered "Video not found." even from its own link.
+  const video = await findVideo(params.id);
 
   if (!video) {
     return { props: { error: 'Video not found.', adminUser: staff } };

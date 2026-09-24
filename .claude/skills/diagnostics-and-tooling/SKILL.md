@@ -177,7 +177,7 @@ Expected: HTTP 200 with `totalItems`, `itemsPerPage`, and an `items` array of at
 one video object (title, guid, status...). **401 = bad/mismatched key. 404 = wrong
 library id.** Treat the response as sensitive (video titles + guids) and never echo
 the key. Prefer `scripts/verify-bunny-env.ps1` below — it adds the whitespace check
-and never prints the key. (Endpoint shape matches `lib/bunny.js listVideos`; the
+and never prints the key. (Endpoint shape matches `lib/bunny.js listVideosPage`; the
 401 path was exercised live with dummy credentials 2026-07-11; the 200 path needs
 the real key.)
 
