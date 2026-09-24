@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Watermark from './Watermark';
+import { linkAtTime } from '../lib/timestampLink';
+import { formatTimestamp } from '../lib/videoMeta';
 
 // Wraps the Bunny embed iframe and uses the player.js protocol to (a) resume
 // from the viewer's last position and (b) periodically save progress.
@@ -13,14 +15,26 @@ import Watermark from './Watermark';
 // the resume lookup and the progress saves. The public watch page uses it:
 // there is no signed-in viewer, so /api/progress would 401 on every tick and
 // there is no email to key a position against anyway.
-export default function ResumablePlayer({ embedUrl, title, videoId, watermarkText, onSeekAvailable, trackProgress = true }) {
+export default function ResumablePlayer({ embedUrl, title, videoId, watermarkText, onSeekAvailable, trackProgress = true, startAt = null }) {
   const iframeRef = useRef(null);
+  // Where playback is now, for the copy-link button, and whether the player
+  // is talking to us at all.
+  const [position, setPosition] = useState(0);
+  const [canCopy, setCanCopy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let player;
     let cancelled = false;
     let duration = 0;
     let savedSeconds = 0;
+    // A ?t= in the address is an explicit request for a moment. It beats the
+    // saved resume position — the viewer followed a link to a point — and it
+    // changes the seek RULES below, which were written for a resume value:
+    // a resume under five seconds is not worth restoring, but a link to 0:03
+    // is exactly what was asked for.
+    const explicitStart = Number.isFinite(startAt) && startAt >= 0;
+    if (explicitStart) savedSeconds = Math.floor(startAt);
     let didSeek = false;
     let lastSaved = 0;
 
@@ -34,8 +48,14 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
     };
 
     const trySeek = () => {
-      if (didSeek || savedSeconds <= 5) return;
-      if (duration && savedSeconds >= duration - 10) return;
+      if (didSeek) return;
+      if (!explicitStart) {
+        if (savedSeconds <= 5) return;
+        // Near the end, a resume would restart the video for no reason. An
+        // explicit link is honoured even there — that is where the
+        // interesting bit might be.
+        if (duration && savedSeconds >= duration - 10) return;
+      }
       didSeek = true;
       try { player.setCurrentTime(savedSeconds); } catch (e) {}
     };
@@ -57,8 +77,10 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
       }
       if (cancelled || !iframeRef.current) return;
 
-      // Load the saved position before the player is ready so we can seek immediately.
-      if (trackProgress) {
+      // Load the saved position before the player is ready so we can seek
+      // immediately — unless a link already named the moment, in which case
+      // there is nothing to look up and nothing it could override.
+      if (trackProgress && !explicitStart) {
         try {
           const r = await fetch(`/api/progress?videoId=${encodeURIComponent(videoId)}`);
           const p = r.ok ? await r.json() : null;
@@ -75,6 +97,7 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
       }
 
       player.on('ready', () => {
+        setCanCopy(true);
         try { player.getDuration((d) => { if (d) duration = d; }); } catch (e) {}
         trySeek();
 
@@ -90,10 +113,11 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
 
         player.on('timeupdate', (value) => {
           const seconds = value ? value.seconds : 0;
+          setPosition(Math.floor(seconds || 0));
           if (value && value.duration) duration = value.duration;
           // Fallback: some players ignore a seek issued while paused, so retry
           // once as soon as playback actually starts.
-          if (!didSeek && savedSeconds > 5 && seconds < savedSeconds - 2) {
+          if (!didSeek && (explicitStart || savedSeconds > 5) && seconds < savedSeconds - 2) {
             trySeek();
             return;
           }
@@ -116,17 +140,42 @@ export default function ResumablePlayer({ embedUrl, title, videoId, watermarkTex
     // useCallback, and including it would re-run setup (and re-create the
     // player) on every parent render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoId, title, trackProgress]);
+  }, [videoId, title, trackProgress, startAt]);
+
+  // Copies the address of this moment. Uses the CURRENT page URL rather than
+  // rebuilding one, so it works from any route this player appears on without
+  // knowing their shapes.
+  async function copyMoment() {
+    try {
+      await navigator.clipboard.writeText(linkAtTime(window.location.href, position));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      // Clipboard refused (insecure context, or permission). Leaving the
+      // button as it was beats pretending it worked.
+    }
+  }
 
   return (
-    <div className="watch-player">
-      <iframe
-        ref={iframeRef}
-        src={embedUrl}
-        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
-        title={title}
-      />
-      <Watermark text={watermarkText} />
-    </div>
+    <>
+      <div className="watch-player">
+        <iframe
+          ref={iframeRef}
+          src={embedUrl}
+          allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+          title={title}
+        />
+        <Watermark text={watermarkText} />
+      </div>
+      {/* Only once player.js is talking to us: a button that copied 0:00 for
+          every video would be worse than no button. */}
+      {canCopy ? (
+        <div className="admin-row" style={{ marginTop: 8 }}>
+          <button type="button" className="btn btn-sm" onClick={copyMoment}>
+            {copied ? 'Link copied' : `Copy link at ${formatTimestamp(position)}`}
+          </button>
+        </div>
+      ) : null}
+    </>
   );
 }

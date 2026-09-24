@@ -7,8 +7,10 @@ import { resolveAccess, filterVideos } from '../../lib/groups';
 import { listSchedules, filterScheduled } from '../../lib/schedule';
 import { listVideoMeta } from '../../lib/videoMetaStore';
 import { metaMatches } from '../../lib/videoMeta';
+import { bookIndex, parsePassageQuery, parseReferences, videoMatchesPassage } from '../../lib/scripture';
+import { queryStems, stemSet, stemsMatch } from '../../lib/stem';
 import { matchingTranscriptGuids } from '../../lib/captions';
-import { listTranscriptText } from '../../lib/captionsStore';
+import { listTranscriptText, matchingTranslatedGuids } from '../../lib/captionsStore';
 import { isVerified, recordObservation } from '../../lib/verification';
 import { allow, callerId } from '../../lib/ratelimit';
 import { isGeoAllowed } from '../../lib/geo';
@@ -52,8 +54,11 @@ async function handler(req, res) {
   const storedCount = await redis.get(k('homepage_video_count'));
   const totalLimit = storedCount ? Number(storedCount) : 2;
 
-  const q = (req.query.q || '').trim().toLowerCase();
-  const collection = (req.query.collection || '').trim();
+  // typeof, not coercion: a repeated ?q= or ?collection= arrives as an
+  // array, and calling .trim() on one threw — a 500 from a malformed URL.
+  // Now it is simply no search / no filter.
+  const q = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
+  const collection = typeof req.query.collection === 'string' ? req.query.collection.trim() : '';
   const fetched = await listVideos({ itemsPerPage: 100 });
   const order = await getOrder();
   // Group gating happens BEFORE the search/collection/cap logic below, so a
@@ -65,7 +70,23 @@ async function handler(req, res) {
   // Scheduled publish/expiry. Staff keep seeing everything so they can check a
   // video before it goes live; for viewers an out-of-window video is simply
   // absent, exactly as if it hadn't been uploaded yet.
-  if (!staff) ordered = filterScheduled(await listSchedules(), ordered);
+  // A group's own window (lib/schedule.js) opens a video early for its
+  // members, so the viewer's group ids ride along.
+  if (!staff) ordered = filterScheduled(await listSchedules(), ordered, Date.now(), access.groupIds);
+
+  // ?index=books — "Browse by book" on the homepage. A MODE of this route
+  // rather than a route of its own, deliberately: every check above (approval,
+  // region, verified email, groups, schedule) is the gate the answer needs,
+  // and a second route would be a second copy of that gate to keep in step.
+  // Counted over `ordered` — already narrowed — because a count is itself
+  // information: "Philippians (3)" says three videos exist.
+  if (req.query.index === 'books') {
+    const meta = await listVideoMeta();
+    const books = bookIndex(ordered, (v) =>
+      parseReferences(`${v.title || ''}\n${meta[v.guid]?.notes || ''}`)
+    );
+    return res.json({ books });
+  }
   // A search or collection filter looks across the whole library; the default
   // (unfiltered) view respects the admin's homepage cap.
   let allVideos;
@@ -83,16 +104,34 @@ async function handler(req, res) {
     // Transcripts are read as the TEXT map, not cue arrays: search needs none
     // of the timings, and cue bodies run ~1,500 per 90-minute service. That
     // split is why lib/captionsStore.js keeps two hashes.
-    const [meta, transcriptText] = await Promise.all([
+    //
+    // Every LANGUAGE, too: translations are matched inside Redis and arrive as
+    // ids only (lib/captionsStore.js), so they join `spoken` without every
+    // search loading every translation — and, like every other match here,
+    // they can only mark videos already in `ordered`.
+    const [meta, transcriptText, translatedIds] = await Promise.all([
       listVideoMeta(),
       listTranscriptText(),
+      matchingTranslatedGuids(q),
     ]);
-    const spoken = new Set(matchingTranscriptGuids(transcriptText, q));
+    const spoken = new Set([...matchingTranscriptGuids(transcriptText, q), ...translatedIds]);
+    // A query that IS a scripture reference ('philippians 2') also matches a
+    // title or notes citing an OVERLAPPING passage in any spelling ('Phil
+    // 1:27-2:11'). A fourth OR over the same already-filtered `ordered`, so
+    // it inherits the guarantee above, and it only adds matches.
+    const passage = parsePassageQuery(q);
+    // And a fifth: the query's WORDS by stem ('baptism' finds 'baptised'),
+    // in title or notes, every word somewhere. Not for a passage query —
+    // stems would read 'philippians 2' as the word 'philippians' and widen it
+    // to the whole book, so a passage is answered by passage overlap alone.
+    const stems = passage ? [] : queryStems(q);
     allVideos = ordered.filter(
       (v) =>
         (v.title || '').toLowerCase().includes(q) ||
         metaMatches(meta[v.guid], q) ||
-        spoken.has(v.guid)
+        spoken.has(v.guid) ||
+        videoMatchesPassage(v.title, meta[v.guid]?.notes, passage) ||
+        stemsMatch(stemSet(`${v.title || ''}\n${meta[v.guid]?.notes || ''}`), stems)
     );
   } else if (collection) {
     allVideos = ordered.filter((v) => v.collectionId === collection);

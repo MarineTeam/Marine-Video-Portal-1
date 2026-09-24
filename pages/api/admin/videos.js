@@ -4,12 +4,16 @@ import { getOrder, setOrder, applyOrder } from '../../../lib/order';
 import { logAudit } from '../../../lib/audit';
 import { maybeAnnounceReady } from '../../../lib/push';
 import { listVideoWatermarkModes, setVideoWatermarkMode } from '../../../lib/watermark';
-import { listSchedules, setSchedule, scheduleState } from '../../../lib/schedule';
+import { listSchedules, setSchedule, scheduleState, validateGroupWindows, validateRepeat } from '../../../lib/schedule';
 import { listVideoMeta, setVideoMeta, clearVideoMeta } from '../../../lib/videoMetaStore';
 import { clearVideoRatingCounts, getRatingCounts } from '../../../lib/ratingsStore';
+import { listGroupIds, pruneVideosFromGroups } from '../../../lib/groups';
 import { countsByVideo, countsFor, summarize } from '../../../lib/ratings';
 import { listPublicVideos, clearPublicVideo } from '../../../lib/publicVideos';
 import { formatChaptersText } from '../../../lib/videoMeta';
+import { collectFinishedTranscripts } from '../../../lib/transcriptCollect';
+import { clearTranscript } from '../../../lib/captionsStore';
+import { clearComments } from '../../../lib/commentsStore';
 import { withMonitorApi } from '../../../lib/monitor';
 
 // Bulk video ops (delete, collection assignment) accept either a single `id`
@@ -18,6 +22,20 @@ import { withMonitorApi } from '../../../lib/monitor';
 // single-id shape keeps its original response for backward compatibility.
 function idsFrom(body) {
   return Array.isArray(body.ids) ? body.ids : body.id ? [body.id] : [];
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function describeSchedule(id, entry) {
+  if (!entry) return `${id} → cleared`;
+  const when = (ts) => (ts ? new Date(ts).toISOString() : null);
+  let text = `${id} → ${when(entry.publishAt) || 'now'} … ${when(entry.expiresAt) || 'forever'}`;
+  if (entry.repeat) {
+    const { days, start, end, timeZone } = entry.repeat;
+    text += `, weekly ${days.map((d) => DAY_NAMES[d]).join('/')} ${start}–${end} ${timeZone}`;
+  }
+  if (entry.groups) text += `, group windows: ${Object.keys(entry.groups).join(', ')}`;
+  return text;
 }
 
 async function handler(req, res) {
@@ -41,6 +59,24 @@ async function handler(req, res) {
       await maybeAnnounceReady(ordered);
     } catch (e) {
       // swallow — announcements are a convenience, the library must still load
+    }
+
+    // Best-effort, same contract: collect any transcription bunny has finished
+    // since it was queued, so the admin does not have to remember a second
+    // click minutes later. Bounded per request by lib/transcribeQueue.js;
+    // failures are retried on the next load (and by the scheduled job,
+    // pages/api/cron/transcripts.js) and age out after three days.
+    try {
+      const { collected } = await collectFinishedTranscripts();
+      for (const item of collected) {
+        await logAudit(
+          actor,
+          'video.transcript_ingest',
+          `${item.videoId} (${item.language}, ${item.cues}, collected automatically)`
+        );
+      }
+    } catch (e) {
+      // swallow — the library must still load
     }
 
     // Totals only — the counters hold no identity, so this cannot tell an
@@ -108,18 +144,31 @@ async function handler(req, res) {
     // bounds empty clears the schedule entirely.
     if (Object.prototype.hasOwnProperty.call(body, 'publishAt') ||
         Object.prototype.hasOwnProperty.call(body, 'expiresAt')) {
+      // The weekly repeat and group windows travel with the dates: the whole
+      // entry is replaced on every save (lib/schedule.js).
+      const repeat = body.repeat ?? null;
+      const repeatError = validateRepeat(repeat);
+      if (repeatError) return res.status(400).json({ error: repeatError });
+      let groups = null;
+      if (body.groups != null) {
+        let known;
+        try {
+          known = await listGroupIds();
+        } catch {
+          return res.status(500).json({ error: 'Could not read the groups.' });
+        }
+        const checked = validateGroupWindows(body.groups, known);
+        if (checked.error) return res.status(400).json({ error: checked.error });
+        groups = checked.groups;
+      }
       try {
         const entry = await setSchedule(ids[0], {
           publishAt: body.publishAt,
           expiresAt: body.expiresAt,
+          repeat,
+          groups,
         });
-        await logAudit(
-          actor,
-          'video.schedule',
-          entry
-            ? `${ids[0]} → ${entry.publishAt ? new Date(entry.publishAt).toISOString() : 'now'} … ${entry.expiresAt ? new Date(entry.expiresAt).toISOString() : 'forever'}`
-            : `${ids[0]} → cleared`
-        );
+        await logAudit(actor, 'video.schedule', describeSchedule(ids[0], entry));
         return res.json({ ok: true, schedule: entry, scheduleState: scheduleState(entry) });
       } catch (e) {
         return res.status(400).json({ error: e.message });
@@ -196,7 +245,15 @@ async function handler(req, res) {
       await clearPublicVideo(id);
       // ...nor carry its score over to a recycled bunny.net id.
       await clearVideoRatingCounts(id);
+      // ...nor leave its transcript behind, in any language — cues, search
+      // text and the language index. Best-effort: it reports, never throws.
+      await clearTranscript(id);
+      // ...nor open a recycled id with the previous video's conversation.
+      await clearComments(id).catch((e) => console.error('Could not clear comments:', e));
     }
+    // ...nor stay granted to a group — a cancelled upload deletes its video,
+    // and the upload may already have ticked it into groups.
+    if (okIds.size > 0) await pruneVideosFromGroups([...okIds]);
     if (okIds.size > 0) {
       const order = await getOrder();
       const pruned = order.filter((x) => !okIds.has(x));

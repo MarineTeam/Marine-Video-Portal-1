@@ -3,17 +3,12 @@ import { redis, k } from '../../lib/redis';
 import { isStaffUser } from '../../lib/roles';
 import { isVerified } from '../../lib/verification';
 import { resolveAccess, canSeeVideo } from '../../lib/groups';
-import { getSchedule, isVisibleNow } from '../../lib/schedule';
+import { getSchedule, isVisibleFor } from '../../lib/schedule';
 import { isGeoAllowed } from '../../lib/geo';
 import { allow, callerId } from '../../lib/ratelimit';
 import { listVideos } from '../../lib/bunny';
-import {
-  applyRatingCounts,
-  clearRating,
-  getRatings,
-  setRating,
-} from '../../lib/ratingsStore';
-import { countField, normalizeVote, ratingOf, voteDelta } from '../../lib/ratings';
+import { getRatings, recordRating } from '../../lib/ratingsStore';
+import { normalizeVote, ratingOf } from '../../lib/ratings';
 import { withMonitorApi } from '../../lib/monitor';
 
 // The viewer's own rating of one video.
@@ -94,31 +89,16 @@ async function handler(req, res) {
     const access = await resolveAccess(email, { staff });
     if (!canSeeVideo(access, video)) return res.status(404).json({ error: 'Not found' });
 
-    if (!staff && !isVisibleNow(await getSchedule(video.guid))) {
+    if (!staff && !isVisibleFor(await getSchedule(video.guid), access.groupIds)) {
       return res.status(404).json({ error: 'Not found' });
     }
 
-    const previous = ratingOf(await getRatings(email), videoId);
-    // Re-sending the same vote is a no-op rather than a second increment.
-    if (previous === next) return res.json({ ok: true, vote: next });
-
-    const result = next
-      ? await setRating(email, videoId, next)
-      : await clearRating(email, videoId);
+    // One Redis script writes the vote and moves both counters, reading the
+    // previous vote inside itself — so a repeated vote is a no-op, two racing
+    // clicks cannot both count, and there is no second write left to fail
+    // after the first succeeded. See lib/ratingScripts.js.
+    const result = await recordRating(email, videoId, next);
     if (!result.ok) return res.status(502).json({ error: result.error });
-
-    // AFTER the authoritative write, and outside its error path: the vote has
-    // already succeeded, so a counter failure must not report it as a failure.
-    // That would be the worst answer available — the viewer would see their
-    // click revert while the vote stood, and a retry would no-op with "ok".
-    const delta = voteDelta(previous, next);
-    const fields = {};
-    for (const [vote, amount] of Object.entries(delta)) {
-      if (!amount) continue;
-      const field = countField(videoId, vote);
-      if (field) fields[field] = amount;
-    }
-    await applyRatingCounts(fields);
 
     return res.json({ ok: true, vote: next });
   }

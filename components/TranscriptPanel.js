@@ -19,6 +19,10 @@ export default function TranscriptPanel({ videoId, seekable, onSeek }) {
   const [cues, setCues] = useState(null); // null = not fetched yet
   const [state, setState] = useState('idle'); // idle | loading | ready | error
   const [query, setQuery] = useState('');
+  // Which languages this video has, and which one is showing. Empty until the
+  // first fetch, which is also when we learn there is more than one.
+  const [languages, setLanguages] = useState([]);
+  const [language, setLanguage] = useState('');
   // Survives unmount-during-fetch without setting state on a dead component.
   const alive = useRef(true);
 
@@ -46,12 +50,39 @@ export default function TranscriptPanel({ videoId, seekable, onSeek }) {
       const data = await res.json();
       if (!alive.current) return;
       setCues(Array.isArray(data?.cues) ? data.cues : []);
+      setLanguages(Array.isArray(data?.languages) ? data.languages : []);
+      setLanguage(typeof data?.language === 'string' ? data.language : '');
       setState('ready');
     } catch {
       if (!alive.current) return;
       setState('error');
     }
   }, [videoId, state, cues]);
+
+  // Switching language refetches rather than holding every translation in
+  // memory: a viewer reads one at a time, and a 90-minute service is ~1,500
+  // cues per language. The list on screen stays until the new one arrives, so
+  // the panel never blinks empty.
+  const switchLanguage = useCallback(
+    async (next) => {
+      if (!videoId || !next || next === language) return;
+      try {
+        const res = await fetch(
+          `/api/transcript/${encodeURIComponent(videoId)}?lang=${encodeURIComponent(next)}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!alive.current) return;
+        // Trust the server's answer about which language it served: asking
+        // for one it does not have must not leave the picker claiming it.
+        if (Array.isArray(data?.cues) && data.cues.length) setCues(data.cues);
+        if (typeof data?.language === 'string') setLanguage(data.language);
+      } catch (e) {
+        // Leave the transcript that is already on screen.
+      }
+    },
+    [videoId, language]
+  );
 
   const toggle = () => {
     const next = !open;
@@ -96,6 +127,25 @@ export default function TranscriptPanel({ videoId, seekable, onSeek }) {
 
           {state === 'ready' && !empty ? (
             <>
+              {/* Only when there is a choice to make. One language needs no
+                  picker, and a select with a single option is a control that
+                  does nothing. */}
+              {languages.length > 1 ? (
+                <label className='transcript-search'>
+                  <span className='sr-only'>Transcript language</span>
+                  <select
+                    value={language}
+                    onChange={(event) => switchLanguage(event.target.value)}
+                  >
+                    {languages.map((code) => (
+                      <option key={code} value={code}>
+                        {code.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
               <label className='transcript-search'>
                 <span className='sr-only'>Search this transcript</span>
                 <input

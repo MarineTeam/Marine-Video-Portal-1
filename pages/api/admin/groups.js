@@ -1,6 +1,7 @@
 import { logAudit } from '../../../lib/audit';
 import { withMonitorApi } from '../../../lib/monitor';
 import { requireCapability } from '../../../lib/roles';
+import { pruneGroupFromSchedules } from '../../../lib/schedule';
 import { redis, k } from '../../../lib/redis';
 import {
   listGroups,
@@ -114,6 +115,11 @@ async function handler(req, res) {
         return res.json({ ok: true });
       }
       const result = await deleteGroup(body.groupId);
+      // Its publish windows go with it (lib/schedule.js). Best-effort after the
+      // delete itself: a window naming a deleted group matches no viewer.
+      await pruneGroupFromSchedules(body.groupId).catch((e) =>
+        console.error('Could not clear a deleted group from video schedules:', e)
+      );
       await logAudit(actor, 'group.delete', String(body.groupId));
       return res.json(result);
     } catch (e) {

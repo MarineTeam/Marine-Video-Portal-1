@@ -4,7 +4,7 @@ import { redis, k } from '../../../lib/redis';
 import { listVideos, getEmbedUrl } from '../../../lib/bunny';
 import { isStaffUser } from '../../../lib/roles';
 import { resolveAccess, canSeeVideo } from '../../../lib/groups';
-import { getSchedule, isVisibleNow } from '../../../lib/schedule';
+import { getSchedule, isVisibleFor } from '../../../lib/schedule';
 import { getVideoMeta } from '../../../lib/videoMetaStore';
 import { formatTimestamp } from '../../../lib/videoMeta';
 import { isVerified } from '../../../lib/verification';
@@ -15,14 +15,18 @@ import ResumablePlayer from '../../../components/ResumablePlayer';
 import TranscriptPanel from '../../../components/TranscriptPanel';
 import SaveToListButton from '../../../components/SaveToListButton';
 import RatingButtons from '../../../components/RatingButtons';
+import Comments from '../../../components/Comments';
 import { getMyList } from '../../../lib/mylistStore';
 import { isSaved } from '../../../lib/mylist';
 import { getRatings } from '../../../lib/ratingsStore';
 import { ratingOf } from '../../../lib/ratings';
+import { parseTimeParam } from '../../../lib/timestampLink';
+import { compareReferences, formatReference, parseReferences } from '../../../lib/scripture';
+import { passageSearchHref } from '../../../lib/searchLink';
 import { IconChevronLeft } from '../../../components/icons';
 import { withMonitorPage } from '../../../lib/monitor';
 
-async function getServerSidePropsInner({ req, res, params }) {
+async function getServerSidePropsInner({ req, res, params, query }) {
   const session = await getSession(req, res);
 
   if (!session) {
@@ -83,7 +87,7 @@ async function getServerSidePropsInner({ req, res, params }) {
 
   // Scheduled publish/expiry — the direct-link half of the same gate applied
   // to the listing in /api/videos. Staff bypass so they can preview.
-  if (!staff && !isVisibleNow(await getSchedule(video.guid))) {
+  if (!staff && !isVisibleFor(await getSchedule(video.guid), access.groupIds)) {
     return { props: { error: 'This video is not currently available.', adminUser: staff } };
   }
 
@@ -114,6 +118,10 @@ async function getServerSidePropsInner({ req, res, params }) {
       chapters: meta?.chapters || [],
       saved,
       vote,
+      // Null when there is no ?t=, or when it is not a timestamp we accept.
+      // Null rather than 0 on purpose: an unparseable value must leave the
+      // saved resume position alone rather than restarting the video.
+      startAt: parseTimeParam(query?.t),
       notes: meta?.notes || '',
     },
   };
@@ -121,7 +129,8 @@ async function getServerSidePropsInner({ req, res, params }) {
 
 export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
 
-export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText, chapters = [], notes = '', saved = false, vote = null }) {
+export default function WatchVideo({ embedUrl, title, videoId, error, adminUser, watermarkText, chapters = [], notes = '', saved = false, vote = null, startAt = null }) {
+  const passages = error ? [] : parseReferences(`${title || ''}\n${notes || ''}`).sort(compareReferences);
   // Set once player.js attaches. Until then (and forever, if it fails to load)
   // chapters render as plain text rather than buttons that would do nothing.
   const [seek, setSeek] = useState(null);
@@ -153,6 +162,7 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser,
             videoId={videoId}
             watermarkText={watermarkText}
             onSeekAvailable={handleSeekAvailable}
+            startAt={startAt}
           />
 
           {chapters.length > 0 && (
@@ -189,6 +199,28 @@ export default function WatchVideo({ embedUrl, title, videoId, error, adminUser,
               <p className="video-notes-body">{notes}</p>
             </section>
           )}
+
+          {/* The passages the title and notes cite, each opening the library
+              searched for it — the ordinary gated search, so a link can
+              never show a viewer something new. Read from the title too,
+              because /api/videos passage-matches titles in this repo. */}
+          {passages.length > 0 && (
+            <nav className="passages" aria-label="Passages in this video">
+              <span className="passages-label">Passages</span>
+              <div className="passage-chips">
+                {passages.map((ref) => {
+                  const label = formatReference(ref);
+                  return (
+                    <a key={label} href={passageSearchHref(label)} className="chip passage-chip">
+                      {label}
+                    </a>
+                  );
+                })}
+              </div>
+            </nav>
+          )}
+
+          <Comments videoId={videoId} />
         </>
       )}
     </AppShell>

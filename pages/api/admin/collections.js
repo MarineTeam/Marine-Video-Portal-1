@@ -1,5 +1,6 @@
 import { requireCapability } from '../../../lib/roles';
 import { listCollections, createCollection, deleteCollection } from '../../../lib/bunny';
+import { pruneCollectionFromGroups } from '../../../lib/groups';
 import { logAudit } from '../../../lib/audit';
 import { withMonitorApi } from '../../../lib/monitor';
 
@@ -39,7 +40,13 @@ async function handler(req, res) {
     if (!id) return res.status(400).json({ error: 'id required' });
     try {
       await deleteCollection(id);
-      await logAudit(actor, 'collection.delete', id);
+      // A group scoped to this collection must not keep granting it.
+      const pruned = await pruneCollectionFromGroups(id);
+      await logAudit(
+        actor,
+        'collection.delete',
+        pruned ? `${id} (cleared from ${pruned} group scope(s))` : id
+      );
       return res.json({ ok: true });
     } catch (e) {
       return res.status(502).json({ error: e.message || 'Failed to delete collection' });

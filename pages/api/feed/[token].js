@@ -8,6 +8,7 @@ import { listVideoMeta } from '../../../lib/videoMetaStore';
 import { resolveToken } from '../../../lib/feedTokens';
 import { getSiteName } from '../../../lib/brandingStore';
 import { buildFeedXml, mimeForFile } from '../../../lib/podcastFeed';
+import { getAppIconVersion } from '../../../lib/appIconStore';
 import { withMonitorApi } from '../../../lib/monitor';
 
 // Per-subscriber podcast feed. Reachable WITHOUT a session, because podcast
@@ -58,7 +59,7 @@ async function handler(req, res) {
   // Same narrowing, same order as the library. Staff and ungrouped viewers
   // resolve to unrestricted, so this is a pass-through for them.
   let videos = filterVideos(access, applyOrder(fetched, order));
-  if (!staff) videos = filterScheduled(schedules, videos);
+  if (!staff) videos = filterScheduled(schedules, videos, Date.now(), access.groupIds);
 
   const mediaType = mimeForFile(podcastMediaFile());
   const items = videos.map((v) => ({
@@ -70,12 +71,18 @@ async function handler(req, res) {
     // 7 days, so an app that caches the feed for a few days still has live
     // enclosure URLs when someone finally presses play.
     mediaUrl: getVideoFileUrl(v, 7 * 86400),
+    // A stable address on this app, re-checked per fetch — see
+    // pages/api/feed/[token]/[file].js for why art is not a signed URL.
+    imageUrl: `${baseUrl}/api/feed/${encodeURIComponent(String(req.query.token))}/${v.guid}.jpg`,
     mediaType,
     publishedAt: v.dateUploaded,
   }));
 
+  // The show's cover: the app icon, the admin-set one when there is one.
+  const iconVersion = await getAppIconVersion().catch(() => null);
   const xml = buildFeedXml({
     siteName,
+    imageUrl: iconVersion ? `${baseUrl}/api/app-icon/512?v=${iconVersion}` : `${baseUrl}/icon-512.png`,
     feedUrl: `${baseUrl}/api/feed/${encodeURIComponent(String(req.query.token))}`,
     siteUrl: baseUrl,
     description: `Recordings from ${siteName}.`,

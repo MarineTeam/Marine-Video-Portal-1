@@ -70,6 +70,252 @@ function toLocalInput(ts) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function fromLocalInput(value) {
+  if (!value) return '';
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : '';
+}
+
+const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function repeatSummary(repeat) {
+  if (!repeat) return undefined;
+  return `${repeat.days.map((d) => WEEKDAY_NAMES[d]).join(', ')} ${repeat.start}–${repeat.end} (${repeat.timeZone})`;
+}
+
+function browserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+// One video's schedule: the publish/expiry dates, an optional weekly repeat
+// and optional per-group windows (lib/schedule.js). Edited as a draft and
+// saved with one button, because the three parts are one entry.
+//
+// Dates leave here as ms epochs, converted in the browser: the server has no
+// idea what time zone the admin typed in, so sending the datetime-local text
+// would have it read in the server's zone instead.
+//
+// `groups` is empty for an admin without groups:manage. Their existing group
+// windows are still sent back unchanged, so saving the dates never drops a
+// window they cannot see to edit.
+function ScheduleEditor({ video, groups, onSave }) {
+  const schedule = video.schedule || null;
+  const [publishAt, setPublishAt] = useState(toLocalInput(schedule?.publishAt));
+  const [expiresAt, setExpiresAt] = useState(toLocalInput(schedule?.expiresAt));
+  const existingRepeat = schedule?.repeat || null;
+  const [repeatOn, setRepeatOn] = useState(Boolean(existingRepeat));
+  const [repeatDays, setRepeatDays] = useState(existingRepeat?.days || [0]);
+  const [repeatStart, setRepeatStart] = useState(existingRepeat?.start || '09:00');
+  const [repeatEnd, setRepeatEnd] = useState(existingRepeat?.end || '13:00');
+  const [repeatZone] = useState(existingRepeat?.timeZone || browserTimeZone());
+  const [groupRows, setGroupRows] = useState(() =>
+    Object.entries(schedule?.groups || {}).map(([groupId, w]) => ({
+      groupId,
+      publishAt: toLocalInput(w?.publishAt),
+      expiresAt: toLocalInput(w?.expiresAt),
+    }))
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const knownGroups = groups || [];
+  const groupName = (id) => knownGroups.find((g) => g.id === id)?.name || 'Other group';
+  const toggleDay = (d) =>
+    setRepeatDays((days) => (days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort()));
+  const patchRow = (index, patch) =>
+    setGroupRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  const unusedGroups = knownGroups.filter((g) => !groupRows.some((r) => r.groupId === g.id));
+
+  async function save(clear) {
+    setBusy(true);
+    setError('');
+    setSaved(false);
+    const groupWindows = {};
+    for (const row of groupRows) {
+      if (!row.groupId || (!row.publishAt && !row.expiresAt)) continue;
+      groupWindows[row.groupId] = {
+        publishAt: fromLocalInput(row.publishAt) || null,
+        expiresAt: fromLocalInput(row.expiresAt) || null,
+      };
+    }
+    const problem = await onSave({
+      publishAt: clear ? '' : fromLocalInput(publishAt),
+      expiresAt: clear ? '' : fromLocalInput(expiresAt),
+      repeat:
+        clear || !repeatOn
+          ? null
+          : { days: repeatDays, start: repeatStart, end: repeatEnd, timeZone: repeatZone },
+      groups: clear ? null : groupWindows,
+    });
+    setBusy(false);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setSaved(true);
+    if (clear) {
+      setPublishAt('');
+      setExpiresAt('');
+      setRepeatOn(false);
+      setGroupRows([]);
+    }
+  }
+
+  return (
+    <div className="schedule-editor">
+      <p className="text-muted" style={{ margin: '8px 0' }}>
+        Leave both dates blank to keep this video visible with no time limit. Viewers can&rsquo;t
+        see or open it outside the window; admins and managers always can.
+      </p>
+      <div className="schedule-fields">
+        <label>
+          <span className="collection-label">Publish at</span>
+          <input
+            type="datetime-local"
+            className="input input-sm"
+            value={publishAt}
+            onChange={(e) => setPublishAt(e.target.value)}
+          />
+        </label>
+        <label>
+          <span className="collection-label">Expires at</span>
+          <input
+            type="datetime-local"
+            className="input input-sm"
+            value={expiresAt}
+            onChange={(e) => setExpiresAt(e.target.value)}
+          />
+        </label>
+      </div>
+
+      <div className="schedule-repeat">
+        <label className="schedule-check">
+          <input type="checkbox" checked={repeatOn} onChange={(e) => setRepeatOn(e.target.checked)} />
+          <span>Only at set times each week</span>
+        </label>
+        {repeatOn ? (
+          <>
+            <div className="schedule-days" role="group" aria-label="Days">
+              {WEEKDAY_NAMES.map((name, d) => (
+                <label key={name} className="schedule-check">
+                  <input type="checkbox" checked={repeatDays.includes(d)} onChange={() => toggleDay(d)} />
+                  <span>{name}</span>
+                </label>
+              ))}
+            </div>
+            <div className="schedule-times">
+              <input
+                type="time"
+                className="input input-sm"
+                value={repeatStart}
+                onChange={(e) => setRepeatStart(e.target.value)}
+                aria-label="From"
+              />
+              <span className="text-muted">to</span>
+              <input
+                type="time"
+                className="input input-sm"
+                value={repeatEnd}
+                onChange={(e) => setRepeatEnd(e.target.value)}
+                aria-label="Until"
+              />
+              <span className="text-muted">{repeatZone}</span>
+            </div>
+            <p className="text-muted schedule-note">
+              Visible to viewers only during these hours, within the dates above. An end time before
+              the start runs past midnight. Group windows below are not limited by this.
+            </p>
+          </>
+        ) : null}
+      </div>
+
+      {knownGroups.length > 0 || groupRows.length > 0 ? (
+        <div className="schedule-groups">
+          <p className="text-muted schedule-note">
+            Earlier or longer for a group — members of these groups can also watch during their own
+            window. This only ever adds time; it never hides the video from a group (the group&rsquo;s
+            own video list does that).
+          </p>
+          {groupRows.map((row, index) => (
+            <div key={row.groupId || `new-${index}`} className="schedule-group-row">
+              <select
+                className="input input-sm"
+                value={row.groupId}
+                onChange={(e) => patchRow(index, { groupId: e.target.value })}
+                aria-label="Group"
+                disabled={knownGroups.length === 0}
+              >
+                <option value="">Choose a group…</option>
+                {row.groupId && !knownGroups.some((g) => g.id === row.groupId) ? (
+                  <option value={row.groupId}>{groupName(row.groupId)}</option>
+                ) : null}
+                {knownGroups
+                  .filter((g) => g.id === row.groupId || !groupRows.some((r) => r.groupId === g.id))
+                  .map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+              </select>
+              <input
+                type="datetime-local"
+                className="input input-sm"
+                value={row.publishAt}
+                onChange={(e) => patchRow(index, { publishAt: e.target.value })}
+                aria-label="Group publish at"
+                title="Visible to this group from"
+              />
+              <input
+                type="datetime-local"
+                className="input input-sm"
+                value={row.expiresAt}
+                onChange={(e) => patchRow(index, { expiresAt: e.target.value })}
+                aria-label="Group expires at"
+                title="Hidden from this group again at"
+              />
+              <button
+                type="button"
+                className="btn btn-sm"
+                aria-label="Remove group window"
+                onClick={() => setGroupRows((rows) => rows.filter((_, i) => i !== index))}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {unusedGroups.length > 0 ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() =>
+                setGroupRows((rows) => [...rows, { groupId: '', publishAt: '', expiresAt: '' }])
+              }
+            >
+              Add a group window
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {error ? <p className="schedule-error">{error}</p> : null}
+      <div className="schedule-actions">
+        <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => save(false)}>
+          Save schedule
+        </button>
+        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => save(true)}>
+          Clear
+        </button>
+        {saved ? <span className="text-muted">Saved</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function formatNumber(n) {
   return (n || 0).toLocaleString();
 }
@@ -79,6 +325,122 @@ function formatDuration(seconds) {
   const m = Math.floor(s / 60);
   if (m >= 60) return `${Math.floor(m / 60)}h ${m % 60}m`;
   return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// Draws the chosen image, centre-cropped to a square, at one size, and returns
+// the PNG as base64. The resize happens HERE, in the browser, so the server
+// needs no image library — and it re-checks every result anyway
+// (lib/appIcon.js), so nothing about this function is trusted.
+function renderIconPng(image, size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  const side = Math.min(image.naturalWidth, image.naturalHeight);
+  const sx = (image.naturalWidth - side) / 2;
+  const sy = (image.naturalHeight - side) / 2;
+  ctx.drawImage(image, sx, sy, side, side, 0, 0, size, size);
+  return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('That file could not be read as an image'));
+    };
+    image.src = url;
+  });
+}
+
+function AppIconSetting() {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  // Changes after a save or reset, so the preview is refetched.
+  const [bust, setBust] = useState(0);
+
+  async function send(method, body) {
+    const res = await fetch('/api/admin/app-icon', {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Failed (status ${res.status})`);
+    return data;
+  }
+
+  async function choose(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setMsg('');
+    setBusy(true);
+    try {
+      const image = await loadImage(file);
+      if (Math.min(image.naturalWidth, image.naturalHeight) < 512) {
+        throw new Error('Choose an image at least 512 pixels on its shorter side');
+      }
+      const icons = {};
+      for (const size of [180, 192, 512]) icons[size] = renderIconPng(image, size);
+      await send('PUT', { icons });
+      setMsg('Saved. New installs use it now; installed apps pick it up when the browser next checks.');
+      setBust(Date.now());
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reset() {
+    setMsg('');
+    setBusy(true);
+    try {
+      await send('DELETE');
+      setMsg('Back to the built-in icon.');
+      setBust(Date.now());
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="setting-block">
+      <span className="collection-label">App icon</span>
+      <p className="text-muted" style={{ margin: '4px 0 8px' }}>
+        The picture on a phone&rsquo;s home screen when the portal is installed, and the podcast
+        cover. Any image works &mdash; it is cropped to a square from the centre. PNG output only.
+      </p>
+      <div className="admin-row">
+        <img
+          src={`/api/app-icon/192?preview=${bust}`}
+          alt="Current app icon"
+          width={48}
+          height={48}
+          className="app-icon-preview"
+        />
+        <label className="btn btn-primary btn-sm" aria-disabled={busy}>
+          {busy ? 'Working…' : 'Choose image'}
+          <input type="file" accept="image/*" hidden disabled={busy} onChange={choose} />
+        </label>
+        <button onClick={reset} className="btn btn-outline btn-sm" disabled={busy}>
+          Reset to default
+        </button>
+        {msg && <span className="text-muted">{msg}</span>}
+      </div>
+    </div>
+  );
 }
 
 export default function Admin({ isAdminRole }) {
@@ -119,6 +481,9 @@ export default function Admin({ isAdminRole }) {
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const [uploadErrorMsg, setUploadErrorMsg] = useState('');
+  // Groups the next upload is granted to, and any the server could not grant.
+  const [uploadGroups, setUploadGroups] = useState([]);
+  const [uploadGrantMsg, setUploadGrantMsg] = useState('');
   const [bulkEmails, setBulkEmails] = useState('');
   const [videoQuery, setVideoQuery] = useState('');
   const [editingId, setEditingId] = useState(null);
@@ -249,6 +614,10 @@ export default function Admin({ isAdminRole }) {
   useEffect(() => {
     if (!user || tab !== 'videos') return;
     fetch('/api/admin/private-list').then((r) => (r.ok ? r.json() : {})).then(setPrivateLists).catch(() => {});
+    // The upload form's "also visible to groups" picker needs the group
+    // names here too, not only on the Access tab. A caller without
+    // groups:manage gets a 403 and simply sees no picker.
+    fetch('/api/admin/groups').then((r) => (r.ok ? r.json() : [])).then(setGroups).catch(() => {});
   }, [user, tab]);
 
   // While any video is still encoding (status 0–3), re-poll so progress updates.
@@ -363,11 +732,27 @@ export default function Admin({ isAdminRole }) {
       const res = await fetch('/api/admin/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: uploadTitle.trim() || uploadFile.name }),
+        body: JSON.stringify({
+          title: uploadTitle.trim() || uploadFile.name,
+          // Only sent when something is ticked, so an ordinary upload is the
+          // exact request it always was.
+          ...(uploadGroups.length ? { groupIds: uploadGroups } : {}),
+        }),
       });
       meta = await res.json();
       if (!res.ok) throw new Error(meta.error || `Create-video failed (HTTP ${res.status})`);
       if (!meta.videoId) throw new Error('Server did not return a video id');
+      // The video exists and the bytes are about to go; a group that could
+      // not be granted is said out loud rather than left for a viewer to
+      // discover by not seeing the video.
+      const failedGroups = meta.groups?.failed || [];
+      setUploadGrantMsg(
+        failedGroups.length
+          ? `Could not add this video to ${failedGroups
+              .map((id) => groups.find((g) => g.id === id)?.name || id)
+              .join(', ')} — tick it on the Groups tab.`
+          : ''
+      );
     } catch (e) {
       failUpload(`Couldn't start upload: ${e.message}`, e);
       return;
@@ -406,6 +791,7 @@ export default function Admin({ isAdminRole }) {
         setUploadErrorMsg('');
         setUploadFile(null);
         setUploadTitle('');
+        setUploadGroups([]);
         setUploadPct(0);
         if (fileInputRef.current) fileInputRef.current.value = '';
         await fetchVideos().catch(() => {});
@@ -957,21 +1343,24 @@ export default function Admin({ isAdminRole }) {
     }
   }
 
-  // Both bounds go up together, so clearing one and saving doesn't look like
-  // "leave it as it was". Empty strings clear the schedule server-side.
-  async function saveVideoSchedule(v, publishAt, expiresAt) {
+  // The whole entry goes up together — dates, weekly repeat and group
+  // windows — so clearing one field and saving never looks like "leave it as
+  // it was". Empty dates and a null repeat/groups clear them server-side.
+  // Returns an error message for the editor to show, or null.
+  async function saveVideoSchedule(v, schedule) {
     const res = await fetch('/api/admin/videos', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: v.id, publishAt: publishAt || '', expiresAt: expiresAt || '' }),
+      body: JSON.stringify({ id: v.id, ...schedule }),
     });
-    const data = await res.json();
-    if (!res.ok) { alert(data.error || 'Failed to save schedule'); return; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return data.error || 'Failed to save schedule';
     setVideos((prev) =>
       prev.map((x) =>
         x.id === v.id ? { ...x, schedule: data.schedule, scheduleState: data.scheduleState } : x
       )
     );
+    return null;
   }
 
   async function assignWatermarkMode(v, watermarkMode) {
@@ -1467,13 +1856,20 @@ export default function Admin({ isAdminRole }) {
         setCleanupMsg(data.error || `Failed (status ${res.status})`);
         return;
       }
-      const { bundles, shares, progress } = data;
+      const { bundles, shares, progress, ratings } = data;
       const total = bundles.removed + shares.removed + progress.removed;
+      // The recount runs every time, so its line is shown every time — a
+      // rebuilt total is a result even when nothing stale was found.
+      const ratingsLine = !ratings
+        ? ''
+        : ratings.error
+          ? ` ${ratings.error}.`
+          : ` Rating totals rebuilt from ${ratings.votes} vote(s).`;
       setCleanupMsg(
-        total === 0
+        (total === 0
           ? 'Nothing stale found — all clean.'
           : `Removed ${bundles.removed} stale bundle(s), ${shares.removed} stale share reference(s), ` +
-            `${progress.removed} orphaned progress record(s).`
+            `${progress.removed} orphaned progress record(s).`) + ratingsLine
       );
       if (shares.removed) refreshShares();
     } catch (e) {
@@ -1602,6 +1998,8 @@ export default function Admin({ isAdminRole }) {
               </button>
             </div>
           </div>
+
+          <AppIconSetting />
 
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
             Choose the accent palette used across the portal for every visitor.
@@ -1947,8 +2345,9 @@ export default function Admin({ isAdminRole }) {
           <h2 className="admin-section-title">Maintenance</h2>
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
             Clears data left behind after normal use — share bundles whose links have all
-            expired or been revoked, stale share references, and watch-history records for
-            viewers who were removed. Nothing currently in use is touched.
+            expired or been revoked, stale share references, and watch history, saved lists and
+            ratings for viewers who were removed — then rebuilds the 👍/👎 totals from the votes
+            that remain. Nothing currently in use is touched.
           </p>
           <div className="admin-row">
             <button
@@ -2407,6 +2806,33 @@ export default function Admin({ isAdminRole }) {
               </button>
             </div>
 
+            {groups.length > 0 && (
+              <fieldset className="upload-groups" disabled={uploading}>
+                <legend className="upload-groups-legend">
+                  Also visible to groups <span className="text-muted">(optional)</span>
+                </legend>
+                {/* Nothing is ticked by default, deliberately: a remembered
+                    default would grant access on every upload long after
+                    anyone remembered choosing it. */}
+                {groups.map((g) => (
+                  <label key={g.id} className="upload-group">
+                    <input
+                      type="checkbox"
+                      checked={uploadGroups.includes(g.id)}
+                      onChange={(e) =>
+                        setUploadGroups((prev) =>
+                          e.target.checked ? [...prev, g.id] : prev.filter((id) => id !== g.id)
+                        )
+                      }
+                    />
+                    {g.name}
+                  </label>
+                ))}
+              </fieldset>
+            )}
+
+            {uploadGrantMsg && <p className="upload-grant-warning">{uploadGrantMsg}</p>}
+
             {uploading && (
               <div className="upload-status">
                 <div className="progress" aria-label="Upload progress">
@@ -2631,41 +3057,28 @@ export default function Admin({ isAdminRole }) {
                   <summary>
                     Schedule
                     {v.scheduleState && v.scheduleState !== 'none' && (
-                      <span className={`schedule-chip schedule-chip--${v.scheduleState}`}>
+                      <span
+                        className={`schedule-chip schedule-chip--${v.scheduleState}`}
+                        title={repeatSummary(v.schedule?.repeat)}
+                      >
                         {v.scheduleState === 'scheduled' ? 'Not yet published' : null}
                         {v.scheduleState === 'expired' ? 'Expired' : null}
-                        {v.scheduleState === 'live' ? 'Scheduled · live' : null}
+                        {v.scheduleState === 'live' ? (v.schedule?.repeat ? 'Weekly · on now' : 'Scheduled · live') : null}
+                        {v.scheduleState === 'off-slot' ? 'Weekly · off now' : null}
                       </span>
                     )}
+                    {v.schedule?.groups ? (
+                      <span className="schedule-chip" title="Some groups have their own window">
+                        +{Object.keys(v.schedule.groups).length} group
+                        {Object.keys(v.schedule.groups).length === 1 ? '' : 's'}
+                      </span>
+                    ) : null}
                   </summary>
-                  <p className="text-muted" style={{ margin: '8px 0' }}>
-                    Leave both blank to keep this video visible with no time limit. Viewers can&rsquo;t
-                    see or open it outside the window; admins and managers always can.
-                  </p>
-                  <div className="schedule-fields">
-                    <label>
-                      <span className="collection-label">Publish at</span>
-                      <input
-                        type="datetime-local"
-                        className="input input-sm"
-                        value={toLocalInput(v.schedule?.publishAt)}
-                        onChange={(e) =>
-                          saveVideoSchedule(v, e.target.value, toLocalInput(v.schedule?.expiresAt))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span className="collection-label">Expires at</span>
-                      <input
-                        type="datetime-local"
-                        className="input input-sm"
-                        value={toLocalInput(v.schedule?.expiresAt)}
-                        onChange={(e) =>
-                          saveVideoSchedule(v, toLocalInput(v.schedule?.publishAt), e.target.value)
-                        }
-                      />
-                    </label>
-                  </div>
+                  <ScheduleEditor
+                    video={v}
+                    groups={groups}
+                    onSave={(schedule) => saveVideoSchedule(v, schedule)}
+                  />
                 </details>
 
                 {isAdminRole && (
