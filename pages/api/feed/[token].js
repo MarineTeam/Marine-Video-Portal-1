@@ -1,5 +1,6 @@
 import { redis, k } from '../../../lib/redis';
-import { listVideos, getVideoFileUrl, podcastMediaFile } from '../../../lib/bunny';
+import { getVideoFileUrl, podcastMediaFile } from '../../../lib/bunny';
+import { listAllVideos } from '../../../lib/videoLibrary';
 import { getOrder, applyOrder } from '../../../lib/order';
 import { isStaffUser } from '../../../lib/roles';
 import { resolveAccess, filterVideos } from '../../../lib/groups';
@@ -10,6 +11,8 @@ import { getSiteName } from '../../../lib/brandingStore';
 import { buildFeedXml, mimeForFile } from '../../../lib/podcastFeed';
 import { getAppIconVersion } from '../../../lib/appIconStore';
 import { withMonitorApi } from '../../../lib/monitor';
+
+const MAX_FEED_ITEMS = 100;
 
 // Per-subscriber podcast feed. Reachable WITHOUT a session, because podcast
 // apps cannot sign in — the long random token in the URL is what identifies
@@ -48,7 +51,10 @@ async function handler(req, res) {
   const baseUrl = (process.env.AUTH0_BASE_URL || '').replace(/\/+$/, '');
 
   const [fetched, order, access, schedules, meta, siteName] = await Promise.all([
-    listVideos({ itemsPerPage: 100 }),
+    // The whole library, filtered BEFORE the feed is cut: filtering bunny's
+    // newest 100 instead left a subscriber whose groups grant an older
+    // collection with an empty feed.
+    listAllVideos().then((r) => r.videos),
     getOrder(),
     resolveAccess(email, { staff }),
     listSchedules(),
@@ -60,6 +66,9 @@ async function handler(req, res) {
   // resolve to unrestricted, so this is a pass-through for them.
   let videos = filterVideos(access, applyOrder(fetched, order));
   if (!staff) videos = filterScheduled(schedules, videos, Date.now(), access.groupIds);
+  // As many episodes as the feed carried when it read one page, now chosen
+  // AFTER the filters rather than before them.
+  videos = videos.slice(0, MAX_FEED_ITEMS);
 
   const mediaType = mimeForFile(podcastMediaFile());
   const items = videos.map((v) => ({

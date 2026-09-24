@@ -6,7 +6,7 @@ import { resolveAccess, canSeeVideo } from '../../lib/groups';
 import { getSchedule, isVisibleFor } from '../../lib/schedule';
 import { isGeoAllowed } from '../../lib/geo';
 import { allow, callerId } from '../../lib/ratelimit';
-import { listVideos } from '../../lib/bunny';
+import { findVideo } from '../../lib/videoLibrary';
 import { getRatings, recordRating } from '../../lib/ratingsStore';
 import { normalizeVote, ratingOf } from '../../lib/ratings';
 import { withMonitorApi } from '../../lib/monitor';
@@ -77,8 +77,7 @@ async function handler(req, res) {
 
     let video;
     try {
-      const videos = await listVideos({ itemsPerPage: 100 });
-      video = videos.find((v) => v.guid === videoId);
+      video = await findVideo(videoId);
     } catch (e) {
       console.error('Could not load videos for a rating:', e);
       return res.status(502).json({ error: 'Could not save your rating' });

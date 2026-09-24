@@ -346,6 +346,14 @@ export default function Home() {
         </ul>
       )}
 
+      {/* Said plainly: past the read bound (1,000 videos) the oldest are not
+          searched, and a short result list would otherwise read as complete. */}
+      {data.truncated && (
+        <p className="text-muted">
+          This search covers the newest 1,000 videos in the library; older ones are not included.
+        </p>
+      )}
+
       {data.totalPages > 1 && (
         <div className="pagination">
           <button

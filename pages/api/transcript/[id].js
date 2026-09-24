@@ -5,7 +5,7 @@ import { isVerified } from '../../../lib/verification';
 import { resolveAccess, canSeeVideo } from '../../../lib/groups';
 import { getSchedule, isVisibleFor } from '../../../lib/schedule';
 import { isGeoAllowed } from '../../../lib/geo';
-import { listVideos } from '../../../lib/bunny';
+import { findVideo } from '../../../lib/videoLibrary';
 import { getTranscript, getTranscriptLanguages } from '../../../lib/captionsStore';
 import { languageMissing, pickLanguage } from '../../../lib/captions';
 import { withMonitorApi } from '../../../lib/monitor';
@@ -60,8 +60,7 @@ async function handler(req, res) {
 
   let video;
   try {
-    const videos = await listVideos({ itemsPerPage: 100 });
-    video = videos.find((v) => v.guid === videoId);
+    video = await findVideo(videoId);
   } catch (e) {
     console.error('Could not load videos for a transcript request:', e);
     return res.status(502).json({ error: 'Could not load the transcript' });

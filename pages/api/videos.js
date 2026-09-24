@@ -1,5 +1,6 @@
 import { getSession } from '@auth0/nextjs-auth0';
-import { listVideos, getThumbnailUrl } from '../../lib/bunny';
+import { getThumbnailUrl } from '../../lib/bunny';
+import { listAllVideos } from '../../lib/videoLibrary';
 import { redis, k } from '../../lib/redis';
 import { getOrder, applyOrder } from '../../lib/order';
 import { isStaffUser } from '../../lib/roles';
@@ -59,7 +60,10 @@ async function handler(req, res) {
   // Now it is simply no search / no filter.
   const q = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
   const collection = typeof req.query.collection === 'string' ? req.query.collection.trim() : '';
-  const fetched = await listVideos({ itemsPerPage: 100 });
+  // The whole library (lib/videoLibrary.js). Search, collection filters and
+  // Browse by book used to run over bunny's newest 100 only, so an older
+  // sermon could not be found at all.
+  const { videos: fetched, truncated: libraryCut } = await listAllVideos();
   const order = await getOrder();
   // Group gating happens BEFORE the search/collection/cap logic below, so a
   // restricted viewer's search and pagination totals describe the library
@@ -85,7 +89,7 @@ async function handler(req, res) {
     const books = bookIndex(ordered, (v) =>
       parseReferences(`${v.title || ''}\n${meta[v.guid]?.notes || ''}`)
     );
-    return res.json({ books });
+    return res.json({ books, truncated: libraryCut });
   }
   // A search or collection filter looks across the whole library; the default
   // (unfiltered) view respects the admin's homepage cap.
@@ -148,6 +152,9 @@ async function handler(req, res) {
     videos: pageVideos.map((v) => ({ id: v.guid, title: v.title, thumbnail: getThumbnailUrl(v) })),
     page,
     totalPages: Math.max(1, Math.ceil(allVideos.length / perPage)),
+    // Only while searching or filtering: the plain view shows the admin's
+    // homepage count, which is far below the read bound anyway.
+    truncated: Boolean(q || collection) && libraryCut,
   });
 }
 

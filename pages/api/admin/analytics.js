@@ -1,5 +1,6 @@
 import { requireCapability } from '../../../lib/roles';
-import { listVideos, getLibraryStatistics } from '../../../lib/bunny';
+import { getLibraryStatistics } from '../../../lib/bunny';
+import { listAllVideos } from '../../../lib/videoLibrary';
 import { withMonitorApi } from '../../../lib/monitor';
 
 async function handler(req, res) {
@@ -7,7 +8,9 @@ async function handler(req, res) {
   if (!auth) return;
   if (req.method !== 'GET') return res.status(405).end();
 
-  const videos = await listVideos({ itemsPerPage: 100 });
+  // Every video, so total views, watch time and most-watched are not drawn
+  // from the newest 100 alone.
+  const { videos, truncated, total } = await listAllVideos();
   const rows = videos.map((v) => ({
     id: v.guid,
     title: v.title || 'Untitled',
@@ -40,7 +43,17 @@ async function handler(req, res) {
     // statistics optional
   }
 
-  res.json({ totalViews, totalWatchHours, videoCount: rows.length, topVideos, chart, last30Views });
+  res.json({
+    totalViews,
+    totalWatchHours,
+    videoCount: total,
+    // The library is larger than one read; the totals cover `covered` videos.
+    truncated,
+    covered: rows.length,
+    topVideos,
+    chart,
+    last30Views,
+  });
 }
 
 export default withMonitorApi(handler);
