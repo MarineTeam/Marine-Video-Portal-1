@@ -1,4 +1,4 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { getSession } from '../../../../lib/auth0';
 import { getShare, saveShare, isExpired } from '../../../../lib/shareBundle';
 import { withMonitorApi } from '../../../../lib/monitor';
 

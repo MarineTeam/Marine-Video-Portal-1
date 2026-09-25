@@ -12,10 +12,9 @@ import {
   removeGroupMember,
 } from '../../../lib/groups';
 
-// Viewer groups. Admins and managers both curate the library, so both hold
-// 'groups:manage'; nothing here can change who holds a ROLE (that's
-// /api/admin/roles, admin-only), so a manager can never widen their own
-// power through this route.
+// Viewer groups, gated on 'groups:manage'. Nothing here can change who holds
+// a ROLE (that's /api/admin/roles), so nobody widens their own power through
+// this route.
 //
 // Group membership gates what a viewer sees — see lib/groups.js for the
 // opt-in rule (no groups = full library, unchanged).
@@ -27,24 +26,33 @@ import {
 // who pastes twelve addresses and is told "12 added" has no way to discover
 // that three were typos until someone says they cannot see anything.
 //
-// Note for anyone porting the sibling repos' capability split here: this route
-// needs none. Those repos have delegated per-capability roles, so someone can
-// hold groups.manage without viewers.read, and membership would leak the
-// viewer list to them. Here CAPABILITIES gives 'groups:manage' and
-// 'viewers:manage' to exactly the same two roles (admin, manager), so the
-// split would be ceremony with no one on the other side of it. If the
-// capability table ever stops granting them together, this route has to gain
-// the check — that is the trigger to watch for.
+// MEMBERSHIP ADDITIONALLY NEEDS 'viewers:manage' — the same split the sibling
+// repos make. Roles are custom, so someone can hold groups:manage without
+// viewers:manage, and membership is about people: a group's member list hands
+// out addresses, and the per-address result of adding members answers "is
+// this person an approved viewer?", which is the viewer list by another door.
+// Such a caller keeps the group RECORD — name, grants, delete — and sees a
+// member COUNT instead of the members.
+const PEOPLE = 'viewers:manage';
+
 async function handler(req, res) {
   const auth = await requireCapability(req, res, 'groups:manage');
   if (!auth) return;
   const actor = auth.email;
+  const maySeePeople = auth.capabilities.includes(PEOPLE);
 
   if (req.method === 'GET') {
-    return res.json(await listGroups());
+    const groups = await listGroups();
+    if (maySeePeople) return res.json(groups);
+    return res.json(groups.map(({ members, ...g }) => ({ ...g, memberCount: (members || []).length })));
   }
 
   const body = req.body || {};
+  const touchesMembers =
+    (req.method === 'POST' && body.groupId) || (req.method === 'DELETE' && body.email);
+  if (touchesMembers && !maySeePeople) {
+    return res.status(403).json({ error: 'Changing who is in a group needs viewers:manage too' });
+  }
 
   if (req.method === 'POST') {
     // Create a group, or add members to one, depending on the payload.

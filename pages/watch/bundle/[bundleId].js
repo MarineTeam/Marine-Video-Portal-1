@@ -1,4 +1,4 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { getSession } from '../../../lib/auth0';
 import { getBundle, getShare, isExpired } from '../../../lib/shareBundle';
 import AppShell from '../../../components/AppShell';
 import { IconChevronLeft } from '../../../components/icons';
@@ -68,7 +68,7 @@ export default function Bundle({ items, error }) {
       {error ? (
         <div className="card watch-error">
           <p style={{ margin: '0 0 1rem' }}>{error}</p>
-          <a href="/api/auth/logout?returnTo=/" className="btn btn-outline btn-sm">
+          <a href="/api/auth/logout" className="btn btn-outline btn-sm">
             Log out and try a different account
           </a>
         </div>

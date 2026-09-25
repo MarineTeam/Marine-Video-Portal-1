@@ -1,4 +1,4 @@
-import { requireCapability, roleHasCapability } from '../../../lib/roles';
+import { requireCapability } from '../../../lib/roles';
 import { grantVideoToGroups, listGroupIds } from '../../../lib/groups';
 import { planUploadGrants } from '../../../lib/uploadGrants';
 import { logAudit } from '../../../lib/audit';
@@ -27,9 +27,10 @@ async function handler(req, res) {
   let groupIds = [];
   if (requestedGroups !== undefined && requestedGroups !== null) {
     // Granting a group access is a groups:manage act, whatever form it
-    // arrives through. Today every role that can upload also holds it; the
-    // check is here so that stops being an accident the day they diverge.
-    if (!roleHasCapability(auth.role, 'groups:manage')) {
+    // arrives through. With custom roles someone can hold videos:manage
+    // without groups:manage: they may upload, but not grant the upload to a
+    // group.
+    if (!auth.capabilities.includes('groups:manage')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     let known;

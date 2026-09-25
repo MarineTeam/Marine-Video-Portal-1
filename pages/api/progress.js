@@ -1,4 +1,4 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { getSession } from '../../lib/auth0';
 import { redis, k } from '../../lib/redis';
 import { isStaffUser, hasCapability } from '../../lib/roles';
 import { allow, callerId } from '../../lib/ratelimit';

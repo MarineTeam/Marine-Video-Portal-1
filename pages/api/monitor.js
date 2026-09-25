@@ -1,4 +1,4 @@
-import { getSession } from '@auth0/nextjs-auth0';
+import { getSession } from '../../lib/auth0';
 import { monitorEnabled } from '../../lib/monitor';
 
 // Lightweight process stats for the Query Monitor panel (memory, uptime).

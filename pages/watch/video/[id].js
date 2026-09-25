@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { getSession } from '@auth0/nextjs-auth0';
+import { getSession } from '../../../lib/auth0';
 import { redis, k } from '../../../lib/redis';
 import { getEmbedUrl } from '../../../lib/bunny';
 import { findVideo } from '../../../lib/videoLibrary';

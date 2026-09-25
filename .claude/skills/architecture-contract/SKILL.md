@@ -7,7 +7,7 @@ description: The load-bearing design decisions, invariants, and known-weak point
 
 This skill is the contract between you and the people who built this system. Every decision below is load-bearing: it was made for a reason, it has already survived at least one incident or security review, and violating it breaks something specific. Read the decision, the rationale, and the failure mode before touching related code.
 
-The app: a private, invite-only video portal. Next.js 15 **Pages Router** + React 18, deployed on Vercel from GitHub `main` (MarineTeam/Marine-Video-Portal-1), bunny.net Stream for video, Auth0 for login (`@auth0/nextjs-auth0` v3), Upstash Redis as the only mutable store. Repo root: `C:\Users\fs_of\OneDrive\Documents\GitHub\Marine-Video-Portal-1`.
+The app: a private, invite-only video portal. Next.js 16 **Pages Router** + React 18, deployed on Vercel from GitHub `main` (MarineTeam/Marine-Video-Portal-1), bunny.net Stream for video, Auth0 for login (`@auth0/nextjs-auth0` v4, since 2026-09-24), Upstash Redis as the only mutable store. Repo root: `C:\Users\fs_of\OneDrive\Documents\GitHub\Marine-Video-Portal-1`.
 
 ## When NOT to use this skill
 
@@ -28,16 +28,22 @@ The app: a private, invite-only video portal. Next.js 15 **Pages Router** + Reac
 
 **Why.** The project was born as a browser-only build — see `bunny-vercel-auth0-guide.md`, the founding doc, literally titled "Browser-Only Build": no local tooling, code written in the GitHub web editor, Vercel does the installs. Pages Router was the simple, well-trodden path. That accident became a security posture: many Next.js CVEs target the App Router (RSC payloads), middleware, or i18n routing — surface this app does not have. **14 Dependabot alerts are deferred on exactly this reachability analysis** (session record, 2026-07-10, maintainer-confirmed; `security-currency-campaign` owns the live count — re-verify there rather than trusting this number after any Next upgrade).
 
-**What breaks if violated.** Adding a `middleware.js` file or an `app/` directory — even an empty or "harmless" one — silently activates those code paths in the Next.js runtime, expands the attack surface, and invalidates the deferral rationale for all 14 alerts at once. Nobody will notice until the next audit. Do not add either casually; if you genuinely need them, treat it as a security decision requiring re-triage of every deferred alert (see `change-control`).
+**Amended 2026-09-24 (the owner's decision): a sign-in-only `proxy.js`.** Next 16 is the only fix for the `postcss` advisory, Next 16 needs `@auth0/nextjs-auth0` v4, and v4 mounts its routes only from middleware — `proxy.js`, Next 16's name for it. The owner chose to take that. What keeps the original reasoning intact:
+- **It is on a patched Next.** The 14 alerts deferred on "no middleware" were fixed by the Next 15 upgrade (2026-09-18); nothing is deferred on middleware's absence any more.
+- **It makes no access decision.** `proxy.js` calls `auth0.middleware(request)` and nothing else: it serves `/api/auth/login`, `/logout`, `/callback` and `/auth/profile`, and refreshes rolling sessions. Every page and route still checks the session and role itself, so a request that skipped the proxy would meet the same checks. Never put a guard in it — see invariant below.
+- **Nothing outside the repo changed.** `lib/auth0.js` keeps the v3 URLs (`/api/auth/*`, so the Auth0 dashboard's callback URL still matches) and reads the v3 env names (`AUTH0_ISSUER_BASE_URL`, `AUTH0_BASE_URL`). One visible effect: v4's session cookie has a new name, so everyone signs in once more after the deploy.
+- **Still no `app/` directory**, and still no `i18n`, `next/image`, `next/script` or `rewrites()`.
+
+**What breaks if violated.** Adding an `app/` directory, or any access decision to `proxy.js` — even an empty or "harmless" one — silently activates those code paths in the Next.js runtime, expands the attack surface, and invalidates the deferral rationale for all 14 alerts at once. Nobody will notice until the next audit. Do not add either casually; if you genuinely need them, treat it as a security decision requiring re-triage of every deferred alert (see `change-control`).
 
 ### 2. Access model = email string matching, and email_verified is NEVER checked
 
-**Decision.** Four tiers, all keyed on lowercase email strings (roles and groups added 2026-08-30 — see Decision 13; before that there were two tiers plus shares, and `lib/auth.js`'s `isAdmin` was the only admin check):
+**Decision.** Four tiers, all keyed on lowercase email strings (roles and groups added 2026-08-30 — see Decision 13; custom roles replaced the fixed Admin / Manager tiers in v1.28.0; before 2026-08-30 there were two tiers plus shares, and `lib/auth.js`'s `isAdmin` was the only admin check):
 
 | Tier | Source of truth | Check | Where |
 |---|---|---|---|
-| Admin | `ADMIN_EMAILS` env var (the always-wins floor) OR Redis set `pvp:role_admins` | `getRole(email) === 'admin'` | `lib/roles.js` — the ONLY place that decides what a caller may do |
-| Manager | Redis set `pvp:role_managers` | `getRole(email) === 'manager'` | `lib/roles.js` |
+| Owner | `ADMIN_EMAILS` env var (the always-wins floor) — every capability, Redis never read | `getAccess(email).owner` | `lib/roles.js` — the ONLY place that decides what a caller may do |
+| Staff | Custom roles: `pvp:roles` (roleId → name + capabilities) and `pvp:user_roles` (email → roleIds); the union of a person's roles. Old `pvp:role_admins` / `pvp:role_managers` grants are read as a fallback until migrated | `requireCapability(req, res, cap)`, `hasCapability`, `isStaffUser` (holds ≥ 1 capability) | `lib/roles.js`, catalog in `lib/capabilities.js` |
 | Approved viewer | Redis set `pvp:approved_viewers`, narrowed by group grants | `redis.sismember(k('approved_viewers'), email)` then `resolveAccess(email)` | `pages/api/videos.js`, `pages/api/collections.js`, `pages/api/progress.js`, `pages/watch/video/[id].js` |
 | Share recipient | Share record in Redis (`share:{id}`) | exact match `share.email !== session.user.email.toLowerCase()` | `pages/watch/[shareId].js` |
 
@@ -53,8 +59,8 @@ The app: a private, invite-only video portal. Next.js 15 **Pages Router** + Reac
 
 **Decision.** Two independent layers, both mandatory:
 
-1. `getServerSideProps` in `pages/admin.js` — no session → redirect to login; session but not admin or manager → redirect to `/`. A plain viewer never receives the admin UI shell HTML/JS.
-2. Every one of the 18 routes in `pages/api/admin/*` (as of 2026-08-30) independently calls `requireCapability(req, res, '<capability>')` and returns 403 `Forbidden`. Hiding a tab or section from a manager in the UI is presentation only — the route behind it re-checks.
+1. `getServerSideProps` in `pages/admin.js` — no session → redirect to login; session but no capability → redirect to `/`. A plain viewer never receives the admin UI shell HTML/JS.
+2. Every one of the 18 routes in `pages/api/admin/*` (as of 2026-08-30) independently calls `requireCapability(req, res, '<capability>')` and returns 403 `Forbidden`. Hiding a tab or section in the UI is presentation only — the route behind it re-checks.
 
 **Why.** Either layer alone has a known failure mode: client-only gating ships the admin bundle to attackers and trusts the browser; API-only gating means a future refactor of the page could leak admin data through props. The API layer is the real security boundary; the page gate stops UI enumeration.
 
@@ -163,12 +169,15 @@ reasoning and the date it was decided.
 
 **Decision (2026-08-30, v1.19.0).** Two related additions:
 
-- **Roles.** Three tiers — Admin, Manager, Viewer — resolved by `getRole()` in `lib/roles.js`. Admin and Manager grants live in Redis (`pvp:role_admins`, `pvp:role_managers`) so they can be handed out from the UI. `ADMIN_EMAILS` is an **always-wins floor**: `getRole` short-circuits on it, and `grantRole`/`revokeRole` refuse to demote one. Routes name a **capability** (`videos:manage`, `settings:manage`, `roles:manage`, …), never a role; the map is at the top of `lib/roles.js` and unknown names fail closed.
+- **Roles.** Routes name a **capability** (`videos:manage`, `settings:manage`, `roles:manage`, …), never a role, and unknown names fail closed.
+  - *v1.19.0–v1.27.0:* three fixed tiers — Admin, Manager, Viewer — in Redis sets `pvp:role_admins` / `pvp:role_managers`.
+  - *Since v1.28.0 (amended 2026-09-25):* **custom roles**, as in the sibling repos. A role is a name plus a set of capabilities from the catalog in `lib/capabilities.js` (`pvp:roles`); a person holds any number (`pvp:user_roles`) and gets the union. Four properties are load-bearing, each tested: (1) capabilities are defined in code, never in Redis — unknown names are dropped on write and ignored on read; (2) `ADMIN_EMAILS` owners hold every capability without Redis being read, and cannot be assigned roles; (3) **no escalation** — `/api/admin/roles` refuses any create, edit, delete or assignment touching a capability the actor doesn't hold, on both sides of an edit or assignment, and giving a role to someone not yet approved also needs `viewers:manage` because a role approves; (4) resolution fails **closed** for non-owners. The route also refuses any change leaving nobody holding `roles:manage` — the successor to "never leave zero admins". The old sets become editable "Admin" / "Manager" roles through `lib/roleMigration.js` (idempotent, run from the Roles GET), and are read as a fallback until then so nobody is demoted between deploy and migration.
+  - *Consequence:* `groups:manage` and `viewers:manage` are no longer always held together, so `/api/admin/groups` now needs `viewers:manage` as well to list or change a group's **members** (the split fv/fv2 make with `viewers.read`). `pages/admin.js` shows each tab and Access section only to someone whose capabilities open it, and asks for nothing it would be refused.
 - **Groups.** A group is a named set of viewers plus grants (collection ids and video guids), stored in `pvp:groups` + `pvp:group_members:{id}` with a reverse index `pvp:user_groups:{email}`. `resolveAccess(email)` gates `pages/api/videos.js`, `pages/api/collections.js`, and `pages/watch/video/[id].js`.
 
 **Why.**
 
-- The env-var floor is the lockout-recovery path. If the Redis grants are emptied, corrupted, or mis-edited, an `ADMIN_EMAILS` address still gets in, and it can be fixed from the Vercel dashboard without a deploy. `getRole` also degrades to the env floor on a Redis error — that can only ever *remove* a grant, never invent one, so it cannot escalate anybody. This is the "never risk admin lockout" non-negotiable, made concrete.
+- The env-var floor is the lockout-recovery path. If the stored roles are emptied, corrupted, or mis-edited, an `ADMIN_EMAILS` address still gets in, and it can be fixed from the Vercel dashboard without a deploy. Capability resolution also fails closed for everyone else on a Redis error — that can only ever *remove* a grant, never invent one, so it cannot escalate anybody. This is the "never risk admin lockout" non-negotiable, made concrete.
 - **Groups are opt-in: a viewer in NO group is unrestricted and sees the whole library.** That is what makes this feature deployable at all — it changes nothing for anyone until an admin deliberately places someone in a group. Group gating also runs strictly *after* the approved-viewer check, so it can only narrow what an already-approved viewer sees.
 - `resolveAccess` fails **open** (to `UNRESTRICTED`) on a Redis error, the same posture as `lib/ratelimit.js` and for the same availability reason: an Upstash blip must not blank the library for legitimately approved viewers.
 - Share links are deliberately untouched by groups. `/watch/[shareId]` carries its own per-recipient token, so an admin can still share one video with someone whose groups wouldn't show it. Groups gate the library; shares gate one video each.
@@ -186,7 +195,7 @@ reasoning and the date it was decided.
 **Decision (2026-08-31).** `email_verified` MAY now be enforced, but only through `lib/verification.js`, which is built so that the 2026-07-10 near-lockout cannot recur. Four guards, all mandatory:
 
 1. **Off by default**, stored in Redis (`pvp:require_email_verified`), toggled from the admin Settings tab. Shipping the code changes nothing.
-2. **Staff are always exempt** — admins and managers are never subject to it, whatever the toggle says. This is the recovery path: an admin can always reach `/admin` and switch it back off.
+2. **Staff are always exempt** — owners and anyone holding a capability are never subject to it, whatever the toggle says. This is the recovery path: an admin can always reach `/admin` and switch it back off.
 3. **Env bypass list** `EMAIL_VERIFIED_BYPASS_EMAILS`, mirroring `ADMIN_GEO_BYPASS_EMAILS`.
 4. **Fails open** — any error reading the flag admits the caller.
 
@@ -225,7 +234,7 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 - **Per-viewer ratings** live in `pvp:ratings:{email}` (videoId → `'up'`/`'down'`), split across `lib/ratings.js` (pure) and `lib/ratingsStore.js` (Redis), with totals in a SEPARATE `pvp:rating_counts` hash (`{videoId}:up` → integer). The split is the privacy decision: the obvious shape is one hash per video with the email as the field, which reads better and makes the admin's totals a single `HGETALL` — and leaves a removed viewer's address in a row nothing cleans, because there is no sweep over video keys. Keying by viewer means removal is already the whole deletion story (weak point #3's sweep covers it), and the counters then hold integers and no identity at all. **Totals equal the votes (2026-09-23):** the vote and both counter moves are ONE Redis script (`VOTE_SCRIPT`, `lib/ratingScripts.js`), which reads the previous vote inside itself — before that they were two writes, and a failure between them or two racing clicks left a total wrong for good. `voteDelta()` is kept as the specification the script is tested against. `RECOUNT_SCRIPT` rebuilds and replaces `pvp:rating_counts` from every `pvp:ratings:*` hash in one atomic step; `/api/admin/maintenance` runs it **after** the per-viewer sweep, never beside it, because that sweep deletes whole ratings hashes and nothing else can take those votes out of the totals. Do NOT reintroduce a separate counter write. Rating is gated exactly like `/api/mylist`, verified-email check included. **Totals are staff-only** — a viewer sees their own vote and nothing else.
 - **Per-viewer saved lists** live in `pvp:mylist:{email}` (videoId → epoch ms saved), split across `lib/mylist.js` (pure) and `lib/mylistStore.js` (Redis). Keyed by email exactly like `pvp:progress:{email}`, and deliberately a **separate key**: progress is written on a timer from playback, this only by an explicit click, so merging them would let one race the other. Saving is gated by every check `pages/watch/video/[id].js` performs — including **`isVerified`** — because a successful write is itself an answer to "does this id exist?". Capped at 200 by `lib/mylist.js`, refused at the cap rather than dropping the oldest. **This is a per-viewer key family, so it is swept by `lib/maintenance.js` alongside progress** (see below).
 - **AI chapter suggestions are never a write** (2026-09-19). bunny's Transcribe AI can generate chapters; `generateChapters` is opt-in on `transcribeVideo` and everything else it can generate stays off. What it produces lands on **bunny's** video object, never in `pvp:video_meta`. `lib/aiChapters.js` reads it back — pure, importing only `lib/videoMeta.js` — and the `suggestions` branch of `/api/admin/transcribe` writes nothing at all: not the meta entry, not the transcript, not the audit log, since nothing changed. The proposal lands in the admin's textarea and becomes a chapter list only when they save, through the same `parseChapters` path a typed list takes. The branch sits **before** `allowCostly`, so a free read cannot reach the paid call and is not refused when the paid budget is spent.
-- **Access-request notifications** (`lib/accessRequestNotify.js`) tell holders of `viewers:manage` — admins and managers both, since both can approve — when a request arrives. They fire **only when `submitRequest` reports the request is new**, never on a re-ask.
+- **Access-request notifications** (`lib/accessRequestNotify.js`) tell holders of `viewers:manage` — owners and anyone whose roles give it, exactly the people who can approve — when a request arrives. They fire **only when `submitRequest` reports the request is new**, never on a re-ask.
 
 **Why.**
 
@@ -287,11 +296,11 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 
 ### 19. Comments are gated like watching; the author's email never reaches another viewer
 
-**Decision (2026-09-24, the owner's choices).** Anyone who can watch a video can read and add comments; a comment is live at once; its author, or an admin or manager (`comments:manage`), can delete it; other viewers see the author's account name.
+**Decision (2026-09-24, the owner's choices).** Anyone who can watch a video can read and add comments; a comment is live at once; its author, or anyone holding `comments:manage`, can delete it; other viewers see the author's account name.
 
 - **The same gate as the watch page**, in the same order (`pages/api/comments.js`): approved or staff, region, verified email, the video exists (`getVideoById`), group grants (`canSeeVideo`), and — for reading and writing, staff exempt — the publish window (`isVisibleFor` with the viewer's groups). Every refusal after sign-in is the same 404. Deleting your own comment skips only the window.
 - **Identity is the session.** No request field names a person; the stored email decides "mine". `commentView` (`lib/comments.js`) sends other viewers a display name only — an email-shaped profile name is cut to its local part — and adds the email only for `viewers:manage` holders.
-- **Moderation** by `comments:manage` (admins and managers) is audited as `comment.delete`. Writes go through a dedicated limiter, 30 an hour (`allowWriting`), not the 60-per-10-seconds flood guard. Text is refused past 1,000 characters and stripped of control, zero-width and bidi-override characters. At most 500 per video, enforced by a Lua script; removed with the video.
+- **Moderation** by `comments:manage` is audited as `comment.delete`. Writes go through a dedicated limiter, 30 an hour (`allowWriting`), not the 60-per-10-seconds flood guard. Text is refused past 1,000 characters and stripped of control, zero-width and bidi-override characters. At most 500 per video, enforced by a Lua script; removed with the video.
 
 **What breaks if violated.** Skip the scope or window check → the route becomes a way to talk about, and probe for, videos a viewer cannot see. Show the email → the approved viewer list is published to every viewer, one comment at a time. Use the flood guard → one person can bury a sermon under sixty comments in ten seconds.
 
@@ -313,12 +322,13 @@ The app also **passively records** the observed claim per account (`pvp:email_ve
 Walk this list on every review that touches auth, API routes, Redis, or `lib/bunny.js`. Every line must hold:
 
 - [ ] Every route in `pages/api/admin/*` calls `requireCapability` and 403s otherwise (18 routes, as of 2026-08-30). `lib/roles.js` is the only place that decides what a caller may do; `lib/auth.js`'s `isAdmin` is its `ADMIN_EMAILS` floor primitive and is called from nowhere else.
-- [ ] `ADMIN_EMAILS` is still an always-wins floor: `getRole` short-circuits on it, and `grantRole`/`revokeRole` refuse to demote an env admin. `/api/admin/roles` still refuses any change leaving zero admins.
+- [ ] `ADMIN_EMAILS` is still an always-wins floor: `resolveCapabilities` returns the whole catalog for an owner before reading Redis, and `/api/admin/roles` refuses to assign roles to one. It still refuses any change leaving nobody holding `roles:manage`, and still refuses escalation on every write (lib/__tests__/rolesRoute.test.js).
+- [ ] A new capability is added to `lib/capabilities.js` (catalog + label) AND enforced by a route in the same change — `capabilities.test.js` fails on a capability no route names.
 - [ ] Group gating still runs AFTER the approved-viewer check, and a viewer in no group still resolves to `UNRESTRICTED` (Decision 13 — flipping this to default-deny blanks the library for every viewer at once).
-- [ ] `pages/admin.js` imports from `lib/roles.js` ONLY inside `getServerSideProps` (it reaches `lib/redis.js` → `async_hooks`; referencing an export in the component body pulls that into the client bundle and fails the build).
+- [ ] `pages/admin.js` imports from `lib/roles.js` ONLY inside `getServerSideProps` (it reaches `lib/redis.js` → `async_hooks`; referencing an export in the component body pulls that into the client bundle and fails the build). `lib/capabilities.js` is the pure half and is safe anywhere; keep Redis out of it.
 - [ ] `pages/admin.js` still has its `getServerSideProps` gate (redirect non-session → login, non-staff → `/`).
 - [ ] Every Redis key goes through `k()` (`lib/redis.js`); no raw string keys anywhere, including limiter prefixes.
-- [ ] No `middleware.js` file, no `app/` directory (Decision 1 — this is a security posture, not a style choice).
+- [ ] No `app/` directory; no `middleware.js`; `proxy.js` does nothing but `return auth0.middleware(request)` and its matcher skips `api/cron/` (Decision 1, amended 2026-09-24 — a security posture, not a style choice). Every page and API route still reads the session (`getSession` from `lib/auth0.js`) and decides access itself.
 - [ ] The three signing formulas in `lib/bunny.js` are byte-exact per Decision 4; TUS expiry in Unix **seconds**; the TUS and thumbnail-CDN signers `.trim()` their env inputs (the embed-view-token signer `signVideoToken` does NOT trim — not a bug, don't "fix" it).
 - [ ] `getEmbedUrl` output ends with `autoplay=false`.
 - [ ] `GET /api/theme` is public; `POST /api/theme` is admin-only; all color values hex-validated on write AND in the `_document.js` pre-paint script.

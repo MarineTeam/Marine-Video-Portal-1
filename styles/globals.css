@@ -1473,3 +1473,19 @@ details.group-section > summary { cursor: pointer; }
 .comment-input { width: 100%; resize: vertical; min-height: 72px; font: inherit; }
 .comment-form-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .comment-error { margin: 0; font-size: 13px; color: var(--danger); }
+
+/* Roles editor (components/RolesSection.js): capability labels are sentences,
+   so they wrap instead of truncating like group grant names. */
+.role-cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px 14px;
+}
+.role-cap-item { align-items: flex-start; }
+.role-cap-item span { white-space: normal; overflow: visible; }
+/* A custom role's name is shown exactly as its creator typed it. */
+.role-chip--custom { text-transform: none; }
+/* A role or person row wraps on a narrow screen instead of squeezing the
+   name to nothing: the name keeps its width, the note and buttons move down. */
+.role-row { flex: 1; min-width: 0; flex-wrap: wrap; row-gap: 6px; }
+.role-row .viewer-email { flex: 0 1 auto; overflow-wrap: anywhere; }

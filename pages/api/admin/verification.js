@@ -1,6 +1,6 @@
 import { logAudit } from '../../../lib/audit';
 import { withMonitorApi } from '../../../lib/monitor';
-import { requireCapability, listRoleGrants } from '../../../lib/roles';
+import { requireCapability, listStaffEmails } from '../../../lib/roles';
 import {
   isEnforcementEnabled,
   setEnforcementEnabled,
@@ -27,15 +27,15 @@ async function handler(req, res) {
   const actor = auth.email;
 
   if (req.method === 'GET') {
-    const [enabled, observations, grants] = await Promise.all([
+    const [enabled, observations, staff] = await Promise.all([
       isEnforcementEnabled(),
       listObservations(),
-      listRoleGrants(),
+      listStaffEmails(),
     ]);
     return res.json({
       enabled,
       bypassEmails: bypassEmails(),
-      summary: summarizeObservations(observations, grants.map((g) => g.email)),
+      summary: summarizeObservations(observations, staff),
       observations,
     });
   }
@@ -45,8 +45,8 @@ async function handler(req, res) {
     const enabled = Boolean(body.enabled);
 
     if (enabled && body.confirm !== true) {
-      const [observations, grants] = await Promise.all([listObservations(), listRoleGrants()]);
-      const summary = summarizeObservations(observations, grants.map((g) => g.email));
+      const [observations, staff] = await Promise.all([listObservations(), listStaffEmails()]);
+      const summary = summarizeObservations(observations, staff);
       return res.status(400).json({
         error:
           'Enabling email verification needs confirmation. Review how many viewers it would block first.',

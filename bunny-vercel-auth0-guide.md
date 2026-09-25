@@ -86,6 +86,8 @@ export default function App({ Component, pageProps }) {
 ```
 
 ### `pages/api/auth/[auth0].js`
+> **Historical (Auth0 v3).** Since 2026-09-24 this file no longer exists: Next 16 needs Auth0 v4, configured in `lib/auth0.js` and served from `proxy.js`, at the same `/api/auth/*` URLs.
+
 ```js
 import { handleAuth } from '@auth0/nextjs-auth0';
 
