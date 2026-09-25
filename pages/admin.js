@@ -3,32 +3,33 @@ import { getSession } from '../lib/auth0';
 import { useEffect, useRef, useState } from 'react';
 import AppShell from '../components/AppShell';
 import NotifyButton from '../components/NotifyButton';
+import RolesSection from '../components/RolesSection';
 import { IconTrash, IconCopy, IconGrip, IconPencil, IconSearch, IconCheck, IconX } from '../components/icons';
 import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
 import { MAX_SITE_NAME_LENGTH, cleanSiteName } from '../lib/branding';
-import { getRole, ROLE_ADMIN, ROLE_MANAGER } from '../lib/roles';
+import { getAccess } from '../lib/roles';
+import { mailEnabled as mailConfigured } from '../lib/mail';
 import { isGeoAllowed } from '../lib/geo';
 import { withMonitorPage } from '../lib/monitor';
 import { resetMonitorCalls } from '../lib/monitorClient';
 import { formatChaptersText, parseChapters } from '../lib/videoMeta';
 import { sameChapters } from '../lib/aiChapters';
 
-// Server-side gate: only staff (admins and managers) can load the admin page
-// at all. The client-side checks and per-route 403s remain as defense in
-// depth, but this stops a logged-in viewer from ever receiving the admin UI
-// shell.
+// Server-side gate: only staff (anyone holding at least one capability) can
+// load the admin page at all. The per-route 403s remain as defense in depth,
+// but this stops a logged-in viewer from ever receiving the admin UI shell.
 //
-// The role is passed to the component so admin-only sections can be hidden
-// from managers. That is presentation only — every admin-only route
-// independently enforces its capability, so a manager who forces the hidden
-// UI open still gets a 403 from the server.
+// The caller's capabilities are passed to the component so it shows only the
+// tabs and sections they can use, and never fires a request guaranteed to
+// 403. That is presentation only — every route independently enforces its
+// capability, so someone who forces a hidden section open still gets a 403.
 async function getServerSidePropsInner({ req, res }) {
   const session = await getSession(req, res);
   if (!session) {
     return { redirect: { destination: '/api/auth/login?returnTo=/admin', permanent: false } };
   }
-  const role = await getRole(session.user?.email);
-  if (role !== ROLE_ADMIN && role !== ROLE_MANAGER) {
+  const access = await getAccess(session.user?.email);
+  if (!access.staff) {
     return { redirect: { destination: '/', permanent: false } };
   }
   // Admin geo whitelist (off by default) — a bypass-listed admin (see
@@ -36,12 +37,20 @@ async function getServerSidePropsInner({ req, res }) {
   if (!(await isGeoAllowed(req, session.user.email.toLowerCase(), true))) {
     return { redirect: { destination: '/', permanent: false } };
   }
-  // A boolean, not the role string: everything lib/roles.js exports is
+  // Plain data, not anything imported from lib/roles.js: that module is
   // server-only (it reaches lib/redis.js, and through it Node's async_hooks),
-  // so referencing ROLE_ADMIN in the component below would pull that whole
-  // graph into the client bundle and fail the build. Next strips imports used
-  // only by getServerSideProps — keep them that way.
-  return { props: { isAdminRole: role === ROLE_ADMIN } };
+  // so referencing it in the component below would pull that whole graph into
+  // the client bundle and fail the build. Next strips imports used only by
+  // getServerSideProps — keep them that way.
+  //
+  // mailEnabled rides along because the share forms need it and the route
+  // that used to supply it (/api/admin/settings) is settings:manage only.
+  return {
+    props: {
+      capabilities: access.capabilities,
+      mailOn: mailConfigured(),
+    },
+  };
 }
 
 export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
@@ -443,8 +452,22 @@ function AppIconSetting() {
   );
 }
 
-export default function Admin({ isAdminRole }) {
+// Which capability opens each tab. Access holds three sections — access
+// requests, groups and roles — so any of their capabilities opens it.
+const TABS = [
+  { id: 'videos', label: 'Videos', caps: ['videos:manage'] },
+  { id: 'viewers', label: 'Viewers', caps: ['viewers:manage'] },
+  { id: 'access', label: 'Access', caps: ['viewers:manage', 'groups:manage', 'roles:manage'] },
+  { id: 'shares', label: 'Shares', caps: ['shares:manage'] },
+  { id: 'settings', label: 'Settings', caps: ['settings:manage'] },
+  { id: 'activity', label: 'Activity', caps: ['audit:read'] },
+  { id: 'analytics', label: 'Analytics', caps: ['analytics:read'] },
+];
+
+export default function Admin({ capabilities = [], mailOn = false }) {
   const { user, isLoading } = useUser();
+  const can = (cap) => capabilities.includes(cap);
+  const visibleTabs = TABS.filter((t) => t.caps.some((c) => capabilities.includes(c)));
   const [videos, setVideos] = useState([]);
   const [emails, setEmails] = useState({});
   const [shareLinks, setShareLinks] = useState({});
@@ -467,7 +490,9 @@ export default function Admin({ isAdminRole }) {
   const [expiresHours, setExpiresHours] = useState({});
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
-  const [tab, setTab] = useState('videos');
+  // The first tab this person can use. Someone holding only comments:manage
+  // has no tab here at all — their capability is used on the watch page.
+  const [tab, setTab] = useState(() => visibleTabs[0]?.id || 'none');
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const [themeSaved, setThemeSaved] = useState(false);
   const [metaDrafts, setMetaDrafts] = useState({});
@@ -500,11 +525,7 @@ export default function Admin({ isAdminRole }) {
   const [audit, setAudit] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [collections, setCollections] = useState([]);
-  // Access tab: role grants and viewer groups.
-  const [roleGrants, setRoleGrants] = useState([]);
-  const [newRoleEmail, setNewRoleEmail] = useState('');
-  const [newRolePick, setNewRolePick] = useState('manager');
-  const [roleError, setRoleError] = useState(null);
+  // Access tab: viewer groups. Roles keep their own state in RolesSection.
   const [groups, setGroups] = useState([]);
   const [newGroupName, setNewGroupName] = useState('');
   const [groupMemberDrafts, setGroupMemberDrafts] = useState({});
@@ -517,7 +538,7 @@ export default function Admin({ isAdminRole }) {
   const [broadcastBody, setBroadcastBody] = useState('');
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [broadcasting, setBroadcasting] = useState(false);
-  const [mailEnabled, setMailEnabled] = useState(false);
+  const [mailEnabled, setMailEnabled] = useState(mailOn);
   const [queryMonitorEnabled, setQueryMonitorEnabled] = useState(false);
   const [notifyShare, setNotifyShare] = useState({});
   const [shareMsg, setShareMsg] = useState({});
@@ -570,22 +591,39 @@ export default function Admin({ isAdminRole }) {
 
   async function fetchVideos() {
     const r = await fetch('/api/admin/videos');
-    if (!r.ok) throw new Error('Forbidden — this account is not an admin');
+    // Only a 403 is a permissions answer; anything else is the library (or
+    // bunny.net) failing, and calling that "not an admin" sends people to
+    // check their role instead of retrying.
+    if (r.status === 403) throw new Error("Your roles don't include managing videos");
+    if (!r.ok) throw new Error('Could not load the video library — try again in a moment');
     setVideosTruncated(r.headers.get('X-Library-Truncated') === '1');
     setVideos(await r.json());
   }
 
+  // Each load is asked for only by someone whose capabilities allow it. With
+  // custom roles a staff member may hold any subset, and a 403 body fed into
+  // a list setter would crash the page (viewers.flatMap on { error }).
   useEffect(() => {
     if (!user) return;
+    const has = (cap) => capabilities.includes(cap);
 
-    fetchVideos().catch((e) => setError(e.message));
-    fetch('/api/admin/viewers').then((r) => r.json()).then(setViewers);
-    fetch('/api/admin/settings').then((r) => r.json()).then((d) => {
+    if (has('videos:manage')) fetchVideos().catch((e) => setError(e.message));
+    if (has('viewers:manage')) {
+      fetch('/api/admin/viewers').then((r) => (r.ok ? r.json() : [])).then(setViewers).catch(() => {});
+    }
+    if (has('shares:manage')) {
+      fetch('/api/admin/shares').then((r) => (r.ok ? r.json() : [])).then(showShares).catch(() => {});
+    }
+    if (has('videos:manage')) {
+      fetch('/api/admin/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
+    }
+    if (!has('settings:manage')) return;
+    fetch('/api/admin/settings').then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d) return;
       setVideoCount(d.count);
       setMailEnabled(Boolean(d.mailEnabled));
       setQueryMonitorEnabled(Boolean(d.queryMonitorEnabled));
-    });
-    fetch('/api/admin/shares').then((r) => r.json()).then(showShares);
+    }).catch(() => {});
     fetch('/api/theme')
       .then((r) => r.json())
       .then(({ siteName, ...palette }) => {
@@ -593,7 +631,6 @@ export default function Admin({ isAdminRole }) {
         setSiteNameDraft(siteName || '');
       })
       .catch(() => {});
-    fetch('/api/admin/collections').then((r) => (r.ok ? r.json() : [])).then(setCollections).catch(() => {});
     fetch('/api/admin/watermark')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) { setWatermarkGlobal(Boolean(d.global)); setWatermarkExempt(d.exempt || []); } })
@@ -612,7 +649,7 @@ export default function Admin({ isAdminRole }) {
         setGeoAdminCountries(d.admin?.countries || []);
       })
       .catch(() => {});
-  }, [user]);
+  }, [user, capabilities]);
 
   // Load the per-video analytics rollup the first time the Videos or Analytics
   // tab is opened (and refresh on revisit) — same lazy pattern as Activity/Analytics.
@@ -651,22 +688,21 @@ export default function Admin({ isAdminRole }) {
     fetch('/api/admin/analytics').then((r) => (r.ok ? r.json() : null)).then(setAnalytics).catch(() => {});
   }, [user, tab]);
 
-  // Roles and groups load when the Access tab is opened — same lazy pattern.
-  // The roles fetch is admin-only, so managers skip it rather than firing a
-  // request that is guaranteed to 403.
+  // Requests, groups and roles load when the Access tab is opened — same lazy
+  // pattern. Each is skipped by anyone whose capabilities would get a 403.
   useEffect(() => {
     if (!user || tab !== 'access') return;
-    fetch('/api/admin/groups').then((r) => (r.ok ? r.json() : [])).then(setGroups).catch(() => {});
-    fetch('/api/admin/access-requests')
-      .then((r) => (r.ok ? r.json() : []))
-      .then(setAccessRequests)
-      .catch(() => {});
-    if (!isAdminRole) return;
-    fetch('/api/admin/roles')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setRoleGrants(d?.grants || []))
-      .catch(() => {});
-  }, [user, tab, isAdminRole]);
+    const has = (cap) => capabilities.includes(cap);
+    if (has('groups:manage')) {
+      fetch('/api/admin/groups').then((r) => (r.ok ? r.json() : [])).then(setGroups).catch(() => {});
+    }
+    if (has('viewers:manage')) {
+      fetch('/api/admin/access-requests')
+        .then((r) => (r.ok ? r.json() : []))
+        .then(setAccessRequests)
+        .catch(() => {});
+    }
+  }, [user, tab, capabilities]);
 
   // Tabs are pure React state, not route changes, so the Query Monitor panel
   // has no way to tell that the user moved to a new screen — left alone it
@@ -880,34 +916,10 @@ export default function Admin({ isAdminRole }) {
     setViewers(await r.json());
   }
 
-  async function saveRoleGrant() {
-    const email = newRoleEmail.trim().toLowerCase();
-    if (!email) return;
-    const res = await fetch('/api/admin/roles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, role: newRolePick }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setRoleError(data.error || 'Failed to save role'); return; }
-    setRoleError(null);
-    setNewRoleEmail('');
-    const r = await fetch('/api/admin/roles');
-    if (r.ok) setRoleGrants((await r.json()).grants || []);
-    // A grant also approves the viewer, so the Viewers tab is now stale.
-    fetch('/api/admin/viewers').then((rr) => (rr.ok ? rr.json() : null)).then((l) => l && setViewers(l)).catch(() => {});
-  }
-
-  async function revokeRoleGrant(email) {
-    const res = await fetch('/api/admin/roles', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setRoleError(data.error || 'Failed to revoke role'); return; }
-    setRoleError(null);
-    setRoleGrants((prev) => prev.filter((g) => g.email !== email));
+  // Giving someone a role also approves them, so the Viewers list goes stale.
+  function reloadViewers() {
+    if (!can('viewers:manage')) return;
+    fetch('/api/admin/viewers').then((r) => (r.ok ? r.json() : null)).then((l) => l && setViewers(l)).catch(() => {});
   }
 
   async function decideAccessRequest(email, status) {
@@ -1955,18 +1967,17 @@ export default function Admin({ isAdminRole }) {
       <div className="admin-topbar">
         <h1 className="admin-page-title">Admin</h1>
         <nav className="admin-tabs">
-          {[
-            { id: 'videos', label: 'Videos', count: videos.length },
-            { id: 'viewers', label: 'Viewers', count: viewers.length },
-            { id: 'access', label: 'Access', count: pendingRequests.length || groups.length || null },
-            { id: 'shares', label: 'Shares', count: activeShares.length },
-            // Settings is admin-only (theme, geo, watermark, maintenance,
-            // broadcast). Hiding the tab is presentation; every route behind
-            // it enforces 'settings:manage' on its own.
-            ...(isAdminRole ? [{ id: 'settings', label: 'Settings', count: null }] : []),
-            { id: 'activity', label: 'Activity', count: null },
-            { id: 'analytics', label: 'Analytics', count: null },
-          ].map((t) => (
+          {/* Only the tabs this person's capabilities open. Hiding a tab is
+              presentation; every route behind it enforces its capability. */}
+          {visibleTabs.map((t) => ({
+            ...t,
+            count: {
+              videos: videos.length,
+              viewers: viewers.length,
+              access: pendingRequests.length || groups.length || null,
+              shares: activeShares.length,
+            }[t.id] ?? null,
+          })).map((t) => (
             <button
               key={t.id}
               className={`admin-tab${tab === t.id ? ' active' : ''}`}
@@ -1980,6 +1991,15 @@ export default function Admin({ isAdminRole }) {
       </div>
 
       <div className="admin-stack">
+
+        {visibleTabs.length === 0 && (
+          <div className="card admin-section">
+            <p className="text-muted">
+              Your roles don&apos;t include anything managed on this page. Anything they do allow —
+              removing comments, for example — is done where you watch.
+            </p>
+          </div>
+        )}
 
         {tab === 'settings' && (
         <>
@@ -3098,7 +3118,7 @@ export default function Admin({ isAdminRole }) {
                   />
                 </details>
 
-                {isAdminRole && (
+                {can('settings:manage') && (
                   <div className="admin-video-collection">
                     <label className="collection-label">Public link</label>
                     <label className="admin-row" style={{ gap: 8 }}>
@@ -3472,6 +3492,7 @@ export default function Admin({ isAdminRole }) {
 
         {tab === 'access' && (
         <>
+        {can('viewers:manage') && (
         <div className="card admin-section">
           <h2 className="admin-section-title">
             Access Requests
@@ -3529,69 +3550,11 @@ export default function Admin({ isAdminRole }) {
             </ul>
           )}
         </div>
-
-        {isAdminRole && (
-        <div className="card admin-section">
-          <h2 className="admin-section-title">Roles</h2>
-          <p className="text-muted" style={{ marginBottom: '1rem' }}>
-            <strong>Admins</strong> can do everything, including changing settings and granting
-            roles. <strong>Managers</strong> can upload and organise videos, manage viewers,
-            groups and shares, and read analytics — but cannot change portal settings or hand out
-            roles. Everyone else is a viewer.
-          </p>
-
-          <div className="admin-row">
-            <input
-              type="email"
-              placeholder="person@example.com"
-              value={newRoleEmail}
-              onChange={(e) => setNewRoleEmail(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && saveRoleGrant()}
-              className="input input-sm"
-            />
-            <select
-              className="input input-sm"
-              value={newRolePick}
-              onChange={(e) => setNewRolePick(e.target.value)}
-            >
-              <option value="manager">Manager</option>
-              <option value="admin">Admin</option>
-            </select>
-            <button onClick={saveRoleGrant} className="btn btn-primary btn-sm">Grant</button>
-          </div>
-
-          {roleError && <p className="form-error">{roleError}</p>}
-
-          {roleGrants.length > 0 ? (
-            <ul className="viewer-list">
-              {roleGrants.map((g) => (
-                <li key={g.email} className="viewer-item">
-                  <div className="viewer-item-main">
-                    <span className="viewer-email">{g.email}</span>
-                    <span className={`role-chip role-chip--${g.role}`}>{g.role}</span>
-                    {g.locked ? (
-                      <span className="text-muted role-locked-note">
-                        set by ADMIN_EMAILS — change it in Vercel
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => revokeRoleGrant(g.email)}
-                        className="btn btn-icon"
-                        title="Revoke role (back to viewer)"
-                      >
-                        <IconTrash />
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted mt-4">No role grants yet.</p>
-          )}
-        </div>
         )}
 
+        {can('roles:manage') && <RolesSection onViewersChanged={reloadViewers} />}
+
+        {can('groups:manage') && (
         <div className="card admin-section">
           <h2 className="admin-section-title">Viewer Groups</h2>
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
@@ -3600,6 +3563,18 @@ export default function Admin({ isAdminRole }) {
             ever narrow access, and only for the people you put in one. Share links are separate
             and keep working regardless of groups.
           </p>
+          {!can('videos:manage') && (
+            <p className="text-muted" style={{ marginBottom: '1rem' }}>
+              Your roles don&apos;t include <code>videos:manage</code>, so the library isn&apos;t listed
+              here to grant from — you can still rename and delete groups.
+            </p>
+          )}
+          {!can('viewers:manage') && (
+            <p className="text-muted" style={{ marginBottom: '1rem' }}>
+              Changing who is in a group also needs <code>viewers:manage</code>, so you see how many
+              members each group has but not who they are.
+            </p>
+          )}
 
           <div className="admin-row">
             <input
@@ -3623,12 +3598,14 @@ export default function Admin({ isAdminRole }) {
             <div className="group-list">
               {groups.map((g) => {
                 const grantCount = (g.collectionIds || []).length + (g.videoIds || []).length;
+                // Without viewers:manage the route sends a count, not the people.
+                const memberCount = Array.isArray(g.members) ? g.members.length : g.memberCount || 0;
                 return (
                   <div key={g.id} className="group-card">
                     <div className="group-card-head">
                       <h3 className="group-name">{g.name}</h3>
                       <span className="text-muted">
-                        {g.members.length} member{g.members.length === 1 ? '' : 's'} · {grantCount} grant
+                        {memberCount} member{memberCount === 1 ? '' : 's'} · {grantCount} grant
                         {grantCount === 1 ? '' : 's'}
                       </span>
                       <button
@@ -3640,13 +3617,14 @@ export default function Admin({ isAdminRole }) {
                       </button>
                     </div>
 
-                    {g.members.length > 0 && grantCount === 0 && (
+                    {memberCount > 0 && grantCount === 0 && (
                       <p className="group-warning">
                         This group has members but grants nothing, so they currently see no videos
                         at all. Tick a collection or video below, or remove the members.
                       </p>
                     )}
 
+                    {Array.isArray(g.members) && (
                     <div className="group-section">
                       <span className="group-section-label">Members</span>
                       <div className="viewer-tags-row">
@@ -3677,6 +3655,7 @@ export default function Admin({ isAdminRole }) {
                         <button onClick={() => addGroupMembers(g.id)} className="btn btn-sm">Add</button>
                       </div>
                     </div>
+                    )}
 
                     <div className="group-section">
                       <span className="group-section-label">Collections</span>
@@ -3723,6 +3702,7 @@ export default function Admin({ isAdminRole }) {
             </div>
           )}
         </div>
+        )}
         </>
         )}
 

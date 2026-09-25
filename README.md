@@ -88,7 +88,7 @@ pages/
     monitor.js            Query Monitor process stats
     cron/
       transcripts.js      Scheduled job: collect finished transcriptions (CRON_SECRET-gated, 404 without it)
-    me.js                 Current user's role + capabilities (any logged-in user)
+    me.js                 Current user's capabilities, and whether they are an owner (any logged-in user)
     manifest.js           PWA manifest, generated so it carries the admin-set portal name
     feed-url.js           A viewer's own podcast feed URL (get / rotate)
     feed/[token].js       Per-subscriber podcast RSS — no session, token-identified
@@ -119,7 +119,7 @@ pages/
       analytics.js        Views, watch time, 30-day chart, most-watched
       video-analytics.js  Per-video rollup of existing share tracking (shares, recipients, views, completion)
       broadcast.js        Send a manual push broadcast to viewers + admins
-      roles.js            Grant/revoke the Admin and Manager roles (admin-only)
+      roles.js            Custom roles: create/edit/delete, and who holds them (roles:manage)
       groups.js           Viewer groups — CRUD, membership, collection/video grants
       access-requests.js  Review access requests — approve (adds the viewer) / deny / dismiss
       public-videos.js    Mark a single video viewable without a login (admin-only)
@@ -141,7 +141,9 @@ components/
 lib/
   auth0.js                Auth0 v4 client: keeps /api/auth/* URLs and the AUTH0_ISSUER_BASE_URL / AUTH0_BASE_URL env names
   auth.js                 isAdmin(email) — the ADMIN_EMAILS floor check
-  roles.js                Roles + capability map; requireCapability() guard for every admin route
+  capabilities.js         The capability catalog and the pure role rules (no escalation, union)
+  roleMigration.js        Carries the old Admin / Manager grants onto custom roles
+  roles.js                Resolves what someone may do; requireCapability() guard for every admin route
   groups.js               Viewer groups and the access resolution that gates the library
   accessRequests.js       Self-serve access requests (never grants — the admin route does)
   schedule.js             Per-video publish/expiry windows, weekly repeat, per-group windows
@@ -237,7 +239,7 @@ eslint.config.mjs         ESLint 9 flat config (next/core-web-vitals + no-undef 
 | `QUERY_MONITOR_ENABLED` | Enable the **Query Monitor / performance panel** (Redis query count & timing, memory, render time) shown as a floating widget on every page, for logged-in users. Set to `true` (also accepts `1`/`on`/`yes`, and surrounding whitespace/casing is ignored) to turn it on; unset or falsey and no widget appears and nothing is instrumented. This single variable controls both halves — the browser asks the server whether it's on, so **no rebuild is needed to toggle it**, just a redeploy/restart to pick up the new env value. The admin Settings tab shows the current state. |
 | `ADMIN_GEO_WHITELIST` | Same, but for **admins** — a separate list, separate toggle (also off by default). Gates both video watch pages and the `/admin` panel itself for admin accounts. |
 | `ADMIN_GEO_BYPASS_EMAILS` | Comma-separated admin emails that always skip the admin geo check, regardless of country or the toggle. Arm this **before** traveling — it's a standing safety net, not an in-the-moment fix, since env var changes need a redeploy. |
-| `EMAIL_VERIFIED_BYPASS_EMAILS` | Comma-separated emails that always skip the optional email-verification check, regardless of the toggle. Admins and managers are exempt unconditionally and don't need listing. Env changes need a redeploy, so set this *before* enabling enforcement. |
+| `EMAIL_VERIFIED_BYPASS_EMAILS` | Comma-separated emails that always skip the optional email-verification check, regardless of the toggle. Staff (owners and anyone holding a role) are exempt unconditionally and don't need listing. Env changes need a redeploy, so set this *before* enabling enforcement. |
 
 After adding or changing any variable, **redeploy** — changes only apply to new deployments.
 
@@ -274,14 +276,14 @@ Every push / PR to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci
 
 ## Admin panel (`/admin`)
 
-Tabbed layout, gated server-side to admins and managers:
+Tabbed layout, gated server-side to staff. Each person sees only the tabs their capabilities open:
 
 - **Videos** — upload (drag-and-drop, progress, cancel/retry), rename, delete, drag-to-reorder, search, encoding-status badges, per-video collection assignment, a per-video **watermark override** (Default/Always/Never), a collapsible **per-video analytics** panel, a per-video quick private share form (any number of recipient emails at once, a viewer-**tag** picker to add a whole tagged group in one click, its own watermark selector, and an optional **"email the link(s) to the recipient(s)"** checkbox when email is configured), and a collapsible **Private list** panel per video (a persistent, editable access list, also with a tag picker — see below). a **Schedule** panel (publish/expiry, an optional **weekly repeat**, and **per-group windows** — see "Scheduled publish and expiry"), **Chapters** and **Notes** editors, and a **Transcribe** button (bunny.net Transcribe AI, optionally with **suggested chapters** to review before saving; the price is shown beside it). The upload form lets you tick which **groups** can see the new video. Multi-select checkboxes for **bulk delete** and **bulk collection assignment**. Also a Collections manager (create/delete).
 - **Viewers** — add/remove approved emails, **bulk add** (paste a list), per-viewer **tags** (e.g. "Team A") for grouping, and each viewer's **last-seen** time.
-- **Access** — **Access Requests** (approve or deny people who asked to be let in), **Roles** (admin-only: grant Admin or Manager to an email, revoke back to viewer) and **Viewer Groups** (create a group, add/remove members, tick the collections and individual videos it grants). See "Roles and groups" below. The tab badge shows pending requests.
+- **Access** — **Access Requests** (approve or deny people who asked to be let in), **Roles** (`roles:manage`: create custom roles from the capability list and choose who holds them) and **Viewer Groups** (create a group, add/remove members, tick the collections and individual videos it grants). See "Roles and groups" below. The tab badge shows pending requests.
 - **Shares** — a **bulk-share** form (pick any number of videos × any number of recipients — every pair gets its own link, one email per recipient, with its own watermark selector); every active private link with recipient, expiry, **view count/last-viewed**, **playback status** (plays, furthest % watched, completed), and a durable **"Copy bundle link"** button when the link is part of a bundle; multi-select checkboxes for **bulk resend / bulk revoke / bulk un-revoke / bulk extend / bulk delete permanently**; and per-link **extend**, **un-revoke** (restore a revoked link in place), and **delete permanently** (only allowed once a link is already revoked).
 - **Settings** (admin-only) — **email verification** (off by default, with a panel showing exactly who enabling it would block — see "Optional email verification" below), homepage video count, the **portal name** and **app icon**, the site **color palette** (7 presets + custom, applied to all visitors), the **watermark global default** and its exemption list, the **geo location whitelist** on/off toggles (viewer and admin, each off by default, country lists shown read-only), a **push broadcast** composer, **Clean up stale data** (sweeps expired bundles, dead share entries and removed viewers' leftovers, and rebuilds the 👍/👎 totals from the votes), and a content-protection info panel.
-- **Activity** — the most recent admin actions (add/remove viewer, role grant/revoke, group create/update/delete and membership changes, share create/revoke/un-revoke/delete, video rename/delete/reorder, settings, palette, collections).
+- **Activity** — the most recent admin actions (add/remove viewer, role create/edit/delete and assignment, group create/update/delete and membership changes, share create/revoke/un-revoke/delete, video rename/delete/reorder, settings, palette, collections).
 - **Analytics** — total views, 30-day views, watch time, video count, a 30-day views chart, a most-watched list, and a **per-video analytics** list (shares, recipients, views, started, completed + rate, avg progress) rolled up from existing share data.
 
 ---
@@ -396,19 +398,30 @@ The default app icon is a **play mark** (`public/icon.svg`, with PNGs rendered f
 
 ### Roles
 
-Three tiers, managed from **Admin → Access → Roles** (admin-only):
+Roles are **custom**. From **Admin → Access → Roles** (anyone holding `roles:manage`), you create a role, name it, and tick the capabilities it carries; then you give people any number of roles, and they can do everything their roles allow between them.
 
-| Role | Can do |
+| Capability | What it allows |
 |---|---|
-| **Admin** | Everything, including portal settings (palette, geo, watermark, maintenance, push broadcast) and granting roles. |
-| **Manager** | Upload and organise videos, manage collections and ordering, manage approved viewers and groups, create and revoke shares, remove any viewer's comment, read analytics and the audit log. **Cannot** change portal settings or grant roles. |
-| **Viewer** | Watch whatever their groups allow (everything, if they're in no group). |
+| `videos:manage` | Upload, rename, delete, order and schedule videos; collections, transcripts, chapters and notes |
+| `shares:manage` | Create and revoke share links and private lists |
+| `viewers:manage` | Approve, remove and tag viewers; answer access requests; see commenters' emails |
+| `groups:manage` | Create, rename and delete groups and choose what they can see (changing *who is in* a group also needs `viewers:manage`) |
+| `comments:manage` | Remove any viewer's comment |
+| `analytics:read` | Analytics and viewers' watch history |
+| `audit:read` | The Activity log |
+| `settings:manage` | Settings (palette, homepage, geo, watermark, maintenance, email verification, app icon), public links and push broadcasts |
+| `roles:manage` | Create roles and decide who holds them |
 
-Grants are stored in Redis (`pvp:role_admins`, `pvp:role_managers`), so an admin can promote someone from the UI without a redeploy. **`ADMIN_EMAILS` remains an always-wins floor**: those addresses are admins regardless of Redis and cannot be demoted from the UI — that's the lockout-recovery path. The API also refuses any change that would leave zero admins.
+**Staff** means anyone who holds at least one capability. Staff can open `/admin` — they see only the tabs their capabilities open — and watch the whole library whatever their groups say. Everyone else is a viewer.
 
-Granting a role also adds that email to the approved viewers, so a new manager can see the library they're curating.
+- **`ADMIN_EMAILS` are owners.** They hold every capability, always, without Redis being read; they cannot be given roles or have anything taken away from the UI. That's the lockout-recovery path: fix the env var in Vercel and you are back in.
+- **No escalation.** You can only create, edit, delete, give or take away a role whose capabilities you hold yourself. Capabilities you don't hold are greyed out in the editor, and the server refuses them anyway. Owners hold everything, so this never limits them.
+- **A role approves.** Giving someone a role also adds them to the approved viewers (and taking every role away leaves them a viewer). Because that lets someone into the library, giving a role to someone who isn't approved yet needs `viewers:manage` too.
+- **Someone can always manage roles.** The API refuses any change that would leave nobody holding `roles:manage`. With `ADMIN_EMAILS` set this can never bite, because owners always hold it.
 
-Routes name a **capability**, not a role — the map lives at the top of `lib/roles.js`, so widening or narrowing what a manager can do is a one-line change there rather than a sweep through `pages/api/admin/*`.
+Roles live in Redis (`pvp:roles`, `pvp:user_roles`), so they change live, no redeploy. Routes name a capability, never a role; the catalog is `lib/capabilities.js`, and a capability no route enforces can't be added from the UI.
+
+**Coming from the old Admin / Manager roles.** Before v1.28.0 there were two fixed roles. The first time someone opens the Roles section after deploying, they become two ordinary, editable roles — **Admin** (every capability) and **Manager** (everything except `settings:manage` and `roles:manage`) — held by the same people. Nobody loses or gains anything, and until that conversion runs the old grants keep working exactly as before.
 
 ### Viewer groups
 
@@ -423,7 +436,7 @@ Two consequences worth knowing:
 - **A group with members but no grants shows them nothing.** That's a real state you can create, and the admin UI warns about it on the group card rather than silently ignoring it.
 - **Share links are unaffected.** `/watch/<shareId>` carries its own per-recipient token, so you can still share one video with someone whose groups wouldn't otherwise show it to them. Groups gate the library; shares gate one video each.
 
-Admins and managers bypass groups entirely — they're curating the library, so they see all of it.
+Staff bypass groups entirely — they're curating the library, so they see all of it.
 
 ---
 
@@ -462,8 +475,8 @@ Tick **suggest chapters** when transcribing and bunny proposes chapters from wha
 ## My List, ratings and comments
 
 - **My List** — a **+ Save to my list** toggle on the watch page, and a "My list" row on the homepage. Only videos the viewer can still see are shown.
-- **Ratings** — 👍 or 👎 beside the title; pressing your vote again clears it. Each viewer sees only their own vote; admins and managers see the totals on the Videos tab. A vote and its totals are written in one Redis script, so they can't drift apart.
-- **Comments** — a discussion under each video. Everyone who can watch the video can read and add comments; others see the author's **account name, never their email**. A comment appears at once; its author can delete it, and so can admins and managers (`comments:manage`). Up to 1,000 characters, 500 per video, and 30 an hour per person. Comments are flat — no replies, editing or notifications.
+- **Ratings** — 👍 or 👎 beside the title; pressing your vote again clears it. Each viewer sees only their own vote; staff with `videos:manage` see the totals on the Videos tab. A vote and its totals are written in one Redis script, so they can't drift apart.
+- **Comments** — a discussion under each video. Everyone who can watch the video can read and add comments; others see the author's **account name, never their email**. A comment appears at once; its author can delete it, and so can anyone holding `comments:manage`. Up to 1,000 characters, 500 per video, and 30 an hour per person. Comments are flat — no replies, editing or notifications.
 
 Deleting a video removes its transcript and comments with it.
 
@@ -471,13 +484,13 @@ Deleting a video removes its transcript and comments with it.
 
 ## Access requests
 
-A signed-in user who isn't an approved viewer now sees a **Request access** form rather than a dead end — an optional note ("Deck crew, joined in March") plus a button. The request is stored in Redis and appears on **Admin → Access → Access Requests**, where an admin or manager approves or denies it. The tab badge counts pending ones.
+A signed-in user who isn't an approved viewer now sees a **Request access** form rather than a dead end — an optional note ("Deck crew, joined in March") plus a button. The request is stored in Redis and appears on **Admin → Access → Access Requests**, where anyone holding `viewers:manage` approves or denies it. The tab badge counts pending ones.
 
 Approving does exactly what adding the email by hand on the Viewers tab does. Denying leaves them without access and never removes anyone who already has it. Re-asking while a request is pending is a no-op, so a refresh loop produces one row, not a queue.
 
 The request grants nothing by itself: `lib/accessRequests.js` never writes to the approved-viewer set — only the capability-gated admin route does, which keeps exactly one place in the codebase able to widen access.
 
-**You're told when one arrives.** Admins and managers — everyone who can actually approve it — get an email (when `RESEND_API_KEY` is set) and a Web Push notification (when the VAPID keys are set) naming the requester and their note. Only a *genuinely new* request notifies: re-asking while one is pending is a no-op, so a viewer refreshing the page can't flood your inbox. The whole thing is best-effort and inert without keys — a mail outage can never turn someone's "please let me in" into an error page.
+**You're told when one arrives.** Everyone who can actually approve it — owners and anyone holding `viewers:manage` — get an email (when `RESEND_API_KEY` is set) and a Web Push notification (when the VAPID keys are set) naming the requester and their note. Only a *genuinely new* request notifies: re-asking while one is pending is a no-op, so a viewer refreshing the page can't flood your inbox. The whole thing is best-effort and inert without keys — a mail outage can never turn someone's "please let me in" into an error page.
 
 ---
 
@@ -485,7 +498,7 @@ The request grants nothing by itself: `lib/accessRequests.js` never writes to th
 
 Each video can carry an optional **publish time**, an optional **expiry time**, or both, set from a **Schedule** panel on its row in the Videos tab. Outside that window a viewer can't see the video in the library, in search results, in a collection filter, or by opening its direct `/watch/video/<guid>` link.
 
-Admins and managers always see it — with a badge on the row (*Not yet published* / *Scheduled · live* / *Weekly · on now* / *Weekly · off now* / *Expired*) so a deliberately hidden video never reads as a broken one.
+Staff always see it — with a badge on the row (*Not yet published* / *Scheduled · live* / *Weekly · on now* / *Weekly · off now* / *Expired*) so a deliberately hidden video never reads as a broken one.
 
 - **Repeating weekly** — tick the days and a daily time range ("Sundays 09:00–13:00") and the video is visible only inside those slots, within its publish/expiry window. The rule keeps the timezone of the browser that set it.
 - **Per-group windows** — give a group its own publish/expiry, so it can see a video earlier (or later) than everyone else. A viewer sees the video when the default window **or** a window of any group they're in is open. Group grants are still checked first, so a window never reaches someone outside them, and deleting a group removes its windows.
@@ -506,7 +519,7 @@ Auth0 reports whether an account's email address has been verified. This portal 
 So the feature is built to make that outcome impossible by accident:
 
 - **Off by default.** Nothing changes until an admin turns it on in Settings.
-- **Admins and managers are never blocked**, whatever the setting says. That's the recovery path — you can always reach `/admin` and switch it back off.
+- **Staff are never blocked**, whatever the setting says. That's the recovery path — you can always reach `/admin` and switch it back off.
 - **`EMAIL_VERIFIED_BYPASS_EMAILS`** is a standing env-level escape hatch, mirroring `ADMIN_GEO_BYPASS_EMAILS`. Set it before enabling, since env changes need a redeploy.
 - **It fails open.** Any error reading the setting admits the caller; an infrastructure hiccup can't become a portal-wide lockout.
 - **A missing claim is not a failure.** Only an explicit `email_verified: false` blocks. A token that doesn't carry the field at all is allowed through.
@@ -557,8 +570,8 @@ Until both are confirmed against the live library, treat feed playback as unprov
 ## Security notes
 
 - **Access is by email identity.** Role, approved-viewer, group, and share-recipient checks all compare `session.user.email`. Because of this, keep Auth0 **sign-ups disabled** so nobody can self-register as an approved/admin address. Role resolution lives in `lib/roles.js` — the single place that decides what a caller may do — and `lib/auth.js`'s `isAdmin()` is the `ADMIN_EMAILS` floor it builds on.
-- **`ADMIN_EMAILS` always wins.** An email listed there is an admin no matter what Redis says, and the Roles UI refuses to demote one. That is the recovery path if the Redis-backed grants are ever emptied or mis-edited: fix the env var in Vercel and you are back in. The API also refuses any demotion that would leave the portal with no admin at all.
-- **`/admin` is gated server-side** via `getServerSideProps` (redirects anyone who isn't an admin or manager), and every `/api/admin/*` route independently checks its own **capability** and returns `403`. Hiding a tab from a manager is presentation only — the route behind it enforces the same rule again.
+- **`ADMIN_EMAILS` always wins.** An email listed there is an owner holding every capability no matter what Redis says, and the Roles UI cannot give them roles or take anything away. That is the recovery path if the stored roles are ever emptied or mis-edited: fix the env var in Vercel and you are back in. The API also refuses any change that would leave nobody able to manage roles.
+- **`/admin` is gated server-side** via `getServerSideProps` (redirects anyone who holds no capability), and every `/api/admin/*` route independently checks its own **capability** and returns `403`. Hiding a tab is presentation only — the route behind it enforces the same rule again.
 - **Playback is always tokenized** — signed, time-limited embed URLs generated per request; no permanent public URL is used or exposed.
 - **Share-link mismatches don't reveal** the intended recipient's email — the bundle page and the playback-tracking endpoint use the exact same generic mismatch message.
 - **The proxy signs people in; it decides nothing.** Next 16 needs Auth0 v4, which serves its routes (`/api/auth/login`, `/logout`, `/callback`, `/auth/profile`) from `proxy.js` and refreshes rolling sessions there. That is all `proxy.js` does. The bundle page, the share-tracking API and every other page and route still carry their own `getSession` + access check via `getServerSideProps` / handler code, so nothing depends on a request passing through the proxy. Still no App Router.
