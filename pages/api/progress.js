@@ -1,6 +1,8 @@
 import { getSession } from '../../lib/auth0';
 import { redis, k } from '../../lib/redis';
-import { isStaffUser, hasCapability } from '../../lib/roles';
+import { isStaffUser, getAccess } from '../../lib/roles';
+import { isScoped, personInScope } from '../../lib/staffScopeRules';
+import { groupIdsForEmail, loadGroupsById } from '../../lib/groups';
 import { allow, callerId } from '../../lib/ratelimit';
 import { withMonitorApi } from '../../lib/monitor';
 import { isVideoId } from '../../lib/bunny';
@@ -37,8 +39,24 @@ async function handler(req, res) {
     // (e.g. from the admin panel); everyone else only ever sees their own.
     let lookupKey = key;
     if (targetEmail && targetEmail.toLowerCase() !== email) {
-      if (!(await hasCapability(email, 'analytics:read'))) {
+      const who = await getAccess(email);
+      if (!who.capabilities.includes('analytics:read')) {
         return res.status(403).json({ error: 'Forbidden' });
+      }
+      // A group-scoped caller reads only their own groups' people; anyone else
+      // answers exactly like someone with no history.
+      if (isScoped(who)) {
+        let inScope = false;
+        try {
+          const [theirs, groupsById] = await Promise.all([
+            groupIdsForEmail(targetEmail.toLowerCase()),
+            loadGroupsById(),
+          ]);
+          inScope = personInScope(who, theirs, groupsById);
+        } catch {
+          inScope = false;
+        }
+        if (!inScope) return res.json([]);
       }
       lookupKey = k(`progress:${targetEmail.toLowerCase()}`);
     }

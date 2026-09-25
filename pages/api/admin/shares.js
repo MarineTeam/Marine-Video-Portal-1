@@ -1,4 +1,5 @@
 import { requireCapability } from '../../../lib/roles';
+import { guidsInScope, shareIdsOutsideScope } from '../../../lib/staffScope';
 import { redis, k } from '../../../lib/redis';
 import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
@@ -175,11 +176,17 @@ async function handler(req, res) {
     const ids = await redis.smembers(k('active_shares'));
     const shares = await getShares(ids);
     shares.sort((a, b) => a.expiresAt - b.expiresAt);
-    return res.json(shares);
+    // A group-scoped caller sees only links to videos their groups grant.
+    const allowed = await guidsInScope(auth, shares.map((s) => s.videoId));
+    return res.json(shares.filter((s) => allowed.has(s.videoId)));
   }
 
   const body = req.body || {};
   const ids = idsFrom(body);
+  // ...and acts only on those.
+  if (ids.length && (await shareIdsOutsideScope(auth, ids)).length) {
+    return res.status(404).json({ error: 'Link has expired or does not exist.' });
+  }
 
   // Resend the email for one or more active links to their original recipients.
   if (req.method === 'POST') {

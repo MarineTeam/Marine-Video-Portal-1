@@ -190,6 +190,17 @@ reasoning and the date it was decided.
 - Call `isAdmin` from `lib/auth.js` in a route instead of going through `lib/roles.js` → that route silently ignores every Redis-granted admin. (It fails closed, so it's a denial rather than a bypass — but it's still drift, and drift is what Decision 2 exists to prevent.)
 - Reference a `lib/roles.js` export from the *component* body of `pages/admin.js` → `lib/redis.js` and Node's `async_hooks` get pulled into the client bundle and the build fails. Keep those imports inside `getServerSideProps` and pass booleans through props.
 
+**Amendment (2026-09-25, v1.29.0): staff limited to certain groups.** A person's roles may carry a group limit (`pvp:user_scope`, `lib/staffScopeRules.js` pure, `lib/staffScopeStore.js` storage, `lib/staffScope.js` route helpers). `getAccess` strips `settings:manage` / `roles:manage` / `audit:read` under a limit and records `contentScope` (what the limit's live groups grant, always restricted); `requireCapability` carries both. The invariants, each tested route by route in `lib/__tests__/scopedStaffRoutes.test.js` and each proved by sabotage:
+
+- A limited caller never widens their own limit: no group create/delete/re-grant, no collection change, no homepage order. Their uploads are granted to their own groups — the one exception.
+- The opt-in rule makes "no group" mean "everything", so a limited caller approves new people only INTO one of their groups, membership written before approval, and never removes anyone's last group.
+- Removing a person or deleting a video needs every group involved inside the limit; removing a role holder is never a limited act.
+- Only unlimited `roles:manage` holders set limits; owners are never limited; `holdersOf` does not count a limited holder for a portal-wide capability, so "someone can always manage roles" still holds.
+- Resolution fails CLOSED: an unreadable limit gives no capabilities, and `resolveAccess(…, { staff: true })` gives nothing, never everything. (This is the one place `resolveAccess` fails closed: it concerns staff, whose recovery path is `ADMIN_EMAILS`.)
+- Every file in `pages/api/admin/` either gates only on portal-wide capabilities or references `staffScope` / `staffScopeRules` — a static test fails CI otherwise.
+
+*What breaks if violated:* read a missing limit row as "unlimited" after emptying it → a limited person whose groups were all deleted gets the whole portal; approve before writing the membership → a failure between the two leaves an approved viewer in no group, who sees everything.
+
 ### 14. email_verified enforcement is opt-in, staff-exempt, and fails open
 
 **Decision (2026-08-31).** `email_verified` MAY now be enforced, but only through `lib/verification.js`, which is built so that the 2026-07-10 near-lockout cannot recur. Four guards, all mandatory:

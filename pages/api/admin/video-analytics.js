@@ -1,4 +1,5 @@
 import { requireCapability } from '../../../lib/roles';
+import { guidsInScope } from '../../../lib/staffScope';
 import { redis, k } from '../../../lib/redis';
 import { getShares } from '../../../lib/shareBundle';
 import { withMonitorApi } from '../../../lib/monitor';
@@ -34,7 +35,10 @@ async function handler(req, res) {
   }
 
   const result = {};
+  // A group-scoped caller gets the rollup for videos their groups grant.
+  const allowed = await guidsInScope(auth, Object.keys(byVideo));
   for (const [videoId, b] of Object.entries(byVideo)) {
+    if (!allowed.has(videoId)) continue;
     result[videoId] = {
       shares: b.shares,
       uniqueRecipients: b.recipients.size,

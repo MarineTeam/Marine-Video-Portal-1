@@ -1,4 +1,5 @@
 import { requireCapability } from '../../../lib/roles';
+import { guidInScope, guidsInScope } from '../../../lib/staffScope';
 import { redis, k } from '../../../lib/redis';
 import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
@@ -66,7 +67,10 @@ async function handler(req, res) {
       if (!existing || s.expiresAt > existing.expiresAt) byVideo[s.videoId].set(s.email, s);
     }
     const result = {};
+    // A group-scoped caller sees the lists of videos their groups grant.
+    const allowed = await guidsInScope(auth, Object.keys(byVideo));
     for (const [videoId, byEmail] of Object.entries(byVideo)) {
+      if (!allowed.has(videoId)) continue;
       result[videoId] = [...byEmail.values()]
         .map((s) => ({ email: s.email, shareId: s.shareId, createdAt: s.createdAt, expiresAt: s.expiresAt }))
         .sort((a, b) => a.email.localeCompare(b.email));
@@ -75,6 +79,10 @@ async function handler(req, res) {
   }
 
   const body = req.body || {};
+  // ...and edits only those.
+  if (body.videoId && !(await guidInScope(auth, String(body.videoId)))) {
+    return res.status(404).json({ error: 'Video not found' });
+  }
 
   if (req.method === 'POST') {
     if (!(await allow(callerId(req, session, 'share')))) {

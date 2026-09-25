@@ -1,6 +1,7 @@
 import { getSession } from '../../lib/auth0';
 import { redis, k } from '../../lib/redis';
-import { resolveCapabilities } from '../../lib/roles';
+import { getAccess } from '../../lib/roles';
+import { isScoped } from '../../lib/staffScopeRules';
 import { isVerified } from '../../lib/verification';
 import { resolveAccess, canSeeVideo } from '../../lib/groups';
 import { getSchedule, isVisibleFor } from '../../lib/schedule';
@@ -42,8 +43,9 @@ async function handler(req, res) {
   if (!session?.user?.email) return res.status(401).json({ error: 'Not signed in' });
   const email = session.user.email.toLowerCase();
 
-  const [approved, caps] = await Promise.all([redis.sismember(k('approved_viewers'), email), resolveCapabilities(email)]);
-  const staff = caps.length > 0;
+  const [approved, who] = await Promise.all([redis.sismember(k('approved_viewers'), email), getAccess(email)]);
+  const caps = who.capabilities;
+  const staff = who.staff;
   if (!approved && !staff) return res.status(403).json({ error: 'Not approved' });
   if (!(await isGeoAllowed(req, email, staff))) {
     return res.status(403).json({ error: 'Not available in your region' });
@@ -68,7 +70,10 @@ async function handler(req, res) {
   if (!canSeeVideo(access, video)) return res.status(404).json({ error: 'Not found' });
 
   const canModerate = caps.includes('comments:manage');
-  const viewOptions = { email, canModerate, canSeeEmails: caps.includes('viewers:manage') };
+  // Not for group-scoped staff: a video in their scope can be watched — and
+  // commented on — by people outside their groups, whose addresses are not
+  // theirs to see.
+  const viewOptions = { email, canModerate, canSeeEmails: caps.includes('viewers:manage') && !isScoped(who) };
   const inWindow = async () => staff || isVisibleFor(await getSchedule(video.guid), access.groupIds);
 
   if (req.method === 'GET') {
