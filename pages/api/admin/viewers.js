@@ -1,4 +1,5 @@
-import { requireCapability, rolesForEmail } from '../../../lib/roles';
+import { listStaffEmails, requireCapability, rolesForEmail } from '../../../lib/roles';
+import { forgetViewerData } from '../../../lib/viewerData';
 import { isScoped, mayRemovePerson, personInScope, placementGroup } from '../../../lib/staffScopeRules';
 import { redis, k } from '../../../lib/redis';
 import { logAudit } from '../../../lib/audit';
@@ -137,6 +138,22 @@ async function handler(req, res) {
         });
       }
     }
+    // What was recorded about them goes FIRST (lib/viewerData.js): if it
+    // fails they are still listed, and removing them again retries it.
+    // Staff — owners, and anyone whose roles give them a capability — keep
+    // their data, because removing them from this list does not take their
+    // access away; the same rule the maintenance sweep follows. Reading the
+    // staff list THROWS on a Redis failure, so a blip can never make a staff
+    // member look like a plain viewer here.
+    let forgotten = null;
+    try {
+      if (!(await listStaffEmails()).includes(e)) forgotten = await forgetViewerData(e);
+    } catch (err) {
+      console.error("Could not delete a removed viewer's data:", err);
+      return res.status(502).json({
+        error: 'Could not delete their saved data, so they were not removed — try again',
+      });
+    }
     await redis.srem(k('approved_viewers'), e);
     await redis.hdel(k('viewer_last_seen'), e);
     await redis.hdel(k('viewer_tags'), e);
@@ -147,8 +164,12 @@ async function handler(req, res) {
     // re-checks the approved set on every fetch, so this is belt-and-braces
     // rather than the only thing stopping them.
     await clearTokenForEmail(e);
-    await logAudit(actor, 'viewer.remove', e);
-    return res.json({ ok: true });
+    await logAudit(
+      actor,
+      'viewer.remove',
+      forgotten ? `${e} (data deleted: ${forgotten.votes} votes, ${forgotten.comments} comments)` : e
+    );
+    return res.json({ ok: true, forgotten });
   }
 
   res.status(405).end();
