@@ -1083,6 +1083,12 @@ export default function Admin({ capabilities = [], mailOn = false, scopeGroups =
   }
 
   async function removeViewer(email) {
+    if (
+      !window.confirm(
+        `Remove ${email} from approved viewers? Their watch history, saved list, votes and comments are deleted too, and can't be brought back.`
+      )
+    )
+      return;
     const res = await fetch('/api/admin/viewers', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
