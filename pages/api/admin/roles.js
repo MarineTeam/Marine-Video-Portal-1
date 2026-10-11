@@ -26,6 +26,9 @@ import {
   assignmentNeedsViewerManage,
 } from '../../../lib/roles';
 import { findLegacyAssignments, migrateLegacyRoles } from '../../../lib/roleMigration';
+import { loadStaffScopes, setScopeForEmail } from '../../../lib/staffScopeStore';
+import { MAX_SCOPE_GROUPS, normalizeScope } from '../../../lib/staffScopeRules';
+import { loadGroupsById } from '../../../lib/groups';
 
 // Custom roles: create, edit and delete them, and decide who holds them.
 //
@@ -80,10 +83,12 @@ async function handler(req, res) {
       console.error('Could not migrate legacy roles:', e);
     }
     try {
-      const [rolesById, assignments, legacy] = await Promise.all([
+      const [rolesById, assignments, legacy, scopes, groupsById] = await Promise.all([
         loadRoles(),
         loadRoleAssignments(),
         findLegacyAssignments().catch(() => ({})),
+        loadStaffScopes(),
+        loadGroupsById(),
       ]);
       return res.json({
         roles: sortedRoles(rolesById),
@@ -94,6 +99,12 @@ async function handler(req, res) {
         actor: { email: actor, owner: auth.owner, capabilities: auth.capabilities },
         migrated,
         legacyRemaining: Object.keys(legacy).length,
+        // Group scopes (lib/staffScopeRules.js): who is limited to which
+        // groups, and the groups there are to choose from.
+        scopes,
+        scopeGroups: Object.values(groupsById)
+          .map((g) => ({ id: g.id, name: g.name }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
       });
     } catch (e) {
       console.error('Could not load roles:', e);
@@ -169,8 +180,18 @@ async function handler(req, res) {
       });
     }
     const requested = Array.isArray(body.roleIds) ? body.roleIds.filter((id) => typeof id === 'string') : [];
+    // The group limit: undefined leaves it as it is, null lifts it (the whole
+    // portal), an array of group ids sets it.
+    const scopeChange = body.scope === undefined ? undefined : normalizeScope(body.scope);
+    if (Array.isArray(body.scope) && body.scope.length > MAX_SCOPE_GROUPS) {
+      return res.status(400).json({ error: `At most ${MAX_SCOPE_GROUPS} groups in a limit` });
+    }
     try {
-      const [rolesById, assignments] = await Promise.all([loadRoles(), loadRoleAssignments()]);
+      const [rolesById, assignments, scopes] = await Promise.all([
+        loadRoles(),
+        loadRoleAssignments(),
+        loadStaffScopes(),
+      ]);
       const capsOf = (ids) => normalizeCapabilities((ids || []).flatMap((rid) => rolesById[rid]?.capabilities || []));
       // What is taken away counts as much as what is given: an actor may not
       // strip a role they could not have granted, or "demote whoever is above
@@ -205,19 +226,45 @@ async function handler(req, res) {
         }
       }
 
+      if (Array.isArray(scopeChange)) {
+        const groupsById = await loadGroupsById();
+        const bad = scopeChange.filter((id) => !groupsById[id]);
+        if (bad.length) return res.status(400).json({ error: `No such group: ${bad.join(', ')}` });
+      }
+
       const nextAssignments = { ...assignments };
       if (roleIds.length) nextAssignments[email] = roleIds;
       else delete nextAssignments[email];
-      if (!(await stillManaged({ rolesById, assignments: nextAssignments }))) {
+      const nextScopes = { ...scopes };
+      if (Array.isArray(scopeChange) && roleIds.length) nextScopes[email] = scopeChange;
+      else if (scopeChange === null || !roleIds.length) delete nextScopes[email];
+      if (!(await stillManaged({ rolesById, assignments: nextAssignments, scopes: nextScopes }))) {
         return res.status(400).json({ error: NO_ROLE_MANAGER });
       }
 
+      // Write order is the fail-safe one: a limit being SET is saved before
+      // the roles, a limit being LIFTED after them, so a failure between the
+      // two writes leaves the person with less than was asked for, never more.
+      if (Array.isArray(scopeChange)) await setScopeForEmail(email, scopeChange);
       const result = await setRolesForEmail(email, roleIds, rolesById);
       if (!result.ok) return res.status(400).json({ error: result.error });
+      // A limit with no roles limits nothing and would silently re-apply to
+      // roles given later, so it goes with the last role.
+      if (scopeChange === null || !result.roleIds.length) await setScopeForEmail(email, null);
       if (granted.length) await redis.sadd(k('approved_viewers'), email);
       const names = result.roleIds.map((rid) => rolesById[rid].name);
-      await logAudit(actor, 'role.assign', `${email} → ${names.length ? names.join(', ') : '(none)'}`);
-      return res.json({ email, roleIds: result.roleIds });
+      await logAudit(
+        actor,
+        'role.assign',
+        `${email} → ${names.length ? names.join(', ') : '(none)'}` +
+          (Array.isArray(scopeChange) && result.roleIds.length
+            ? ` (limited to ${scopeChange.length} group(s))`
+            : scopeChange === null && Array.isArray(scopes[email])
+              ? ' (limit lifted)'
+              : '')
+      );
+      const scope = !result.roleIds.length ? null : scopeChange !== undefined ? scopeChange : (scopes[email] ?? null);
+      return res.json({ email, roleIds: result.roleIds, scope });
     } catch (e) {
       console.error('Could not update the assignment:', e);
       return res.status(502).json({ error: 'Could not update the assignment' });

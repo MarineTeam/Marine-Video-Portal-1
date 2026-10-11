@@ -1,4 +1,5 @@
 import { requireCapability } from '../../../lib/roles';
+import { isScoped, videoInScope } from '../../../lib/staffScopeRules';
 import { getLibraryStatistics } from '../../../lib/bunny';
 import { listAllVideos } from '../../../lib/videoLibrary';
 import { withMonitorApi } from '../../../lib/monitor';
@@ -10,7 +11,12 @@ async function handler(req, res) {
 
   // Every video, so total views, watch time and most-watched are not drawn
   // from the newest 100 alone.
-  const { videos, truncated, total } = await listAllVideos();
+  const { videos: library, truncated, total } = await listAllVideos();
+  // A group-scoped caller gets their own videos' numbers. bunny's 30-day
+  // chart is one figure for the whole library, so it is left out for them
+  // rather than shown as if it were theirs.
+  const scoped = isScoped(auth);
+  const videos = library.filter((v) => videoInScope(auth, v));
   const rows = videos.map((v) => ({
     id: v.guid,
     title: v.title || 'Untitled',
@@ -27,7 +33,7 @@ async function handler(req, res) {
   // of the dashboard still renders.
   let chart = [];
   let last30Views = 0;
-  try {
+  if (!scoped) try {
     const to = new Date();
     const from = new Date(Date.now() - 30 * 86400000);
     const stats = await getLibraryStatistics({
@@ -46,7 +52,8 @@ async function handler(req, res) {
   res.json({
     totalViews,
     totalWatchHours,
-    videoCount: total,
+    videoCount: scoped ? rows.length : total,
+    libraryWide: !scoped,
     // The library is larger than one read; the totals cover `covered` videos.
     truncated,
     covered: rows.length,

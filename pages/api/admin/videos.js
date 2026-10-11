@@ -16,6 +16,9 @@ import { collectFinishedTranscripts } from '../../../lib/transcriptCollect';
 import { clearTranscript } from '../../../lib/captionsStore';
 import { clearComments } from '../../../lib/commentsStore';
 import { withMonitorApi } from '../../../lib/monitor';
+import { SCOPED_REFUSAL, guidsInScope, scopedDeleteProblem } from '../../../lib/staffScope';
+import { isScoped, scheduleGroupsProblem, videoInScope } from '../../../lib/staffScopeRules';
+import { loadGroupsById } from '../../../lib/groups';
 
 // Bulk video ops (delete, collection assignment) accept either a single `id`
 // or an `ids` array, mirroring pages/api/admin/shares.js: every id is
@@ -43,11 +46,15 @@ async function handler(req, res) {
   const auth = await requireCapability(req, res, 'videos:manage');
   if (!auth) return;
   const actor = auth.email;
+  // Group-scoped staff (lib/staffScopeRules.js) see and change only the
+  // videos their groups grant, and none of the library-wide acts.
+  const scoped = isScoped(auth);
 
   if (req.method === 'GET') {
     // The whole library, not bunny's newest 100 — a video past the first
     // page used to have no row here. See lib/videoLibrary.js.
-    const { videos, truncated } = await listAllVideos();
+    const { videos: library, truncated } = await listAllVideos();
+    const videos = scoped ? library.filter((v) => videoInScope(auth, v)) : library;
     const order = await getOrder();
     const ordered = applyOrder(videos, order);
     const watermarkModes = await listVideoWatermarkModes();
@@ -118,6 +125,13 @@ async function handler(req, res) {
     const { title, watermarkMode } = body;
     const ids = idsFrom(body);
     if (ids.length === 0) return res.status(400).json({ error: 'id(s) required' });
+    if (scoped) {
+      // Collections are shared across groups: moving a video between them
+      // changes who else can see it.
+      if (typeof body.collectionId === 'string') return res.status(403).json({ error: SCOPED_REFUSAL });
+      const allowed = await guidsInScope(auth, ids);
+      if (ids.some((id) => !allowed.has(id))) return res.status(404).json({ error: 'Video not found' });
+    }
 
     // Per-video chapters and notes. Always a single id. Sending both fields
     // empty clears the entry entirely.
@@ -166,6 +180,19 @@ async function handler(req, res) {
         const checked = validateGroupWindows(body.groups, known);
         if (checked.error) return res.status(400).json({ error: checked.error });
         groups = checked.groups;
+      }
+      // A scoped caller sets per-group windows for their own groups only;
+      // every other group's window must come back exactly as stored.
+      if (scoped) {
+        let stored;
+        let groupsById;
+        try {
+          [stored, groupsById] = await Promise.all([listSchedules(), loadGroupsById()]);
+        } catch {
+          return res.status(500).json({ error: 'Could not read the schedule.' });
+        }
+        const problem = scheduleGroupsProblem(auth, stored[ids[0]]?.groups, groups, groupsById);
+        if (problem) return res.status(403).json({ error: problem });
       }
       try {
         const entry = await setSchedule(ids[0], {
@@ -234,6 +261,11 @@ async function handler(req, res) {
 
     const results = [];
     for (const id of ids) {
+      const refused = await scopedDeleteProblem(auth, id);
+      if (refused) {
+        results.push({ id, ok: false, error: refused.error, status: refused.status });
+        continue;
+      }
       try {
         await deleteVideo(id);
         results.push({ id, ok: true });
@@ -278,9 +310,11 @@ async function handler(req, res) {
 
     if (ids.length === 1) {
       const r = results[0];
-      return r.ok ? res.json({ ok: true }) : res.status(502).json({ error: r.error });
+      return r.ok ? res.json({ ok: true }) : res.status(r.status || 502).json({ error: r.error });
     }
-    return res.json({ results });
+    return res.json({
+      results: results.map((r) => ({ id: r.id, ok: r.ok, ...(r.error ? { error: r.error } : {}) })),
+    });
   }
 
   res.status(405).end();

@@ -13,6 +13,12 @@ import { IconPencil, IconTrash } from './icons';
 // but a greyed box that explains itself beats a 403 after clicking Save — and
 // hiding them would make a delegated role manager think the catalog is
 // smaller than it is.
+//
+// A person's roles can also be LIMITED to certain groups
+// (lib/staffScopeRules.js): their capabilities then reach only those groups,
+// their members and the videos those groups grant, and the portal-wide ones
+// (settings, roles, audit) are dropped. Only an unlimited roles:manage holder
+// ever sees this section, since a limit strips roles:manage.
 export default function RolesSection({ onViewersChanged }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -20,7 +26,7 @@ export default function RolesSection({ onViewersChanged }) {
   const [busy, setBusy] = useState(false);
   // { id | null, name, capabilities[] } while a role is being created or edited.
   const [roleDraft, setRoleDraft] = useState(null);
-  // { email, roleIds[] } while someone's roles are being chosen.
+  // { email, roleIds[], limited, scope[] } while someone's roles are being chosen.
   const [assignDraft, setAssignDraft] = useState(null);
   const [newEmail, setNewEmail] = useState('');
 
@@ -89,7 +95,11 @@ export default function RolesSection({ onViewersChanged }) {
   }
 
   async function saveAssignment() {
-    const ok = await send('PATCH', { email: assignDraft.email, roleIds: assignDraft.roleIds });
+    const ok = await send('PATCH', {
+      email: assignDraft.email,
+      roleIds: assignDraft.roleIds,
+      scope: assignDraft.limited ? assignDraft.scope : null,
+    });
     if (!ok) return;
     setAssignDraft(null);
     setNewEmail('');
@@ -105,7 +115,17 @@ export default function RolesSection({ onViewersChanged }) {
       return;
     }
     setError(null);
-    setAssignDraft({ email, roleIds: data.assignments[email] || [] });
+    openAssign(email);
+  }
+
+  function openAssign(email) {
+    const scope = (data.scopes || {})[email];
+    setAssignDraft({
+      email,
+      roleIds: [...(data.assignments[email] || [])],
+      limited: Array.isArray(scope),
+      scope: Array.isArray(scope) ? [...scope] : [],
+    });
   }
 
   if (!data) {
@@ -123,6 +143,9 @@ export default function RolesSection({ onViewersChanged }) {
   const holders = (roleId) =>
     Object.entries(data.assignments).filter(([, ids]) => ids.includes(roleId)).length;
   const people = Object.keys(data.assignments).sort();
+  const scopeGroups = data.scopeGroups || [];
+  const groupName = Object.fromEntries(scopeGroups.map((g) => [g.id, g.name]));
+  const scopeOf = (email) => (data.scopes || {})[email];
 
   return (
     <div className="card admin-section">
@@ -325,6 +348,56 @@ export default function RolesSection({ onViewersChanged }) {
               );
             })}
           </div>
+          <div className="group-section" style={{ marginTop: 10 }}>
+            <label className="group-grant-item role-cap-item">
+              <input
+                type="checkbox"
+                checked={assignDraft.limited}
+                disabled={busy || (!assignDraft.limited && scopeGroups.length === 0)}
+                onChange={() => setAssignDraft({ ...assignDraft, limited: !assignDraft.limited })}
+              />
+              <span>Limit to certain groups</span>
+            </label>
+            {!assignDraft.limited && scopeGroups.length === 0 && (
+              <p className="text-muted">Create a viewer group first to limit someone to it.</p>
+            )}
+            {assignDraft.limited && (
+              <>
+                <p className="text-muted">
+                  Their roles reach only these groups, the people in them and the videos they grant.
+                  They can&apos;t change settings, roles or the audit log, create or re-grant groups,
+                  edit collections or the homepage order. New people they add join one of these
+                  groups; their uploads are granted to them.
+                </p>
+                <div className="role-cap-grid">
+                  {scopeGroups.map((g) => {
+                    const checked = assignDraft.scope.includes(g.id);
+                    return (
+                      <label key={g.id} className="group-grant-item role-cap-item">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={busy}
+                          onChange={() =>
+                            setAssignDraft({
+                              ...assignDraft,
+                              scope: checked
+                                ? assignDraft.scope.filter((x) => x !== g.id)
+                                : [...assignDraft.scope, g.id],
+                            })
+                          }
+                        />
+                        <span>{g.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {assignDraft.scope.length === 0 && (
+                  <p className="form-error">With no group ticked they can reach nothing at all.</p>
+                )}
+              </>
+            )}
+          </div>
           <div className="admin-row">
             <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={saveAssignment}>
               Save roles
@@ -353,13 +426,23 @@ export default function RolesSection({ onViewersChanged }) {
               {data.assignments[email].map((id) => (
                 <span key={id} className="role-chip role-chip--custom">{nameOf[id] || id}</span>
               ))}
+              {Array.isArray(scopeOf(email)) && (
+                <span className="text-muted role-locked-note">
+                  {scopeOf(email).length
+                    ? `limited to ${scopeOf(email)
+                        .map((id) => groupName[id] || 'a deleted group')
+                        .sort()
+                        .join(', ')}`
+                    : 'limited to no groups'}
+                </span>
+              )}
               <button
                 type="button"
                 className="btn btn-icon"
                 disabled={busy}
                 title="Change this person's roles"
                 aria-label={`Change roles for ${email}`}
-                onClick={() => setAssignDraft({ email, roleIds: [...data.assignments[email]] })}
+                onClick={() => openAssign(email)}
               >
                 <IconPencil />
               </button>

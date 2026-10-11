@@ -1,4 +1,5 @@
 import { requireCapability } from '../../../lib/roles';
+import { guidsInScope } from '../../../lib/staffScope';
 import { redis, k } from '../../../lib/redis';
 import { logAudit } from '../../../lib/audit';
 import { allow, callerId } from '../../../lib/ratelimit';
@@ -56,6 +57,11 @@ async function handler(req, res) {
 
   if (cleanVideos.length === 0 || cleanEmails.length === 0) {
     return res.status(400).json({ error: 'At least one video and one recipient are required' });
+  }
+  // A group-scoped caller shares only videos their groups grant.
+  const allowedVideos = await guidsInScope(auth, cleanVideos.map((v) => String(v.id)));
+  if (cleanVideos.some((v) => !allowedVideos.has(String(v.id)))) {
+    return res.status(404).json({ error: 'Video not found' });
   }
 
   const hours = Math.min(expiresInHours, 720); // capped at 30 days

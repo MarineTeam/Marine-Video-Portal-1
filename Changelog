@@ -198,3 +198,9 @@ The admin page shows each person only the tabs their roles open, and never asks 
 Access-request emails and pushes go to exactly the people who can approve them
 Seeing or changing who is in a group now also needs the viewers capability; group management alone shows a member count
 Fix: when the video list failed to load, the admin page said "this account is not an admin"; it now says the library could not be loaded
+v1.29.0
+Staff limited to certain groups: when choosing someone's roles, tick "Limit to certain groups" and their roles reach only those groups' people and videos
+A limited person can't change settings, roles or the activity log, create or re-grant groups, edit collections or reorder the homepage; the admin page shows them only what they can use, with a note saying which groups they're limited to
+People they add, or requests they approve, join one of their groups; they can never take anyone out of their last group, and remove a person or delete a video only when every group involved is theirs
+Their uploads go to their own groups, and their Analytics count only their videos
+If a limit can't be read, the person gets no admin access until it can — never more

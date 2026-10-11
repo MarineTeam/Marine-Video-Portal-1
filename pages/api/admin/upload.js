@@ -1,5 +1,6 @@
 import { requireCapability } from '../../../lib/roles';
-import { grantVideoToGroups, listGroupIds } from '../../../lib/groups';
+import { effectiveScopeGroups, isScoped } from '../../../lib/staffScopeRules';
+import { grantVideoToGroups, listGroupIds, loadGroupsById } from '../../../lib/groups';
 import { planUploadGrants } from '../../../lib/uploadGrants';
 import { logAudit } from '../../../lib/audit';
 import { createVideo, signTusUpload } from '../../../lib/bunny';
@@ -25,7 +26,30 @@ async function handler(req, res) {
   // request is decided HERE, before the bunny.net video exists — a refusal
   // after createVideo would leave an orphan in the library.
   let groupIds = [];
-  if (requestedGroups !== undefined && requestedGroups !== null) {
+  if (isScoped(auth)) {
+    // A group-scoped uploader's video goes to their own groups — the ones
+    // they chose, or all of them — and never anyone else's. Granting their own
+    // groups needs no groups:manage: it is the only way the video lands inside
+    // their scope at all.
+    let groupsById;
+    try {
+      groupsById = await loadGroupsById();
+    } catch (e) {
+      console.error('Could not read groups for an upload:', e);
+      return res.status(502).json({ error: 'Could not read groups — try again' });
+    }
+    const mine = effectiveScopeGroups(auth.staffScope, groupsById);
+    const wanted = requestedGroups === undefined || requestedGroups === null ? mine : requestedGroups;
+    if (!Array.isArray(wanted) || wanted.some((id) => typeof id !== 'string' || !mine.includes(id))) {
+      return res.status(403).json({ error: 'You can only grant an upload to your own groups' });
+    }
+    const plan = planUploadGrants(wanted, Object.keys(groupsById));
+    if (!plan.ok) return res.status(plan.status).json({ error: plan.error });
+    if (!plan.groupIds.length) {
+      return res.status(400).json({ error: 'Choose at least one of your groups for this video' });
+    }
+    groupIds = plan.groupIds;
+  } else if (requestedGroups !== undefined && requestedGroups !== null) {
     // Granting a group access is a groups:manage act, whatever form it
     // arrives through. With custom roles someone can hold videos:manage
     // without groups:manage: they may upload, but not grant the upload to a

@@ -1,4 +1,6 @@
 import { requireCapability } from '../../../lib/roles';
+import { SCOPED_REFUSAL } from '../../../lib/staffScope';
+import { isScoped } from '../../../lib/staffScopeRules';
 import { listCollections, createCollection, deleteCollection } from '../../../lib/bunny';
 import { pruneCollectionFromGroups } from '../../../lib/groups';
 import { logAudit } from '../../../lib/audit';
@@ -16,6 +18,10 @@ async function handler(req, res) {
       return res.status(502).json({ error: e.message || 'Failed to list collections' });
     }
   }
+
+  // Creating or deleting a collection reshapes the library, and a collection
+  // can be granted to any group — not a group-scoped act.
+  if (req.method !== 'GET' && isScoped(auth)) return res.status(403).json({ error: SCOPED_REFUSAL });
 
   if (req.method === 'POST') {
     const { name } = req.body || {};

@@ -2,6 +2,8 @@ import { redis, k } from '../../../lib/redis';
 import { logAudit } from '../../../lib/audit';
 import { withMonitorApi } from '../../../lib/monitor';
 import { requireCapability } from '../../../lib/roles';
+import { isScoped, placementGroup } from '../../../lib/staffScopeRules';
+import { addGroupMembers, loadGroupsById } from '../../../lib/groups';
 import {
   listRequests,
   decideRequest,
@@ -37,6 +39,20 @@ async function handler(req, res) {
       return res.status(400).json({ error: 'status must be "approved" or "denied"' });
     }
 
+    // A group-scoped caller approves into one of their own groups — decided
+    // before anything is written, so a refusal changes nothing.
+    let placeIn = null;
+    if (approve && isScoped(auth)) {
+      let groupsById;
+      try {
+        groupsById = await loadGroupsById();
+      } catch {
+        return res.status(502).json({ error: 'Could not read groups — try again' });
+      }
+      placeIn = placementGroup(auth, body.groupId, groupsById);
+      if (!placeIn) return res.status(400).json({ error: 'Choose which of your groups to add them to' });
+    }
+
     let record;
     try {
       record = await decideRequest(email, body.status, actor);
@@ -45,6 +61,9 @@ async function handler(req, res) {
     }
 
     if (approve) {
+      // Membership BEFORE approval, so a failure between the two can never
+      // leave an approved viewer in no group (the whole library).
+      if (placeIn) await addGroupMembers(placeIn, [email]);
       await redis.sadd(k('approved_viewers'), email);
     }
     await logAudit(actor, approve ? 'access_request.approve' : 'access_request.deny', email);

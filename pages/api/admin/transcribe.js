@@ -1,4 +1,5 @@
 import { requireCapability } from '../../../lib/roles';
+import { guidInScope } from '../../../lib/staffScope';
 import { allowCostly, callerId } from '../../../lib/ratelimit';
 import { fetchCaptionVtt, getVideoById, transcribeVideo } from '../../../lib/bunny';
 import { parseVtt } from '../../../lib/captions';
@@ -48,6 +49,8 @@ async function handler(req, res) {
     return res.status(400).json({ error: 'videoId required' });
   }
   const videoId = body.videoId.trim();
+  // A group-scoped caller transcribes only videos their groups grant.
+  if (!(await guidInScope(auth, videoId))) return res.status(404).json({ error: 'Video not found' });
 
   // Ingest only reads a file bunny already produced, so it is handled before
   // the limiter that guards the paid half.

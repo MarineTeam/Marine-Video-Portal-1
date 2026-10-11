@@ -421,6 +421,17 @@ Roles are **custom**. From **Admin → Access → Roles** (anyone holding `roles
 
 Roles live in Redis (`pvp:roles`, `pvp:user_roles`), so they change live, no redeploy. Routes name a capability, never a role; the catalog is `lib/capabilities.js`, and a capability no route enforces can't be added from the UI.
 
+**Limiting someone to certain groups.** When you choose someone's roles you can tick **Limit to certain groups** and pick one or more viewer groups. Their roles then reach only those groups: the people in them, and the videos those groups grant (directly or through a collection). Roles still decide *what* they may do; the limit decides *where*. Setting a limit needs `roles:manage` and no limit of your own, and owners can never be limited.
+
+- **The portal-wide capabilities go.** A limited person never holds `settings:manage`, `roles:manage` or `audit:read`, whatever their roles say.
+- **They can't widen their own limit.** A limit *is* what its groups grant, so they never create, delete or re-grant a group, change collections, or reorder the homepage. The one exception is their own uploads, which go to their groups (at least one, all ticked to start with).
+- **Nobody ends up in no group.** A viewer in no group sees the whole library, so people a limited person adds (by hand or by approving a request) join one of their groups, and the membership is written *before* the approval. They can never take anyone out of their last group.
+- **Shared things need the whole share.** Removing someone from the portal, or deleting a video, needs every group involved to be inside the limit. Removing someone who holds roles is never theirs to do.
+- **Everything else is filtered.** The Videos, Viewers, Access, Shares and Analytics tabs show only their groups' videos, people and links; Analytics leaves out bunny's 30-day library-wide figures. A request for anything outside answers "not found".
+- **It fails closed.** A limit that can't be read gives no capabilities at all, and a limit whose groups have all been deleted reaches nothing. Watching the library as a viewer follows the same limit.
+
+Limits are stored in `pvp:user_scope` and go with the person's last role.
+
 **Coming from the old Admin / Manager roles.** Before v1.28.0 there were two fixed roles. The first time someone opens the Roles section after deploying, they become two ordinary, editable roles — **Admin** (every capability) and **Manager** (everything except `settings:manage` and `roles:manage`) — held by the same people. Nobody loses or gains anything, and until that conversion runs the old grants keep working exactly as before.
 
 ### Viewer groups
@@ -436,7 +447,7 @@ Two consequences worth knowing:
 - **A group with members but no grants shows them nothing.** That's a real state you can create, and the admin UI warns about it on the group card rather than silently ignoring it.
 - **Share links are unaffected.** `/watch/<shareId>` carries its own per-recipient token, so you can still share one video with someone whose groups wouldn't otherwise show it to them. Groups gate the library; shares gate one video each.
 
-Staff bypass groups entirely — they're curating the library, so they see all of it.
+Staff bypass groups entirely — they're curating the library, so they see all of it — unless their roles are limited to certain groups (see "Limiting someone to certain groups" above), in which case they see what those groups grant.
 
 ---
 

@@ -8,6 +8,8 @@ import { IconTrash, IconCopy, IconGrip, IconPencil, IconSearch, IconCheck, IconX
 import { applyTheme, DEFAULT_THEME, PRESETS, isValidHex } from '../lib/theme';
 import { MAX_SITE_NAME_LENGTH, cleanSiteName } from '../lib/branding';
 import { getAccess } from '../lib/roles';
+import { loadGroupsById } from '../lib/groups';
+import { effectiveScopeGroups, isScoped } from '../lib/staffScopeRules';
 import { mailEnabled as mailConfigured } from '../lib/mail';
 import { isGeoAllowed } from '../lib/geo';
 import { withMonitorPage } from '../lib/monitor';
@@ -49,8 +51,21 @@ async function getServerSidePropsInner({ req, res }) {
     props: {
       capabilities: access.capabilities,
       mailOn: mailConfigured(),
+      // Group-scoped staff (lib/staffScopeRules.js): the groups their roles
+      // reach, for the page's pickers and the "Limited to" note. null for
+      // everyone else.
+      scopeGroups: await scopeGroupsFor(access),
     },
   };
+}
+
+// Only groups that still exist count.
+async function scopeGroupsFor(access) {
+  if (!isScoped(access)) return null;
+  const groupsById = await loadGroupsById().catch(() => ({}));
+  return effectiveScopeGroups(access.staffScope, groupsById)
+    .map((id) => ({ id, name: groupsById[id].name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export const getServerSideProps = withMonitorPage(getServerSidePropsInner);
@@ -464,8 +479,13 @@ const TABS = [
   { id: 'analytics', label: 'Analytics', caps: ['analytics:read'] },
 ];
 
-export default function Admin({ capabilities = [], mailOn = false }) {
+export default function Admin({ capabilities = [], mailOn = false, scopeGroups = null }) {
   const { user, isLoading } = useUser();
+  // Group-scoped staff: uploads and new people go to their own groups, and the
+  // library-wide controls — collections, the homepage order, creating or
+  // re-granting groups — are not theirs. Every route refuses those on its own;
+  // hiding them here only keeps the page honest.
+  const scoped = Array.isArray(scopeGroups);
   const can = (cap) => capabilities.includes(cap);
   const visibleTabs = TABS.filter((t) => t.caps.some((c) => capabilities.includes(c)));
   const [videos, setVideos] = useState([]);
@@ -515,7 +535,11 @@ export default function Admin({ capabilities = [], mailOn = false }) {
   const [uploadError, setUploadError] = useState(false);
   const [uploadErrorMsg, setUploadErrorMsg] = useState('');
   // Groups the next upload is granted to, and any the server could not grant.
-  const [uploadGroups, setUploadGroups] = useState([]);
+  // A scoped uploader's videos go to at least one of their groups; all are
+  // ticked to start with.
+  const [uploadGroups, setUploadGroups] = useState(() => (scoped ? scopeGroups.map((g) => g.id) : []));
+  // Which of a scoped caller's groups new viewers and approved requests join.
+  const [placeIn, setPlaceIn] = useState(() => scopeGroups?.[0]?.id || '');
   const [uploadGrantMsg, setUploadGrantMsg] = useState('');
   const [bulkEmails, setBulkEmails] = useState('');
   const [videoQuery, setVideoQuery] = useState('');
@@ -665,8 +689,9 @@ export default function Admin({ capabilities = [], mailOn = false }) {
     // The upload form's "also visible to groups" picker needs the group
     // names here too, not only on the Access tab. A caller without
     // groups:manage gets a 403 and simply sees no picker.
-    fetch('/api/admin/groups').then((r) => (r.ok ? r.json() : [])).then(setGroups).catch(() => {});
-  }, [user, tab]);
+    if (scoped) setGroups(scopeGroups);
+    else fetch('/api/admin/groups').then((r) => (r.ok ? r.json() : [])).then(setGroups).catch(() => {});
+  }, [user, tab, scoped, scopeGroups]);
 
   // While any video is still encoding (status 0–3), re-poll so progress updates.
   useEffect(() => {
@@ -782,8 +807,9 @@ export default function Admin({ capabilities = [], mailOn = false }) {
         body: JSON.stringify({
           title: uploadTitle.trim() || uploadFile.name,
           // Only sent when something is ticked, so an ordinary upload is the
-          // exact request it always was.
-          ...(uploadGroups.length ? { groupIds: uploadGroups } : {}),
+          // exact request it always was. A scoped uploader with nothing ticked
+          // is refused rather than guessed for.
+          ...(uploadGroups.length || scoped ? { groupIds: uploadGroups } : {}),
         }),
       });
       meta = await res.json();
@@ -906,11 +932,16 @@ export default function Admin({ capabilities = [], mailOn = false }) {
 
   async function addViewer() {
     if (!newViewerEmail.trim()) return;
-    await fetch('/api/admin/viewers', {
+    const res = await fetch('/api/admin/viewers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: newViewerEmail }),
+      body: JSON.stringify({ email: newViewerEmail, ...(scoped ? { groupId: placeIn } : {}) }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'Failed to add viewer');
+      return;
+    }
     setNewViewerEmail('');
     const r = await fetch('/api/admin/viewers');
     setViewers(await r.json());
@@ -928,7 +959,7 @@ export default function Admin({ capabilities = [], mailOn = false }) {
       const res = await fetch('/api/admin/access-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, status }),
+        body: JSON.stringify({ email, status, ...(scoped ? { groupId: placeIn } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) { alert(data.error || 'Failed to update request'); return; }
@@ -1015,7 +1046,11 @@ export default function Admin({ capabilities = [], mailOn = false }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ groupId, email }),
     });
-    if (!res.ok) { setGroupError('Failed to remove member'); return; }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setGroupError(data.error || 'Failed to remove member');
+      return;
+    }
     setGroupError(null);
     setGroups((prev) =>
       prev.map((g) => (g.id === groupId ? { ...g, members: g.members.filter((m) => m !== email) } : g))
@@ -1048,11 +1083,16 @@ export default function Admin({ capabilities = [], mailOn = false }) {
   }
 
   async function removeViewer(email) {
-    await fetch('/api/admin/viewers', {
+    const res = await fetch('/api/admin/viewers', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'Failed to remove viewer');
+      return;
+    }
     setViewers((prev) => prev.filter((v) => v.email !== email));
   }
 
@@ -1062,7 +1102,7 @@ export default function Admin({ capabilities = [], mailOn = false }) {
     const res = await fetch('/api/admin/viewers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emails: text }),
+      body: JSON.stringify({ emails: text, ...(scoped ? { groupId: placeIn } : {}) }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { alert(data.error || 'Failed to add viewers'); return; }
@@ -1961,11 +2001,43 @@ export default function Admin({ capabilities = [], mailOn = false }) {
   const bulkSelectedCount = Object.values(bulkSelected).filter(Boolean).length;
   const allViewerTags = [...new Set(viewers.flatMap((v) => v.tags || []))].sort();
   const pendingRequests = accessRequests.filter((r) => r.status === 'pending');
+  // Where a scoped caller's new viewers and approved requests go. One group
+  // needs no choice; the routes refuse a group outside the scope regardless.
+  const placePicker =
+    scoped && scopeGroups.length > 1 ? (
+      <div className="admin-row" style={{ marginBottom: '0.75rem' }}>
+        <label className="text-muted" htmlFor="place-in">Add new people to</label>
+        <select
+          id="place-in"
+          className="input input-sm"
+          value={placeIn}
+          onChange={(e) => setPlaceIn(e.target.value)}
+          style={{ flex: 'none', width: '12rem' }}
+        >
+          {scopeGroups.map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
+      </div>
+    ) : scoped && scopeGroups.length === 0 ? (
+      <p className="form-error">Your roles are limited to groups that no longer exist, so you can&apos;t add anyone.</p>
+    ) : null;
 
   return (
     <AppShell isAdmin>
       <div className="admin-topbar">
-        <h1 className="admin-page-title">Admin</h1>
+        <h1 className="admin-page-title">
+          Admin
+          {scoped && (
+            <span
+              className="text-muted"
+              style={{ marginLeft: '0.75rem', fontSize: '0.85rem', fontWeight: 400, verticalAlign: 'middle' }}
+              title="Your roles reach only these groups, their members, and the videos they grant"
+            >
+              {scopeGroups.length ? `Limited to ${scopeGroups.map((g) => g.name).join(', ')}` : 'Limited to no groups'}
+            </span>
+          )}
+        </h1>
         <nav className="admin-tabs">
           {/* Only the tabs this person's capabilities open. Hiding a tab is
               presentation; every route behind it enforces its capability. */}
@@ -2399,6 +2471,7 @@ export default function Admin({ capabilities = [], mailOn = false }) {
         {/* Approved viewers */}
         <div className="card admin-section">
           <h2 className="admin-section-title">Approved Viewers</h2>
+          {placePicker}
           <div className="admin-row">
             <input
               type="email"
@@ -2840,7 +2913,11 @@ export default function Admin({ capabilities = [], mailOn = false }) {
             {groups.length > 0 && (
               <fieldset className="upload-groups" disabled={uploading}>
                 <legend className="upload-groups-legend">
-                  Also visible to groups <span className="text-muted">(optional)</span>
+                  {scoped ? (
+                    <>Visible to your groups <span className="text-muted">(at least one)</span></>
+                  ) : (
+                    <>Also visible to groups <span className="text-muted">(optional)</span></>
+                  )}
                 </legend>
                 {/* Nothing is ticked by default, deliberately: a remembered
                     default would grant access on every upload long after
@@ -2884,7 +2961,8 @@ export default function Admin({ capabilities = [], mailOn = false }) {
           </div>
         </div>
 
-        {/* Collections */}
+        {/* Collections — shared across groups, so not a scoped caller's */}
+        {!scoped && (
         <div className="card admin-section">
           <h2 className="admin-section-title">Collections</h2>
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
@@ -2918,13 +2996,16 @@ export default function Admin({ capabilities = [], mailOn = false }) {
             </ul>
           )}
         </div>
+        )}
 
         {/* Video library */}
         <div className="card admin-section">
           <h2 className="admin-section-title">Video Library</h2>
-          <p className="text-muted" style={{ marginBottom: '1rem' }}>
-            Drag the handle to set the order videos appear on the homepage.
-          </p>
+          {!scoped && (
+            <p className="text-muted" style={{ marginBottom: '1rem' }}>
+              Drag the handle to set the order videos appear on the homepage.
+            </p>
+          )}
           {videosTruncated && (
             <p className="text-muted" style={{ marginBottom: '1rem' }}>
               The library has more videos than this list can show — these are the newest{' '}
@@ -2952,7 +3033,7 @@ export default function Admin({ capabilities = [], mailOn = false }) {
               <span className="text-muted">
                 {selectedVideoOpsIds().length > 0 ? `${selectedVideoOpsIds().length} selected` : 'Select videos for bulk actions'}
               </span>
-              {collections.length > 0 && (
+              {collections.length > 0 && !scoped && (
                 <>
                   <select
                     className="input input-sm"
@@ -3015,10 +3096,10 @@ export default function Admin({ capabilities = [], mailOn = false }) {
                   )}
                   <span
                     className="drag-handle"
-                    draggable={!q}
+                    draggable={!q && !scoped}
                     onDragStart={(e) => onDragStartRow(e, v.id)}
                     onDragEnd={onDragEndRow}
-                    title={q ? 'Clear search to reorder' : 'Drag to reorder'}
+                    title={scoped ? 'The homepage order is set by unlimited staff' : q ? 'Clear search to reorder' : 'Drag to reorder'}
                   >
                     <IconGrip />
                   </span>
@@ -3068,6 +3149,8 @@ export default function Admin({ capabilities = [], mailOn = false }) {
                       className="input input-sm"
                       value={v.collectionId || ''}
                       onChange={(e) => assignCollection(v, e.target.value)}
+                      disabled={scoped}
+                      title={scoped ? 'Collections are shared across groups, so only unlimited staff move videos between them' : undefined}
                     >
                       <option value="">No collection</option>
                       {collections.map((c) => (
@@ -3506,6 +3589,7 @@ export default function Admin({ capabilities = [], mailOn = false }) {
             Viewers tab. Denying leaves them signed out of the library and never removes anyone who
             already has access.
           </p>
+          {placePicker}
 
           {accessRequests.length === 0 ? (
             <p className="text-muted">No access requests.</p>
@@ -3576,6 +3660,7 @@ export default function Admin({ capabilities = [], mailOn = false }) {
             </p>
           )}
 
+          {!scoped && (
           <div className="admin-row">
             <input
               type="text"
@@ -3587,6 +3672,7 @@ export default function Admin({ capabilities = [], mailOn = false }) {
             />
             <button onClick={createGroup} className="btn btn-primary btn-sm">Create group</button>
           </div>
+          )}
 
           {groupError && <p className="form-error">{groupError}</p>}
 
@@ -3608,13 +3694,15 @@ export default function Admin({ capabilities = [], mailOn = false }) {
                         {memberCount} member{memberCount === 1 ? '' : 's'} · {grantCount} grant
                         {grantCount === 1 ? '' : 's'}
                       </span>
-                      <button
-                        onClick={() => deleteGroup(g.id, g.name)}
-                        className="btn btn-icon"
-                        title="Delete group"
-                      >
-                        <IconTrash />
-                      </button>
+                      {!scoped && (
+                        <button
+                          onClick={() => deleteGroup(g.id, g.name)}
+                          className="btn btn-icon"
+                          title="Delete group"
+                        >
+                          <IconTrash />
+                        </button>
+                      )}
                     </div>
 
                     {memberCount > 0 && grantCount === 0 && (
@@ -3657,6 +3745,10 @@ export default function Admin({ capabilities = [], mailOn = false }) {
                     </div>
                     )}
 
+                    {/* What a group grants IS a scoped caller's scope, so
+                        they never change it. */}
+                    {!scoped && (
+                    <>
                     <div className="group-section">
                       <span className="group-section-label">Collections</span>
                       {collections.length === 0 ? (
@@ -3696,6 +3788,8 @@ export default function Admin({ capabilities = [], mailOn = false }) {
                         ))}
                       </div>
                     </details>
+                    </>
+                    )}
                   </div>
                 );
               })}
@@ -3745,10 +3839,15 @@ export default function Admin({ capabilities = [], mailOn = false }) {
                   <span className="stat-value">{formatNumber(analytics.totalViews)}</span>
                   <span className="stat-label">Total views</span>
                 </div>
-                <div className="stat-card">
-                  <span className="stat-value">{formatNumber(analytics.last30Views)}</span>
-                  <span className="stat-label">Views · 30 days</span>
-                </div>
+                {/* bunny's 30-day figure covers the whole library, so a
+                    group-scoped caller — whose totals cover only their
+                    videos — does not get it. */}
+                {analytics.libraryWide !== false && (
+                  <div className="stat-card">
+                    <span className="stat-value">{formatNumber(analytics.last30Views)}</span>
+                    <span className="stat-label">Views · 30 days</span>
+                  </div>
+                )}
                 <div className="stat-card">
                   <span className="stat-value">{analytics.totalWatchHours}h</span>
                   <span className="stat-label">Watch time</span>
