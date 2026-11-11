@@ -209,3 +209,5 @@ Removing a viewer deletes what was recorded about them: their watch history, sav
 Their votes come back out of the totals at the same moment, and the removal now asks you to confirm and says what will be deleted
 If any of it can't be deleted, they stay on the list and you can try again, so nothing is left behind unreachable
 Staff (owners and anyone holding a role) keep their data, since removing them from the list doesn't remove their access
+v1.30.1
+Security: raised the minimum Next.js to 16.4.6 and Sentry to 10.78.0, past two new critical advisories (remote code execution in Next.js image optimization and `use cache`, and a Sentry tunnel-route middleware bypass). The live site was last built before those fixes, so this release's deploy is what brings them in
